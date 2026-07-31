@@ -7,3 +7,5 @@ build/*.icns
 *.log
 musik-library.json
 package-lock.json
+
+file-list.txt
