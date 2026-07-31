@@ -6,6 +6,8 @@ No ads, no subscriptions, no telemetry. MIT licensed, so do what you want with i
 
 The default look is a dark, glassmorphic UI, but that's just the starting point — mods can reskin pretty much all of it.
 
+This app was coded over many weeks with the help of Claude, and every update rolled out has been tested. That doesn't mean it's perfect, though. Make sure to report any bugs you see in the Issues tab!
+
 ## Features
 
 - Full-quality playback, no internal resampling or compression
