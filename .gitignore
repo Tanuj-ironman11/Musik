@@ -6,3 +6,4 @@ build/*.ico
 build/*.icns
 *.log
 musik-library.json
+package-lock.json
