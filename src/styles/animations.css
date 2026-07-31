@@ -1,0 +1,306 @@
+/* animations.css — all @keyframes, centralized
+   Every keyframe used anywhere in the app lives here now instead of
+   being scattered per-component-file. The rules that TRIGGER an
+   animation (hover/active/class selectors referencing these names)
+   still live next to their component's other styles — only the
+   @keyframes definitions themselves moved here, nothing else changed.
+*/
+
+/* ─── Sidebar logo ─── */
+
+@keyframes sidebar-logo-pulse {
+  0%, 100% { filter: hue-rotate(var(--logo-hue)) drop-shadow(0 0 8px var(--color-accent-glow)) drop-shadow(0 0 2px var(--color-accent)); }
+  50%      { filter: hue-rotate(var(--logo-hue)) drop-shadow(0 0 22px var(--color-accent-glow)) drop-shadow(0 0 6px var(--color-accent)); }
+}
+
+@keyframes sidebar-logo-spin {
+  from { transform: rotate(0deg) scale(1); }
+  50%  { transform: rotate(180deg) scale(1.25); }
+  to   { transform: rotate(360deg) scale(1); }
+}
+
+/* ─── Queue EQ bars ─── */
+
+@keyframes q-eq-bounce {
+  0%, 100% { transform: scaleY(0.4); }
+  50%      { transform: scaleY(1); }
+}
+
+/* ─── Player-bar queue toggle ─── */
+
+@keyframes pb-queue-wave {
+  0%   { transform: scaleX(1) translateX(0); }
+  30%  { transform: scaleX(0.72) translateX(-2px); }
+  62%  { transform: scaleX(1.08) translateX(0.5px); }
+  100% { transform: scaleX(1) translateX(0); }
+}
+
+@keyframes pb-queue-arrow-nudge {
+  0%   { transform: translateX(0); }
+  40%  { transform: translateX(2px); }
+  100% { transform: translateX(0); }
+}
+
+/* ─── Home: add-music plus icon ───
+   Two strokes (vertical + horizontal) rotate opposite directions,
+   crossing into an X mid-transition, then settle back into a +.
+   Triggered by JS adding .icon-kick-plus on click (home.js). */
+
+@keyframes icon-plus-spin {
+  0%   { transform: rotate(0deg); }
+  50%  { transform: rotate(90deg); }
+  100% { transform: rotate(0deg); }
+}
+
+@keyframes icon-plus-spin-reverse {
+  0%   { transform: rotate(0deg); }
+  50%  { transform: rotate(-90deg); }
+  100% { transform: rotate(0deg); }
+}
+
+/* ─── Library: back-arrow peek ───
+   Chevron lunges further left then springs back, like a single-arm
+   carousel kick. */
+
+@keyframes icon-back-peek {
+  0%   { transform: translateX(0); }
+  35%  { transform: translateX(-5px); }
+  100% { transform: translateX(0); }
+}
+
+/* ─── Play triangle squash ───
+   Used by both #lib-play-btn and the home-playlist-hover-btn play
+   variant. Compresses horizontally then spring-restores. */
+
+@keyframes icon-play-squash {
+  0%   { transform: scaleX(1) scaleY(1); }
+  40%  { transform: scaleX(0.6) scaleY(1.15); }
+  100% { transform: scaleX(1) scaleY(1); }
+}
+
+/* ─── Shuffle: DNA crossover ───
+   The two diagonal strands exit off-canvas in opposite directions, come
+   back parallel/uncrossed (like two straight strands), advance forward,
+   then cross back over each other into the resting shuffle-X shape.
+   strand-a = the single long diagonal (bottom-left -> top-right).
+   strand-b = the other diagonal, drawn as two segments split by the
+   arrowheads, but treated as one strand — same transform on both. */
+
+@keyframes icon-shuffle-strand-a-dna {
+  0%   { transform: translate(0, 0)      rotate(0deg);   opacity: 1; }
+  18%  { transform: translate(13px, -13px) rotate(0deg); opacity: 0; }
+  46%  { transform: translate(-9px, -9px)  rotate(90deg); opacity: 1; }
+  72%  { transform: translate(-3px, -3px)  rotate(45deg); opacity: 1; }
+  100% { transform: translate(0, 0)      rotate(0deg);   opacity: 1; }
+}
+
+@keyframes icon-shuffle-strand-b-dna {
+  0%   { transform: translate(0, 0)       rotate(0deg);   opacity: 1; }
+  18%  { transform: translate(-13px, 13px) rotate(0deg);  opacity: 0; }
+  46%  { transform: translate(9px, 9px)    rotate(-90deg); opacity: 1; }
+  72%  { transform: translate(3px, 3px)    rotate(-45deg); opacity: 1; }
+  100% { transform: translate(0, 0)       rotate(0deg);   opacity: 1; }
+}
+
+@keyframes icon-shuffle-arrow-dna {
+  0%   { opacity: 1; transform: translateX(0); }
+  18%  { opacity: 0; transform: translateX(0); }
+  46%  { opacity: 0; transform: translateX(0); }
+  75%  { opacity: 1; transform: translateX(1px); }
+  100% { opacity: 1; transform: translateX(0); }
+}
+
+/* ─── Trigger classes ───
+   JS adds these briefly on click (mirrors player-bar.js's pb-queue-kick
+   pattern: add class, force reflow, remove after animation ends). Kept
+   here rather than split across home/library CSS files, since a trigger
+   class and its keyframe are one unit — same reasoning as pb-queue-kick
+   living next to pb-queue-wave. */
+
+.home-add-icon-btn.icon-kick svg .icon-plus-v {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.home-add-icon-btn.icon-kick svg .icon-plus-h {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.home-add-icon-btn.icon-kick svg .icon-plus-v {
+  animation: icon-plus-spin 0.38s var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1));
+}
+.home-add-icon-btn.icon-kick svg .icon-plus-h {
+  animation: icon-plus-spin-reverse 0.38s var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1));
+}
+
+.lib-back-btn.icon-kick svg {
+  animation: icon-back-peek 0.32s var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1));
+}
+
+#lib-play-btn.icon-kick svg,
+.home-playlist-hover-btn[data-playlist-action="play"].icon-kick svg {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: icon-play-squash 0.34s var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1));
+}
+
+#lib-shuffle-btn.icon-kick svg .icon-shuffle-strand-a,
+.home-playlist-hover-btn[data-playlist-action="shuffle"].icon-kick svg .icon-shuffle-strand-a {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: icon-shuffle-strand-a-dna 0.6s var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1));
+}
+#lib-shuffle-btn.icon-kick svg .icon-shuffle-strand-b,
+.home-playlist-hover-btn[data-playlist-action="shuffle"].icon-kick svg .icon-shuffle-strand-b {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: icon-shuffle-strand-b-dna 0.6s var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1));
+}
+#lib-shuffle-btn.icon-kick svg .icon-shuffle-arrow,
+.home-playlist-hover-btn[data-playlist-action="shuffle"].icon-kick svg .icon-shuffle-arrow {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: icon-shuffle-arrow-dna 0.6s var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1));
+}
+
+/* ─── Sidebar/topbar nav icons: click-kick ───
+   Same trigger-class pattern as everything else in this file: JS adds
+   .icon-kick to the clicked .nav-link, forces reflow, removes it on
+   animationend. Works identically whether .nav-link is in the vertical
+   rail or the horizontal topbar — same DOM, same classes, only the
+   surrounding layout differs (see layouts.css). */
+
+@keyframes icon-home-hop {
+  0%   { transform: translateY(0) scale(1, 1); }
+  35%  { transform: translateY(-3px) scale(1.08, 0.92); }
+  62%  { transform: translateY(1px) scale(0.96, 1.05); }
+  100% { transform: translateY(0) scale(1, 1); }
+}
+
+@keyframes icon-gear-tick {
+  0%   { transform: rotate(0deg); }
+  60%  { transform: rotate(50deg); }
+  100% { transform: rotate(0deg); }
+}
+
+@keyframes icon-lib-tile-pop {
+  0%   { transform: scale(1); }
+  35%  { transform: scale(0.72); }
+  70%  { transform: scale(1.14); }
+  100% { transform: scale(1); }
+}
+
+.nav-link[data-view="home"].icon-kick .sidebar-icon {
+  transform-box: fill-box;
+  transform-origin: bottom center;
+  animation: icon-home-hop 0.42s var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1));
+}
+
+.nav-link[data-view="settings"].icon-kick .sidebar-icon {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: icon-gear-tick 0.45s var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1));
+}
+
+/* Library icon is a 2x2 tile grid (<rect class="lib-bar"> x4). Each
+   tile pops on its own, staggered diagonally top-left -> bottom-right
+   so the click reads as a little cascade instead of everything moving
+   at once. */
+.nav-link[data-view="library"].icon-kick .lib-bar {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: icon-lib-tile-pop 0.42s var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1));
+}
+.nav-link[data-view="library"].icon-kick .lib-bar:nth-child(1) { animation-delay: 0s; }
+.nav-link[data-view="library"].icon-kick .lib-bar:nth-child(2) { animation-delay: 0.05s; }
+.nav-link[data-view="library"].icon-kick .lib-bar:nth-child(3) { animation-delay: 0.05s; }
+.nav-link[data-view="library"].icon-kick .lib-bar:nth-child(4) { animation-delay: 0.1s; }
+
+/* Search: the lens "pings" — quick squash-then-overshoot scale with a
+   little counter-rotate snap, reads as a radar/sonar blip rather than a
+   generic bounce, distinct from every other nav icon's motion. */
+@keyframes icon-search-ping {
+  0%   { transform: scale(1) rotate(0deg); }
+  30%  { transform: scale(0.8) rotate(-10deg); }
+  62%  { transform: scale(1.18) rotate(6deg); }
+  100% { transform: scale(1) rotate(0deg); }
+}
+
+.nav-link[data-view="search"].icon-kick .sidebar-icon {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: icon-search-ping 0.4s var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1));
+}
+
+/* Profile: a small friendly "nod" — vertical bob with a squash/stretch,
+   distinct from Home's hop (bigger travel, no squash) by staying tighter
+   and closer to the icon's own footprint. */
+@keyframes icon-profile-nod {
+  0%   { transform: translateY(0) scale(1, 1); }
+  30%  { transform: translateY(-2.5px) scale(1.06, 0.94); }
+  60%  { transform: translateY(1px) scale(0.96, 1.04); }
+  100% { transform: translateY(0) scale(1, 1); }
+}
+
+.nav-link[data-view="profile"].icon-kick .sidebar-icon {
+  transform-box: fill-box;
+  transform-origin: bottom center;
+  animation: icon-profile-nod 0.4s var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1));
+}
+
+/* ─── Wordmark ("Musik" text) click easter egg ───
+   Mirrors #sidebar-logo's confetti/hue-cycle egg but with its own
+   distinct motion (a little text pop/skew) instead of a spin, so the
+   two logo pieces don't feel like duplicate effects. */
+
+@keyframes wordmark-egg-pop {
+  0%   { transform: scale(1, 1) skewX(0deg); }
+  30%  { transform: scale(1.15, 0.88) skewX(-6deg); }
+  55%  { transform: scale(0.95, 1.08) skewX(4deg); }
+  80%  { transform: scale(1.04, 0.97) skewX(-2deg); }
+  100% { transform: scale(1, 1) skewX(0deg); }
+}
+
+.logo-text-wrap.egg-pop {
+  animation: wordmark-egg-pop 0.55s var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1));
+}
+
+/* ─── Fullscreen Now Playing overlay (fullscreen.css / fullscreen.js) ───
+   Enter/exit fade+scale is handled via CSS transitions directly on
+   #now-playing-fullscreen (transitions animate both directions for free;
+   a one-shot @keyframes animation here would only ever play on enter). */
+
+/* Same carousel-kick language as pb-prev/pb-next, reused here so the
+   fullscreen transport doesn't feel like a different app. */
+@keyframes npf-carousel-kick {
+  0%   { transform: translateX(0); opacity: 1; }
+  45%  { transform: translateX(var(--kick-dist, 14px)); opacity: 0; }
+  46%  { transform: translateX(calc(var(--kick-dist, 14px) * -1)); opacity: 0; }
+  100% { transform: translateX(0); opacity: 1; }
+}
+
+.npf-icon-kick svg {
+  animation: npf-carousel-kick 0.34s var(--ease-spring);
+}
+
+/* ─── Player-bar miniplayer toggle (player-bar.css) ───
+   Icon is a small window-frame outline. On toggle it "pops out" —
+   scales down and shifts diagonally like it's detaching from the main
+   window, then springs back to rest. Distinct from pb-queue-wave
+   (accordion bars) and the carousel kick (horizontal slide) so all
+   three player-bar toggle buttons read as different gestures. */
+
+@keyframes pb-mini-pop-out {
+  0%   { transform: scale(1) translate(0, 0); opacity: 1; }
+  35%  { transform: scale(0.72) translate(3px, -3px); opacity: 0.5; }
+  60%  { transform: scale(1.1) translate(-1px, 1px); opacity: 1; }
+  100% { transform: scale(1) translate(0, 0); opacity: 1; }
+}
+
+.pb-mini-kick svg {
+  animation: pb-mini-pop-out 0.4s var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1));
+}
+
+.home-add-btn:active {
+  transform: scale(0.94);
+  transition: transform 0.1s var(--ease-out, ease);
+}

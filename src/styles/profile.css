@@ -1,0 +1,460 @@
+/* src/styles/profile.css
+ *
+ * Visual treatment for #/profile (profile-view.js). New file, same
+ * reasoning as settings.css/playlist-edit.css — cleanly scoped to its
+ * own selectors. Needs one line in components.css's @import chain:
+ *   @import url('./profile.css');
+ */
+
+.profile-loading {
+  padding: 60px 0;
+  text-align: center;
+  color: var(--color-text-dim);
+  font-size: 13px;
+}
+
+/* ── Profile header: avatar + username ──────────────────────────── */
+
+.profile-header-card {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 24px 26px;
+  margin-bottom: 20px;
+  border-radius: var(--radius-lg, var(--radius-md));
+  border: 1px solid var(--color-border, rgba(255, 255, 255, 0.08));
+  background: var(--color-bg-surface, rgba(255, 255, 255, 0.03));
+}
+
+.profile-avatar-wrap {
+  position: relative;
+  width: 76px;
+  height: 76px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  cursor: pointer;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--color-accent) 16%, transparent);
+  border: 2px solid var(--color-border, rgba(255, 255, 255, 0.1));
+  transition: border-color 0.2s var(--ease-out), transform 0.2s var(--ease-spring, ease);
+}
+
+.profile-avatar-wrap:hover {
+  border-color: var(--color-accent-subtle);
+  transform: scale(1.03);
+}
+
+.profile-avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.profile-avatar-fallback {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--color-accent);
+}
+
+.profile-avatar-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.45);
+  opacity: 0;
+  transition: opacity 0.18s var(--ease-out);
+  pointer-events: none;
+}
+
+.profile-avatar-wrap:hover .profile-avatar-overlay {
+  opacity: 1;
+}
+
+.profile-identity {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.profile-username-input {
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--color-text);
+  font-size: 20px;
+  font-weight: 700;
+  padding: 2px 0;
+  border-bottom: 1px solid transparent;
+  transition: border-color 0.15s var(--ease-out);
+  max-width: 280px;
+}
+
+.profile-username-input::placeholder {
+  color: var(--color-text-dim);
+  font-weight: 500;
+}
+
+.profile-username-input:hover,
+.profile-username-input:focus {
+  border-bottom-color: var(--color-border, rgba(255, 255, 255, 0.15));
+}
+
+.profile-identity-sub {
+  font-size: 11px;
+  color: var(--color-text-dim);
+}
+
+/* ── Stats source toggle ──────────────────────────────────────────── */
+
+.profile-lifetime-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.profile-source-toggle {
+  display: inline-flex;
+  padding: 3px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--color-text) 5%, transparent);
+  border: 1px solid var(--color-border, rgba(255, 255, 255, 0.08));
+  gap: 2px;
+}
+
+.profile-source-btn {
+  border: none;
+  background: transparent;
+  color: var(--color-text-dim);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 5px 12px;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  transition: background 0.18s var(--ease-out), color 0.18s var(--ease-out);
+}
+
+.profile-source-btn:hover {
+  color: var(--color-text);
+}
+
+.profile-source-btn.is-active {
+  background: var(--color-accent);
+  color: var(--color-bg, #0a0a0a);
+}
+
+/* ── Avatar crop modal ─────────────────────────────────────────────
+   Same overlay pattern as search.js's search-backdrop: fixed, appended
+   to document.body, fade+scale on a visible-class toggle. */
+
+.avatar-crop-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(6, 6, 6, 0.6);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  opacity: 0;
+  transition: opacity 0.18s var(--ease-out);
+}
+
+.avatar-crop-backdrop--visible {
+  opacity: 1;
+}
+
+.avatar-crop-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 26px 28px 22px;
+  border-radius: 20px;
+  transform: scale(0.96);
+  transition: transform 0.2s var(--ease-spring, ease);
+}
+
+.avatar-crop-backdrop--visible .avatar-crop-panel {
+  transform: scale(1);
+}
+
+.avatar-crop-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.avatar-crop-viewport {
+  position: relative;
+  border-radius: 50%;
+  overflow: hidden;
+  cursor: grab;
+  touch-action: none;
+  background: rgba(255, 255, 255, 0.03);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 35%, transparent), 0 8px 30px -10px rgba(0, 0, 0, 0.6);
+}
+
+.avatar-crop-viewport:active {
+  cursor: grabbing;
+}
+
+.avatar-crop-img {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  max-width: none;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.avatar-crop-hint {
+  font-size: 11px;
+  color: var(--color-text-dim);
+  text-align: center;
+}
+
+.avatar-crop-zoom {
+  width: 220px;
+  accent-color: var(--color-accent);
+}
+
+.avatar-crop-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.avatar-crop-btn {
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 8px 18px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity 0.15s var(--ease-out), transform 0.1s var(--ease-out);
+}
+
+.avatar-crop-btn:active {
+  transform: scale(0.96);
+}
+
+.avatar-crop-btn--cancel {
+  background: color-mix(in srgb, var(--color-text) 8%, transparent);
+  color: var(--color-text-dim);
+}
+
+.avatar-crop-btn--cancel:hover {
+  color: var(--color-text);
+}
+
+.avatar-crop-btn--save {
+  background: var(--color-accent);
+  color: var(--color-bg, #0a0a0a);
+}
+
+.avatar-crop-btn--save:hover {
+  opacity: 0.9;
+}
+
+.profile-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 20px;
+  margin-bottom: 24px;
+}
+
+.profile-top-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 20px;
+  margin-bottom: 24px;
+}
+
+.profile-card {
+  padding: 20px 22px;
+  border-radius: var(--radius-lg, var(--radius-md));
+  border: 1px solid var(--color-border, rgba(255, 255, 255, 0.08));
+  background: var(--color-bg-surface, rgba(255, 255, 255, 0.03));
+}
+
+.profile-card-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-dim);
+  margin-bottom: 14px;
+}
+
+.profile-source-tag {
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  text-transform: none;
+  color: var(--color-accent);
+  background: rgba(var(--color-accent-rgb), 0.12);
+  border-radius: var(--radius-pill);
+  padding: 2px 8px;
+}
+
+.profile-card-main {
+  display: flex;
+  gap: 28px;
+}
+
+.profile-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.profile-stat-num {
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--color-text);
+  line-height: 1.1;
+}
+
+.profile-stat-label {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+}
+
+.profile-footnote {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--color-border, rgba(255, 255, 255, 0.06));
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--color-text-dim);
+}
+
+.profile-top-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.profile-top-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 13px;
+}
+
+.profile-top-name {
+  color: var(--color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profile-top-count {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-dim);
+  flex-shrink: 0;
+}
+
+.profile-top-empty {
+  font-size: 12px;
+  color: var(--color-text-dim);
+}
+
+.profile-lib-card {
+  padding: 0;
+  overflow: hidden;
+}
+
+.profile-lib-toggle {
+  width: 100%;
+  padding: 20px 22px;
+  margin: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  justify-content: space-between;
+}
+
+.profile-lib-toggle:hover { color: var(--color-text-secondary); }
+
+.profile-lib-chevron {
+  transition: transform 0.2s var(--ease-out, ease);
+}
+
+.profile-lib-toggle.is-open .profile-lib-chevron {
+  transform: rotate(180deg);
+}
+
+.profile-lib-content {
+  display: none;
+  padding: 0 22px 22px;
+}
+
+.profile-lib-content.is-open {
+  display: block;
+}
+
+.profile-lib-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.profile-lib-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.profile-lib-num {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.profile-lib-label {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+}
+
+.profile-lib-formats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.profile-lib-format-pill {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.03em;
+  color: var(--color-text-dim);
+  border: 1px solid var(--color-border, rgba(255, 255, 255, 0.1));
+  border-radius: var(--radius-pill);
+  padding: 4px 10px;
+}
+
+.profile-lib-empty {
+  font-size: 12px;
+  color: var(--color-text-dim);
+}

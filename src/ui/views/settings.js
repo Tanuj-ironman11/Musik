@@ -1,0 +1,592 @@
+// src/ui/views/settings.js
+// Settings tab. Sections are separated into their own render functions so
+// new prefs slot in without touching unrelated ones.
+
+window.MusikViews = window.MusikViews || {};
+
+// Shared with app.js. Broadcast via 'musik:layout-change' so an
+// already-open app.js instance updates live instead of needing a reload.
+const LAYOUT_MODE_KEY = 'musikLayoutMode';
+
+function getLayoutMode() {
+  return localStorage.getItem(LAYOUT_MODE_KEY) || 'dynamic';
+}
+function broadcastLayoutChange() {
+  window.dispatchEvent(new CustomEvent('musik:layout-change', {
+    detail: { mode: getLayoutMode() },
+  }));
+}
+
+// "Always on top" needs window.Musik.miniplayer.setAlwaysOnTop() —
+// preload.js/main.js don't expose it yet. Saves the pref, no visible
+// effect until that IPC surface exists.
+const MINI_ALWAYS_ON_TOP_KEY = 'musikMiniAlwaysOnTop';
+
+function getMiniAlwaysOnTop() {
+  return localStorage.getItem(MINI_ALWAYS_ON_TOP_KEY) !== 'false';
+}
+
+// Own Last.fm API key/secret. localStorage only — never written to a repo
+// file. Pushed into the main process via setCredentials() on change.
+const LASTFM_API_KEY_KEY = 'musikLastfmApiKey';
+const LASTFM_API_SECRET_KEY = 'musikLastfmApiSecret';
+
+function getStoredLastfmCreds() {
+  return {
+    apiKey: localStorage.getItem(LASTFM_API_KEY_KEY) || '',
+    apiSecret: localStorage.getItem(LASTFM_API_SECRET_KEY) || '',
+  };
+}
+
+function setStoredLastfmCreds(apiKey, apiSecret) {
+  if (apiKey) localStorage.setItem(LASTFM_API_KEY_KEY, apiKey);
+  else localStorage.removeItem(LASTFM_API_KEY_KEY);
+  if (apiSecret) localStorage.setItem(LASTFM_API_SECRET_KEY, apiSecret);
+  else localStorage.removeItem(LASTFM_API_SECRET_KEY);
+}
+
+async function syncLastfmCredsToMain() {
+  const { apiKey, apiSecret } = getStoredLastfmCreds();
+  if (!apiKey && !apiSecret) return;
+  await window.Musik?.scrobble?.setCredentials?.({ apiKey, apiSecret });
+}
+
+function layoutCardHTML(mode, title, desc) {
+  if (mode === 'topbar') {
+    return `
+      <button type="button" class="layout-card" data-nav-mode="${mode}">
+        <div class="layout-mock layout-mock--topbar">
+          <div class="layout-mock-bar">
+            <span class="layout-mock-dot"></span>
+            <span class="layout-mock-dot"></span>
+            <span class="layout-mock-dot"></span>
+            <span class="layout-mock-bar-spacer"></span>
+            <span class="layout-mock-pill"></span>
+          </div>
+          <div class="layout-mock-content layout-mock-content--full">
+            <span class="layout-mock-block"></span>
+            <span class="layout-mock-block"></span>
+          </div>
+        </div>
+        <span class="layout-card-title">${title}</span>
+        <span class="layout-card-desc">${desc}</span>
+      </button>
+    `;
+  }
+
+  const railClass = mode === 'pinned'
+    ? 'layout-mock-rail layout-mock-rail--expanded'
+    : 'layout-mock-rail layout-mock-rail--dynamic';
+
+  return `
+    <button type="button" class="layout-card" data-nav-mode="${mode}">
+      <div class="layout-mock">
+        <div class="${railClass}">
+          <span class="layout-mock-dot"></span>
+          <span class="layout-mock-dot"></span>
+          <span class="layout-mock-dot"></span>
+          ${mode === 'pinned' ? '<span class="layout-mock-line"></span><span class="layout-mock-line"></span><span class="layout-mock-line"></span>' : ''}
+        </div>
+        ${mode === 'dynamic' ? '<div class="layout-mock-hover-hint"></div>' : ''}
+        <div class="layout-mock-content">
+          <span class="layout-mock-block"></span>
+          <span class="layout-mock-block"></span>
+        </div>
+      </div>
+      <span class="layout-card-title">${title}</span>
+      <span class="layout-card-desc">${desc}</span>
+    </button>
+  `;
+}
+
+function formatRelativeTime(ms) {
+  if (!ms) return null;
+  const diff = Date.now() - ms;
+  const sec = Math.floor(diff / 1000);
+  if (sec < 60) return 'just now';
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min} minute${min === 1 ? '' : 's'} ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr} hour${hr === 1 ? '' : 's'} ago`;
+  const day = Math.floor(hr / 24);
+  if (day < 30) return `${day} day${day === 1 ? '' : 's'} ago`;
+  return new Date(ms).toLocaleDateString();
+}
+
+function lastfmApiCredsHTML() {
+  const { apiKey, apiSecret } = getStoredLastfmCreds();
+  return `
+    <div class="settings-row settings-row--stack">
+      <div class="settings-row-label">
+        <span class="settings-row-name">Your own API key (optional)</span>
+        <span class="settings-row-desc">Stored only in this browser's local storage, never written to a file on disk. Leave blank to use the shared default key.</span>
+      </div>
+      <div class="settings-row-control settings-row-control--inline">
+        <input type="password" id="settings-lastfm-apikey-input" placeholder="API key" autocomplete="off" spellcheck="false" value="${apiKey}" />
+        <input type="password" id="settings-lastfm-apisecret-input" placeholder="Shared secret" autocomplete="off" spellcheck="false" value="${apiSecret}" />
+        <button id="settings-lastfm-creds-save" class="btn">Save</button>
+        ${(apiKey || apiSecret) ? '<button id="settings-lastfm-creds-clear" class="btn btn--danger">Clear</button>' : ''}
+      </div>
+      <span id="settings-lastfm-creds-status" class="settings-row-desc" hidden></span>
+    </div>
+  `;
+}
+
+function lastfmSectionHTML(s) {
+  if (s.connected) {
+    const lastScrobbleText = formatRelativeTime(s.lastScrobbleAt);
+    return `
+      <div class="settings-row">
+        <div class="settings-row-label">
+          <span class="settings-row-name">Connected as ${s.username}</span>
+          <span class="settings-row-desc">${lastScrobbleText ? `Last scrobble: ${lastScrobbleText}` : 'No scrobbles yet.'}</span>
+        </div>
+        <div class="settings-row-control">
+          <button id="settings-lastfm-disconnect" class="btn btn--danger">Disconnect</button>
+        </div>
+      </div>
+      ${lastfmApiCredsHTML()}
+    `;
+  }
+
+  const { apiKey } = getStoredLastfmCreds();
+  const hasKey = !!apiKey;
+
+  return `
+    <div class="settings-row">
+      <div class="settings-row-label">
+        <span class="settings-row-name">Scrobbling</span>
+        <span class="settings-row-desc">${hasKey ? 'Connect your Last.fm account to scrobble plays automatically.' : 'Add your API key below first, then connect.'}</span>
+      </div>
+      <div class="settings-row-control">
+        <button id="settings-lastfm-connect" class="btn" ${hasKey ? '' : 'disabled'}>Connect</button>
+      </div>
+    </div>
+    <div class="settings-row settings-row--stack" id="settings-lastfm-token-row" hidden>
+      <div class="settings-row-label">
+        <span class="settings-row-name">Approved in your browser?</span>
+        <span class="settings-row-desc">Once you've clicked "Yes, Allow Access" on the Last.fm page, come back and confirm below.</span>
+      </div>
+      <div class="settings-row-control settings-row-control--inline">
+        <button id="settings-lastfm-token-submit" class="btn">I've approved it</button>
+      </div>
+      <span id="settings-lastfm-error" class="settings-row-error" hidden></span>
+    </div>
+    ${lastfmApiCredsHTML()}
+  `;
+}
+
+function modRowHTML(mod) {
+  return `
+    <div class="settings-row" data-mod-id="${mod.id}">
+      <div class="settings-row-label">
+        <span class="settings-row-name">${mod.name}</span>
+        <span class="settings-row-desc">v${mod.version} — ${mod.author}</span>
+      </div>
+      <div class="settings-row-control">
+        <input type="checkbox" class="settings-mod-toggle" data-mod-id="${mod.id}" ${mod.enabled ? 'checked' : ''} />
+      </div>
+    </div>
+  `;
+}
+
+async function refreshModsList() {
+  const listEl = document.getElementById('settings-mods-list');
+  if (!listEl) return;
+  const mods = (await window.Musik?.mods?.list?.()) ?? [];
+  listEl.innerHTML = mods.length
+    ? mods.map(modRowHTML).join('')
+    : '<div class="settings-row"><div class="settings-row-label"><span class="settings-row-desc">No mods found.</span></div></div>';
+
+  listEl.querySelectorAll('.settings-mod-toggle').forEach((toggle) => {
+    toggle.addEventListener('change', async (e) => {
+      await window.Musik?.mods?.setEnabled?.(e.target.dataset.modId, e.target.checked);
+    });
+  });
+}
+
+window.MusikViews['settings'] = async function renderSettings(main) {
+  const duckSettings = (await window.Musik?.gameDuck?.getSettings?.()) ?? { available: false, enabled: false, sensitivity: 0.5, duckCeiling: 0.4, maxDuck: 0.6 };
+  const scrobblerSettings = (await window.Musik?.scrobble?.getSettings?.()) ?? { connected: false, username: null, enabled: true, usingCustomApiKey: false, lastScrobbleAt: null };
+
+  main.innerHTML = `
+    <div class="settings-page">
+      <h1 class="settings-title">Settings</h1>
+
+      <section class="settings-section" id="settings-playback">
+        <h2 class="settings-section-title">Playback</h2>
+        <div class="settings-row">
+          <div class="settings-row-label">
+            <span class="settings-row-name">Default volume</span>
+            <span class="settings-row-desc">Volume applied on launch, before you touch the slider.</span>
+          </div>
+          <div class="settings-row-control">
+            <input type="range" id="settings-default-volume" min="0" max="100"
+              value="${Math.round((window.MusikPlayerUI?.getVolume?.() ?? 1) * 100)}" />
+            <span id="settings-default-volume-value" class="settings-row-value"></span>
+          </div>
+        </div>
+      </section>
+
+      <section class="settings-section" id="settings-layout">
+        <h2 class="settings-section-title">Layout</h2>
+        <div class="settings-row settings-row--stack">
+          <div class="settings-row-label">
+            <span class="settings-row-name">Navigation</span>
+            <span class="settings-row-desc">Choose how the sidebar behaves — or turn it into a top bar.</span>
+          </div>
+        </div>
+        <div class="layout-grid" id="layout-nav-grid">
+          ${layoutCardHTML('dynamic', 'Dynamic', 'Hidden until you hover the edge.')}
+          ${layoutCardHTML('pinned', 'Pinned', 'Sidebar stays expanded, always visible.')}
+          ${layoutCardHTML('topbar', 'Top Bar', 'Sidebar becomes a bar across the top.')}
+        </div>
+      </section>
+
+      <section class="settings-section" id="settings-miniplayer">
+        <h2 class="settings-section-title">Miniplayer</h2>
+        <div class="settings-row">
+          <div class="settings-row-label">
+            <span class="settings-row-name">Always on top</span>
+            <span class="settings-row-desc">Keep the miniplayer floating above other windows. Off = it behaves like a normal window.</span>
+          </div>
+          <div class="settings-row-control">
+            <input type="checkbox" id="settings-mini-always-on-top" ${getMiniAlwaysOnTop() ? 'checked' : ''} />
+          </div>
+        </div>
+      </section>
+
+      <section class="settings-section" id="settings-library">
+        <h2 class="settings-section-title">Library</h2>
+        <div class="settings-row">
+          <div class="settings-row-label">
+            <span class="settings-row-name">Auto-rescan</span>
+            <span class="settings-row-desc">Automatically rescans all watched folders on launch and on this interval. Set to Off to only scan manually.</span>
+          </div>
+          <div class="settings-row-control">
+            <select id="settings-rescan-interval">
+              <option value="0">Off</option>
+              <option value="15">Every 15 min</option>
+              <option value="30">Every 30 min</option>
+              <option value="60">Every 60 min</option>
+            </select>
+          </div>
+        </div>
+        <div class="settings-row">
+          <div class="settings-row-label">
+            <span class="settings-row-name">Rescan now</span>
+            <span class="settings-row-desc">Force an immediate rescan of all watched folders.</span>
+          </div>
+          <div class="settings-row-control">
+            <button type="button" id="settings-rescan-now" class="btn">Rescan library</button>
+            <span id="settings-rescan-status" class="settings-row-value"></span>
+          </div>
+        </div>
+      </section>
+
+      <section class="settings-section" id="settings-mods">
+        <h2 class="settings-section-title">Mods</h2>
+        <div class="settings-row">
+          <div class="settings-row-label">
+            <span class="settings-row-name">Installed mods</span>
+            <span class="settings-row-desc">Drop mod folders into the mods directory, then rescan.</span>
+          </div>
+          <div class="settings-row-control">
+            <button type="button" id="settings-mods-open-folder" class="btn">Open mods folder</button>
+            <button type="button" id="settings-mods-rescan" class="btn">Rescan mods</button>
+          </div>
+        </div>
+        <div id="settings-mods-list"></div>
+      </section>
+
+      <section class="settings-section" id="settings-game-mode">
+        <h2 class="settings-section-title">Game mode</h2>
+        ${!duckSettings.available ? `
+          <div class="settings-row">
+            <div class="settings-row-label">
+              <span class="settings-row-name">Reactive volume ducking</span>
+              <span class="settings-row-desc">Not available on this platform (Windows only).</span>
+            </div>
+          </div>
+        ` : `
+          <div class="settings-row">
+            <div class="settings-row-label">
+              <span class="settings-row-name">Reactive volume ducking</span>
+              <span class="settings-row-desc">Automatically lowers Musik's volume when system audio (games, etc.) gets loud. Ctrl+Shift+D to override anytime.</span>
+            </div>
+            <div class="settings-row-control">
+              <input type="checkbox" id="settings-duck-enabled" ${duckSettings.enabled ? 'checked' : ''} />
+            </div>
+          </div>
+          <div class="settings-row">
+            <div class="settings-row-label">
+              <span class="settings-row-name">Sensitivity</span>
+              <span class="settings-row-desc">Higher = ducks at quieter system audio.</span>
+            </div>
+            <div class="settings-row-control">
+              <input type="range" id="settings-duck-sensitivity" min="0" max="100"
+                value="${Math.round(duckSettings.sensitivity * 100)}" />
+              <span id="settings-duck-sensitivity-value" class="settings-row-value"></span>
+            </div>
+          </div>
+          <div class="settings-row">
+            <div class="settings-row-label">
+              <span class="settings-row-name">Duck ceiling</span>
+              <span class="settings-row-desc">System audio level treated as "fully loud." Real game audio rarely peaks near 100% — lower this if ducking feels too weak, raise it if it's ducking on quiet sounds.</span>
+            </div>
+            <div class="settings-row-control">
+              <input type="range" id="settings-duck-ceiling" min="1" max="100"
+                value="${Math.round(duckSettings.duckCeiling * 100)}" />
+              <span id="settings-duck-ceiling-value" class="settings-row-value"></span>
+            </div>
+          </div>
+          <div class="settings-row">
+            <div class="settings-row-label">
+              <span class="settings-row-name">Max duck amount</span>
+              <span class="settings-row-desc">How much volume gets removed at peak system audio.</span>
+            </div>
+            <div class="settings-row-control">
+              <input type="range" id="settings-duck-max" min="0" max="100"
+                value="${Math.round(duckSettings.maxDuck * 100)}" />
+              <span id="settings-duck-max-value" class="settings-row-value"></span>
+            </div>
+          </div>
+          <div class="settings-row" id="settings-duck-meter-row">
+            <div class="settings-row-label">
+              <span class="settings-row-name">Live meter</span>
+              <span class="settings-row-desc">Play something loud in another app to test. Only updates while ducking is enabled.</span>
+            </div>
+            <div class="settings-row-control settings-row-control--inline">
+              <span id="settings-duck-meter-level" class="settings-row-value">level: —</span>
+              <span id="settings-duck-meter-mult" class="settings-row-value">volume: —</span>
+            </div>
+          </div>
+        `}
+      </section>
+
+      <section class="settings-section" id="settings-scrobbling">
+        <h2 class="settings-section-title">Last.fm</h2>
+        ${lastfmSectionHTML(scrobblerSettings)}
+      </section>
+
+      <section class="settings-section" id="settings-debug">
+        <h2 class="settings-section-title">Debug</h2>
+        <div class="settings-row">
+          <div class="settings-row-label">
+            <span class="settings-row-name">System check</span>
+            <span class="settings-row-desc">Bridge status, manual file playback test.</span>
+          </div>
+          <div class="settings-row-control">
+            <button id="settings-open-system-check" class="btn">Open</button>
+          </div>
+        </div>
+      </section>
+    </div>
+  `;
+
+  const volumeSlider = document.getElementById('settings-default-volume');
+  const volumeValue = document.getElementById('settings-default-volume-value');
+
+  function paintVolumeValue() {
+    volumeValue.textContent = `${volumeSlider.value}%`;
+  }
+  paintVolumeValue();
+
+  volumeSlider.addEventListener('input', () => {
+    paintVolumeValue();
+    window.MusikPlayerUI?.setVolume?.(Number(volumeSlider.value) / 100);
+  });
+
+  document.getElementById('settings-open-system-check').addEventListener('click', () => {
+    location.hash = '#/system-check';
+  });
+
+  document.getElementById('settings-mini-always-on-top').addEventListener('change', (e) => {
+    localStorage.setItem(MINI_ALWAYS_ON_TOP_KEY, String(e.target.checked));
+    window.Musik?.miniplayer?.setAlwaysOnTop?.(e.target.checked);
+  });
+
+  const rescanIntervalSelect = document.getElementById('settings-rescan-interval');
+  const rescanNowBtn = document.getElementById('settings-rescan-now');
+  const rescanStatus = document.getElementById('settings-rescan-status');
+
+  window.Musik?.library?.getRescanSettings?.().then((settings) => {
+    if (settings && rescanIntervalSelect) {
+      rescanIntervalSelect.value = String(settings.intervalMinutes ?? 0);
+    }
+  });
+
+  rescanIntervalSelect?.addEventListener('change', () => {
+    window.Musik?.library?.setRescanInterval?.(Number(rescanIntervalSelect.value));
+  });
+
+  rescanNowBtn?.addEventListener('click', async () => {
+    rescanNowBtn.disabled = true;
+    rescanStatus.textContent = 'Scanning…';
+    try {
+      await window.Musik?.library?.rescanAll?.();
+      rescanStatus.textContent = 'Done';
+    } catch (err) {
+      rescanStatus.textContent = 'Failed';
+      console.warn('[Musik] rescan failed:', err);
+    } finally {
+      rescanNowBtn.disabled = false;
+      setTimeout(() => { rescanStatus.textContent = ''; }, 3000);
+    }
+  });
+
+  const navGrid = document.getElementById('layout-nav-grid');
+
+  function paintNavActive() {
+    const current = getLayoutMode();
+    navGrid.querySelectorAll('.layout-card').forEach((card) => {
+      card.classList.toggle('layout-card--active', card.dataset.navMode === current);
+    });
+  }
+  paintNavActive();
+
+  navGrid.querySelectorAll('.layout-card').forEach((card) => {
+    card.addEventListener('click', () => {
+      localStorage.setItem(LAYOUT_MODE_KEY, card.dataset.navMode);
+      paintNavActive();
+      broadcastLayoutChange();
+    });
+  });
+
+  if (duckSettings.available) {
+    document.getElementById('settings-duck-enabled').addEventListener('change', (e) => {
+      window.Musik?.gameDuck?.setEnabled?.(e.target.checked);
+    });
+
+    const sensSlider = document.getElementById('settings-duck-sensitivity');
+    const sensValue = document.getElementById('settings-duck-sensitivity-value');
+    const paintSens = () => { sensValue.textContent = `${sensSlider.value}%`; };
+    paintSens();
+    sensSlider.addEventListener('input', () => {
+      paintSens();
+      window.Musik?.gameDuck?.setSensitivity?.(Number(sensSlider.value) / 100);
+    });
+
+    const ceilingSlider = document.getElementById('settings-duck-ceiling');
+    const ceilingValue = document.getElementById('settings-duck-ceiling-value');
+    const paintCeiling = () => { ceilingValue.textContent = `${ceilingSlider.value}%`; };
+    paintCeiling();
+    ceilingSlider.addEventListener('input', () => {
+      paintCeiling();
+      window.Musik?.gameDuck?.setDuckCeiling?.(Number(ceilingSlider.value) / 100);
+    });
+
+    const maxSlider = document.getElementById('settings-duck-max');
+    const maxValue = document.getElementById('settings-duck-max-value');
+    const paintMax = () => { maxValue.textContent = `${maxSlider.value}%`; };
+    paintMax();
+    maxSlider.addEventListener('input', () => {
+      paintMax();
+      window.Musik?.gameDuck?.setMaxDuck?.(Number(maxSlider.value) / 100);
+    });
+
+    // 'duckdebug' — main.js/game-duck.js don't emit this yet; row stays at "—" until they do.
+    const meterLevel = document.getElementById('settings-duck-meter-level');
+    const meterMult = document.getElementById('settings-duck-meter-mult');
+    window.Musik?.events?.on?.('duckdebug', ({ level, smoothed }) => {
+      if (meterLevel) meterLevel.textContent = `level: ${Math.round(level * 100)}%`;
+      if (meterMult) meterMult.textContent = `volume: ${Math.round(smoothed * 100)}%`;
+    });
+  }
+
+  await refreshModsList();
+  document.getElementById('settings-mods-rescan').addEventListener('click', refreshModsList);
+  document.getElementById('settings-mods-open-folder').addEventListener('click', () => {
+    window.Musik?.mods?.openFolder?.();
+  });
+
+  await syncLastfmCredsToMain();
+  bindLastfmSection(main);
+};
+
+async function refreshLastfmSection() {
+  const section = document.getElementById('settings-scrobbling');
+  if (!section) return;
+  const settings = (await window.Musik?.scrobble?.getSettings?.()) ?? { connected: false };
+  section.innerHTML = `<h2 class="settings-section-title">Last.fm</h2>${lastfmSectionHTML(settings)}`;
+  bindLastfmSection(document);
+}
+
+function bindLastfmSection(scope) {
+  const connectBtn = scope.querySelector('#settings-lastfm-connect');
+  const disconnectBtn = scope.querySelector('#settings-lastfm-disconnect');
+  const tokenRow = scope.querySelector('#settings-lastfm-token-row');
+  const tokenSubmit = scope.querySelector('#settings-lastfm-token-submit');
+  const errorEl = scope.querySelector('#settings-lastfm-error');
+
+  function showError(msg) {
+    if (!errorEl) return;
+    errorEl.textContent = msg;
+    errorEl.hidden = false;
+  }
+
+  connectBtn?.addEventListener('click', async () => {
+    connectBtn.disabled = true;
+    try {
+      const url = await window.Musik?.scrobble?.getAuthUrl?.();
+      if (!url) return;
+      window.Musik?.system?.openExternal?.(url);
+      tokenRow.hidden = false;
+    } finally {
+      connectBtn.disabled = false;
+    }
+  });
+
+  tokenSubmit?.addEventListener('click', async () => {
+    tokenSubmit.disabled = true;
+    tokenSubmit.textContent = 'Connecting…';
+    try {
+      await window.Musik?.scrobble?.completeAuth?.();
+      await refreshLastfmSection();
+    } catch (err) {
+      showError(err?.message || 'Couldn\'t connect — make sure you approved access, then try again.');
+      tokenSubmit.disabled = false;
+      tokenSubmit.textContent = "I've approved it";
+    }
+  });
+
+  disconnectBtn?.addEventListener('click', async () => {
+    disconnectBtn.disabled = true;
+    await window.Musik?.scrobble?.disconnect?.();
+    await refreshLastfmSection();
+  });
+
+  const apiKeyInput = scope.querySelector('#settings-lastfm-apikey-input');
+  const apiSecretInput = scope.querySelector('#settings-lastfm-apisecret-input');
+  const credsSaveBtn = scope.querySelector('#settings-lastfm-creds-save');
+  const credsClearBtn = scope.querySelector('#settings-lastfm-creds-clear');
+  const credsStatus = scope.querySelector('#settings-lastfm-creds-status');
+
+  function showCredsStatus(msg) {
+    if (!credsStatus) return;
+    credsStatus.textContent = msg;
+    credsStatus.hidden = false;
+  }
+
+  credsSaveBtn?.addEventListener('click', async () => {
+    const apiKey = apiKeyInput?.value.trim() || '';
+    const apiSecret = apiSecretInput?.value.trim() || '';
+    setStoredLastfmCreds(apiKey, apiSecret);
+    credsSaveBtn.disabled = true;
+    credsSaveBtn.textContent = 'Saving…';
+    try {
+      await window.Musik?.scrobble?.setCredentials?.({ apiKey: apiKey || '', apiSecret: apiSecret || '' });
+      showCredsStatus('Saved to this browser only.');
+    } finally {
+      credsSaveBtn.disabled = false;
+      credsSaveBtn.textContent = 'Save';
+      await refreshLastfmSection();
+    }
+  });
+
+  credsClearBtn?.addEventListener('click', async () => {
+    setStoredLastfmCreds('', '');
+    await window.Musik?.scrobble?.setCredentials?.({ apiKey: '', apiSecret: '' });
+    await refreshLastfmSection();
+  });
+}

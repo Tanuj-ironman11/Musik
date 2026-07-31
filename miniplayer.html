@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>Musik Mini</title>
+  <link rel="stylesheet" href="src/styles/tokens.css" />
+  <link rel="stylesheet" href="src/styles/player-bar.css" />
+  <link rel="stylesheet" href="src/styles/animations.css" />
+</head>
+<body data-window="miniplayer">
+  <div id="mp-root">
+
+    <div class="mp-art-frame">
+      <div class="pb-art-wrap">
+        <img id="mp-art" class="pb-art" alt="" hidden />
+        <div id="mp-art-placeholder" class="pb-art--placeholder"></div>
+      </div>
+    </div>
+
+    <div class="pb-text">
+      <p id="mp-title" class="pb-title">Nothing playing</p>
+      <p id="mp-artist" class="pb-artist"></p>
+    </div>
+
+    <div class="pb-controls">
+      <button id="mp-prev" class="pb-btn" aria-label="Previous">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zM20 6L9 12l11 6z"/></svg>
+      </button>
+      <button id="mp-playpause" class="pb-btn-play" aria-label="Play/Pause">
+        <svg class="pb-icon-play" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+        <svg class="pb-icon-pause" viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>
+      </button>
+      <button id="mp-next" class="pb-btn" aria-label="Next">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 6h2v12h-2zM4 6l11 6-11 6z"/></svg>
+      </button>
+      <!-- Reuses the real player bar's #pb-queue-toggle id on purpose — that's
+           what the wave-kick animation in animations.css is scoped to. -->
+      <button id="pb-queue-toggle" class="pb-btn" aria-label="Queue" aria-pressed="false">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line class="q-line-1" x1="4" y1="7" x2="20" y2="7"/>
+          <line class="q-line-2" x1="4" y1="12" x2="20" y2="12"/>
+          <line class="q-line-3" x1="4" y1="17" x2="14" y2="17"/>
+          <path class="q-arrow" d="M17 15l3 2-3 2"/>
+        </svg>
+      </button>
+    </div>
+
+    <div class="pb-progress-row">
+      <div id="mp-progress" class="mp-progress-track"></div>
+    </div>
+
+    <div id="mp-queue-panel" class="mp-queue-panel" hidden>
+      <ul id="mp-queue-list" class="queue-list"></ul>
+    </div>
+  </div>
+
+  <!-- accent-extractor.js only depends on window.Musik.events 'artupdate',
+       which this window already receives via push() from the main window's
+       player-ui.js. Running it here too gives the miniplayer its own live
+       accent computation with zero new IPC/events. -->
+  <script src="src/ui/accent-extractor.js"></script>
+  <script src="src/ui/miniplayer-ui.js"></script>
+</body>
+</html>

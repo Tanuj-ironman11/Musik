@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta
+    http-equiv="Content-Security-Policy"
+    content="default-src 'self' file: data: blob:;
+             script-src 'self' file: 'unsafe-inline' 'unsafe-eval';
+             style-src 'self' file: 'unsafe-inline';
+             img-src 'self' file: data: blob: https:;
+             media-src 'self' file: blob:;
+             connect-src 'self' https: http:;
+             font-src 'self' file: data:;"
+  />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="color-scheme" content="dark" />
+  <title>Musik</title>
+
+  <!-- CSS role-separated: do not merge these -->
+  <link rel="stylesheet" href="src/styles/components.css" />
+  <link rel="stylesheet" href="src/styles/component/marquee.css" />
+
+  <!-- Mod CSS is injected here at runtime by the mod loader -->
+  <style id="mod-css-injection-point"></style>
+</head>
+<body>
+  <div id="app-bg" aria-hidden="true"></div>
+  <div id="titlebar"></div>
+  <div id="app">
+    <div id="sidebar"></div>
+    <div id="main"></div>
+    <div id="now-playing-bar"></div>
+  </div>
+
+  <!-- Mod injection point for elements added via window.Musik.ui.injectElement -->
+  <div id="mod-root"></div>
+
+  <!--
+    IMPORTANT: src/core/*.js (audio-engine.js, library.js, art-extractor.js,
+    art-fetcher.js, mod-loader.js, queue-manager.js, lyrics.js, scrobbler.js)
+    are CommonJS main-process modules (module.exports, require('fs'), etc).
+    They are loaded via require() inside main.js and talked to ONLY through
+    the window.Musik / window.Aurelius IPC bridge from preload.js.
+
+    They must NEVER be added here as <script src> tags. With
+    contextIsolation on and nodeIntegration off, `module` is undefined in
+    the renderer, so any core/*.js file loaded this way throws immediately
+    and silently kills every script tag after it in load order — which is
+    why player-ui.js previously never ran.
+
+    Renderer-side scripts only below.
+  -->
+  <script src="src/ui/titlebar.js"></script>
+  <script src="src/ui/dialog.js"></script>
+  <script src="src/ui/context-menu.js"></script>
+  <script src="src/ui/marquee.js"></script>
+  <script src="src/ui/views/home.js"></script>
+  <script src="src/ui/views/library.js"></script>
+  <script src="src/ui/views/system-check.js"></script>
+  <script src="src/ui/views/settings.js"></script>
+  <script src="src/ui/views/profile.js"></script>
+  <script src="src/ui/app.js"></script>
+  <script src="src/ui/player-ui.js"></script>
+  <script src="src/ui/media-session.js"></script>
+  <script src="src/ui/fullscreen.js"></script>
+  <script src="src/ui/accent-extractor.js"></script>
+  <script src="src/ui/player-bar.js"></script>
+  <script src="src/ui/queue-panel.js"></script>
+  <script src="src/ui/search.js"></script>
+
+</body>
+</html>

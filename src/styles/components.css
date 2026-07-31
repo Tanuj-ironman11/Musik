@@ -1,0 +1,19 @@
+/* src/styles/components.css
+ *
+ * Entry point — index.html links only this file. */
+
+@import url('./tokens.css');
+@import url('./titlebar.css');
+@import url('./shell.css');
+@import url('./navigation.css');
+@import url('./player-bar.css');
+@import url('./queue.css');
+@import url('./library.css');
+@import url('./home.css');
+@import url('./settings.css');
+@import url('./fullscreen.css');
+@import url('./animations.css');
+@import url('./track-actions.css');
+@import url('./profile.css');
+@import url('./navigation.css');
+@import url('./search-overlay.css');

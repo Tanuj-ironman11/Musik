@@ -1,0 +1,154 @@
+/* styles/titlebar.css
+   Custom frameless-window titlebar — drag region, app name, and the
+   window control dots built by titlebar.js.
+
+   Redo pass — previous version was flat/cheap: mac dots jiggled height
+   on hover instead of blooming in place, windows controls were plain
+   flush squares with no breathing room, and the app name had no visual
+   anchor. Same markup/class hooks as before, titlebar.js untouched. */
+
+#titlebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--titlebar-height, 40px);
+  z-index: 10300; /* above everything, including the search overlay */
+  display: flex;
+  align-items: center;
+  -webkit-app-region: drag;
+  background: color-mix(in srgb, var(--color-bg-surface, #111) 90%, transparent);
+  border-bottom: 1px solid var(--color-border, rgba(255, 255, 255, 0.07));
+  backdrop-filter: blur(22px) saturate(1.25);
+  -webkit-backdrop-filter: blur(22px) saturate(1.25);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
+  user-select: none;
+}
+
+.titlebar-drag-region {
+  position: absolute;
+  inset: 0;
+  -webkit-app-region: drag;
+}
+
+/* Small accent-colored mark to the left of the name, so the titlebar has
+   a visual anchor instead of just floating text. Pure CSS, no new markup. */
+#titlebar-app-name {
+  position: relative; /* sits above the drag region layer */
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-text-dim);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  pointer-events: none;
+}
+
+#titlebar-app-name::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-accent, #8fd3ff);
+  box-shadow: 0 0 6px 1px color-mix(in srgb, var(--color-accent, #8fd3ff) 60%, transparent);
+  flex-shrink: 0;
+}
+
+.window-controls {
+  position: relative;
+  display: flex;
+  align-items: center;
+  -webkit-app-region: no-drag; /* buttons must be clickable, not draggable */
+}
+
+.control-dot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  transition: background 0.14s var(--ease-out, ease), transform 0.14s var(--ease-out, ease);
+}
+
+.control-icon {
+  width: 8px;
+  height: 8px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.12s var(--ease-out, ease);
+}
+
+/* ── Windows layout: pill buttons with breathing room, right-aligned ── */
+.platform-win #titlebar-app-name {
+  margin-left: 14px;
+}
+.platform-win .window-controls {
+  margin-left: auto;
+  height: 100%;
+  padding-right: 6px;
+  gap: 2px;
+}
+.platform-win .control-dot {
+  width: 42px;
+  height: 30px;
+  border-radius: var(--radius-sm, 6px);
+  color: var(--color-text-dim);
+}
+.platform-win .control-dot .control-icon {
+  width: 10px;
+  height: 10px;
+  color: currentColor;
+  opacity: 0.85;
+}
+.platform-win .control-dot:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--color-text);
+}
+.platform-win .control-dot:hover .control-icon {
+  opacity: 1;
+}
+.platform-win .control-dot:active {
+  transform: scale(0.94);
+}
+.platform-win .control-dot.close:hover {
+  background: #e81123;
+  color: #fff;
+}
+
+/* ── Mac layout: traffic-light dots, left-aligned ────────────────────
+   Dots stay a fixed 12px circle at all times — no height jiggle on
+   hover. The "bloom" is a soft outer ring (box-shadow) plus a gentle
+   scale, and the glyph fades in via opacity rather than a color trick. */
+.platform-mac #titlebar-app-name {
+  margin: 0 auto; /* center the title between the left dots and right edge */
+  padding-right: 68px; /* offset for the dot cluster so the name still
+                           reads visually centered in the free space */
+}
+.platform-mac .window-controls {
+  order: -1; /* dots render before the (visually reordered) title */
+  margin-left: 14px;
+  gap: 8px;
+}
+.platform-mac .control-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #4d4d4d; /* gray by default */
+  color: rgba(0, 0, 0, 0.55);
+}
+.platform-mac .control-dot:hover {
+  transform: scale(1.12);
+  box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 18%, transparent);
+}
+.platform-mac .control-dot:hover .control-icon {
+  opacity: 1;
+}
+.platform-mac .control-dot:active {
+  transform: scale(0.94);
+}
+.platform-mac .control-dot.close:hover { background: #ff5f57; }
+.platform-mac .control-dot.minimize:hover { background: #febc2e; }
+.platform-mac .control-dot.maximize:hover { background: #28c840; }

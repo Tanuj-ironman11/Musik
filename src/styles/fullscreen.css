@@ -1,0 +1,538 @@
+/* Fullscreen Now Playing overlay.
+   Keyframes at the bottom belong in animations.css per the CSS role-
+   separation rule — move them, then delete this block.
+   --app-scale is set on :root by app.js (0.82–1.18, centered on 1280px). */
+
+#now-playing-fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: var(--color-bg, #060606);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--npf-exit-dur, 240ms) cubic-bezier(0.4, 0, 1, 1);
+}
+
+#now-playing-fullscreen::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at center, rgba(0, 0, 0, 0.12) 0%, rgba(0, 0, 0, 0.72) 100%);
+  z-index: 1;
+  pointer-events: none;
+}
+
+#now-playing-fullscreen.is-open {
+  opacity: 1;
+  pointer-events: auto;
+  transition-duration: var(--npf-enter-dur, 460ms);
+  transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+#npf-bg-art {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+  filter: blur(64px) saturate(1.6);
+  opacity: 0;
+  transform: scale(1.22);
+  pointer-events: none;
+  z-index: 0;
+  transition: opacity var(--npf-exit-dur, 240ms) ease;
+}
+
+#now-playing-fullscreen.is-open #npf-bg-art {
+  opacity: 0.45;
+  transition: opacity var(--npf-enter-dur, 460ms) ease;
+  animation: npf-ken-burns 18s ease-in-out infinite alternate;
+}
+
+.npf-topbar,
+#npf-media-area,
+.npf-info,
+#npf-transport {
+  opacity: 0;
+  transform: translateY(16px);
+  transition: opacity var(--npf-exit-dur, 240ms) ease,
+              transform var(--npf-exit-dur, 240ms) ease;
+}
+
+#now-playing-fullscreen.is-open .npf-topbar,
+#now-playing-fullscreen.is-open #npf-media-area,
+#now-playing-fullscreen.is-open .npf-info,
+#now-playing-fullscreen.is-open #npf-transport {
+  opacity: 1;
+  transform: translateY(0);
+  transition-duration: var(--npf-enter-dur, 460ms);
+  transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+#now-playing-fullscreen.is-open .npf-topbar      { transition-delay: 0.02s; }
+#now-playing-fullscreen.is-open #npf-media-area  { transition-delay: 0.07s; }
+#now-playing-fullscreen.is-open .npf-info        { transition-delay: 0.13s; }
+#now-playing-fullscreen.is-open #npf-transport   { transition-delay: 0.19s; }
+
+#npf-art {
+  transform: scale(0.86);
+  filter: blur(6px);
+  transition: transform var(--npf-exit-dur, 240ms) ease,
+              filter var(--npf-exit-dur, 240ms) ease;
+}
+#now-playing-fullscreen.is-open #npf-art {
+  transform: scale(1);
+  filter: blur(0);
+  transition-duration: var(--npf-enter-dur, 460ms);
+  transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+  transition-delay: 0.07s;
+}
+
+/* Closing: kill the stagger, snap back together fast. */
+#now-playing-fullscreen.is-closing .npf-topbar,
+#now-playing-fullscreen.is-closing #npf-media-area,
+#now-playing-fullscreen.is-closing .npf-info,
+#now-playing-fullscreen.is-closing #npf-transport,
+#now-playing-fullscreen.is-closing #npf-art {
+  transition-delay: 0s !important;
+  transition-duration: var(--npf-exit-dur, 240ms) !important;
+  transition-timing-function: cubic-bezier(0.4, 0, 1, 1) !important;
+}
+#now-playing-fullscreen.is-closing #npf-media-area {
+  transform: translateY(8px) scale(0.96);
+}
+
+.npf-topbar {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  padding: 16px 24px 0;
+  gap: 12px;
+}
+
+.npf-topbar-spacer { width: 36px; flex-shrink: 0; }
+
+.npf-topbar-title {
+  flex: 1;
+  text-align: center;
+  font-size: calc(12px * var(--app-scale, 1));
+  font-family: var(--font-mono);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.35);
+}
+
+.npf-topbar-btn {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  color: rgba(255, 255, 255, 0.45);
+  transition: color 0.15s, background 0.15s;
+  flex-shrink: 0;
+}
+.npf-topbar-btn:hover { color: #fff; background: rgba(255, 255, 255, 0.07); }
+
+.npf-layout {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  height: calc(100% - 60px);
+  display: grid;
+  grid-template-rows: 1fr auto;
+  grid-template-columns: 1fr;
+  overflow: hidden;
+  padding: 0 clamp(24px, 5vw, 72px);
+}
+
+@media (min-width: 700px) and (min-height: 500px) {
+  .npf-layout {
+    grid-template-rows: 1fr auto;
+    grid-template-columns: 1fr 1fr;
+    grid-template-areas:
+      "media   info"
+      "controls controls";
+    align-items: center;
+    column-gap: clamp(32px, 5vw, 72px);
+  }
+
+  #npf-media-area { grid-area: media; justify-self: center; }
+  .npf-info       { grid-area: info; text-align: left; align-items: flex-start; }
+  #npf-transport  { grid-area: controls; }
+}
+
+#npf-media-area {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+}
+
+#npf-art-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#npf-art-wrap::before {
+  content: '';
+  position: absolute;
+  inset: -10%;
+  border-radius: var(--radius-lg, 12px);
+  background: radial-gradient(circle, rgba(var(--color-accent-rgb), 0.28) 0%, transparent 70%);
+  filter: blur(28px);
+  z-index: -1;
+  opacity: 0;
+  transition: opacity var(--npf-enter-dur, 460ms) ease 0.1s;
+}
+#now-playing-fullscreen.is-open #npf-art-wrap::before {
+  opacity: 1;
+  animation: npf-glow-pulse 4.5s ease-in-out infinite;
+}
+
+#npf-art {
+  width: clamp(220px, calc(36vmin * var(--app-scale, 1)), 480px);
+  height: clamp(220px, calc(36vmin * var(--app-scale, 1)), 480px);
+  border-radius: var(--radius-lg, 12px);
+  box-shadow: 0 32px 80px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+}
+
+#npf-art.pb-art--placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-bg-surface, #161616);
+}
+
+#npf-art .placeholder-note-icon {
+  width: 72px;
+  height: 72px;
+  fill: rgba(var(--color-accent-rgb), 0.25);
+}
+
+.npf-info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  min-width: 0;
+  overflow: hidden;
+  padding: clamp(16px, 3vh, 32px) 0;
+}
+
+#npf-title {
+  font-size: clamp(26px, calc(4vw * var(--app-scale, 1)), 56px);
+  font-weight: 700;
+  color: var(--color-text);
+  margin: 0 0 6px;
+  line-height: 1.1;
+  letter-spacing: -0.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+#npf-artist {
+  font-size: clamp(15px, calc(2vw * var(--app-scale, 1)), 24px);
+  color: var(--color-text-secondary);
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+#npf-lyrics-toggle.is-active { color: var(--color-accent); background: rgba(var(--color-accent-rgb), 0.12); }
+
+#npf-lyrics-panel {
+  width: 100%;
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  transition: max-height 0.36s var(--ease-spring, cubic-bezier(0.34,1.56,0.64,1)), opacity 0.24s ease;
+}
+
+.npf-info--lyrics-open #npf-lyrics-panel {
+  max-height: min(50vh, 480px);
+  opacity: 1;
+  margin-top: 18px;
+}
+
+#npf-lyrics-toolbar {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.npf-info .npf-info--lyrics-open #npf-lyrics-toolbar,
+.npf-info--lyrics-open #npf-lyrics-toolbar { justify-content: flex-start; }
+
+.npf-lyrics-chip {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 20px;
+  color: rgba(255, 255, 255, 0.55);
+  padding: 6px 13px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+.npf-lyrics-chip:hover { color: #fff; border-color: rgba(255, 255, 255, 0.18); }
+.npf-lyrics-chip.active { color: var(--color-accent); border-color: rgba(var(--color-accent-rgb), 0.4); background: rgba(var(--color-accent-rgb), 0.1); }
+.npf-lyrics-chip--ghost { background: transparent; }
+.npf-lyrics-chip--accent {
+  background: var(--color-accent);
+  border-color: transparent;
+  color: #000;
+}
+.npf-lyrics-chip--accent:hover { color: #000; background: color-mix(in srgb, var(--color-accent) 85%, #fff); }
+
+#npf-lyrics-scroll {
+  max-height: min(40vh, 380px);
+  overflow-y: auto;
+  padding: 10px 2px;
+  mask-image: linear-gradient(to bottom, transparent 0%, black 10%, black 88%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 10%, black 88%, transparent 100%);
+}
+#npf-lyrics-scroll::-webkit-scrollbar { display: none; }
+
+.npf-lyrics-status {
+  font-size: 13px;
+  font-family: var(--font-mono);
+  color: rgba(255, 255, 255, 0.32);
+  letter-spacing: 0.03em;
+}
+.npf-lyrics-status .npf-lyrics-chip { margin-left: 4px; }
+
+.npf-lyric-line {
+  font-size: clamp(15px, calc(1.7vw * var(--app-scale, 1)), 22px);
+  font-weight: 700;
+  line-height: 1.6;
+  color: rgba(255, 255, 255, 0.22);
+  margin: 0;
+  padding: 6px 0;
+  transform: scale(0.97);
+  transform-origin: left center;
+  transition: transform 0.3s var(--ease-spring, cubic-bezier(0.34,1.56,0.64,1)), color 0.3s ease, text-shadow 0.3s ease;
+}
+
+.npf-lyric-line.npf-lyric-active {
+  color: #fff;
+  transform: scale(1.04);
+  text-shadow: 0 0 12px rgba(var(--color-accent-rgb), 0.5), 0 0 30px rgba(var(--color-accent-rgb), 0.22);
+}
+
+.npf-lyric-plain {
+  font-size: clamp(14px, calc(1.5vw * var(--app-scale, 1)), 18px);
+  line-height: 1.85;
+  color: rgba(255, 255, 255, 0.72);
+  white-space: pre-wrap;
+  margin: 0;
+}
+.npf-lyric-unsynced { color: rgba(255, 255, 255, 0.55); }
+
+#npf-lyrics-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+/* [hidden] loses to the ID selector above on specificity — force it. */
+#npf-lyrics-editor[hidden] {
+  display: none;
+}
+
+#npf-lyrics-textarea {
+  width: 100%;
+  min-height: 180px;
+  resize: vertical;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.6;
+  padding: 12px;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+#npf-lyrics-textarea:focus { border-color: rgba(var(--color-accent-rgb), 0.5); }
+
+#npf-lyrics-editor-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.npf-lyrics-editor-spacer { flex: 1; }
+
+#npf-transport {
+  display: flex;
+  flex-direction: column;
+  gap: clamp(14px, 3vh, 28px);
+  padding: clamp(16px, 3vh, 36px) 0 clamp(20px, 4vh, 48px);
+}
+
+#npf-progress-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.npf-time {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-dim);
+  font-weight: 500;
+  min-width: 36px;
+  text-align: center;
+}
+
+#npf-progress {
+  flex: 1;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 3px;
+  border-radius: var(--radius-pill, 999px);
+  outline: none;
+  cursor: pointer;
+  background: linear-gradient(
+    to right,
+    rgba(var(--color-accent-rgb), 0.8) 0%,
+    rgba(var(--color-accent-rgb), 0.8) var(--progress, 0%),
+    rgba(255, 255, 255, 0.08) var(--progress, 0%),
+    rgba(255, 255, 255, 0.08) 100%
+  );
+  transition: height 0.18s ease;
+}
+#npf-progress:hover { height: 5px; }
+
+#npf-progress::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--color-accent);
+  cursor: pointer;
+  box-shadow: 0 0 12px var(--color-accent-glow);
+  transition: transform 0.15s ease;
+}
+#npf-progress::-webkit-slider-thumb:hover { transform: scale(1.3); }
+
+#npf-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(16px, 3vw, 40px);
+}
+
+.npf-btn {
+  background: none;
+  color: rgba(255, 255, 255, 0.4);
+  width: clamp(36px, 5vw, 52px);
+  height: clamp(36px, 5vw, 52px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: color 0.15s ease, transform 0.12s ease, background 0.15s ease;
+  flex-shrink: 0;
+}
+.npf-btn:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.06);
+  transform: scale(1.1);
+}
+.npf-btn:active { transform: scale(0.91); }
+
+.npf-play-btn {
+  position: relative;
+  background: var(--color-accent);
+  color: #000;
+  width: clamp(60px, calc(8vmin * var(--app-scale, 1)), 96px);
+  height: clamp(60px, calc(8vmin * var(--app-scale, 1)), 96px);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 12px 40px var(--color-accent-glow);
+  transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+  flex-shrink: 0;
+}
+.npf-play-btn:hover {
+  transform: scale(1.07);
+  box-shadow: 0 16px 56px rgba(var(--color-accent-rgb), 0.45);
+  background: color-mix(in srgb, var(--color-accent) 85%, #fff);
+}
+.npf-play-btn:active { transform: scale(0.95); }
+.npf-play-btn svg { fill: #000; }
+
+.npf-play-btn .npf-icon-pause { display: none; }
+.npf-play-btn.is-playing .npf-icon-play { display: none; }
+.npf-play-btn.is-playing .npf-icon-pause { display: block; }
+
+.npf-play-btn::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  box-shadow: 0 0 0 0 rgba(var(--color-accent-rgb), 0.5);
+  opacity: 0;
+}
+.npf-play-btn.is-playing::after {
+  opacity: 1;
+  animation: npf-play-ring 2.2s ease-out infinite;
+}
+
+.npf-icon-kick { animation: npf-icon-kick 0.32s ease; }
+
+@media (max-width: 700px), (max-height: 500px) {
+  .npf-layout {
+    grid-template-columns: 1fr !important;
+    grid-template-rows: auto auto auto !important;
+    grid-template-areas:
+      "media"
+      "info"
+      "controls" !important;
+  }
+
+  .npf-info { text-align: center; align-items: center; }
+}
+
+#now-playing-fullscreen {
+  --npf-enter-dur: 460ms;
+  --npf-exit-dur: 220ms;
+}
+
+/* Flagged for relocation to animations.css */
+
+@keyframes npf-icon-kick {
+  0%   { transform: scale(1); }
+  35%  { transform: scale(1.22); }
+  100% { transform: scale(1); }
+}
+
+@keyframes npf-ken-burns {
+  0%   { transform: scale(1.22) translate(0, 0); }
+  100% { transform: scale(1.32) translate(-1.5%, -1%); }
+}
+
+@keyframes npf-glow-pulse {
+  0%, 100% { transform: scale(1);   opacity: 0.85; }
+  50%      { transform: scale(1.08); opacity: 1; }
+}
+
+@keyframes npf-play-ring {
+  0%   { box-shadow: 0 0 0 0 rgba(var(--color-accent-rgb), 0.45); }
+  100% { box-shadow: 0 0 0 18px rgba(var(--color-accent-rgb), 0); }
+}

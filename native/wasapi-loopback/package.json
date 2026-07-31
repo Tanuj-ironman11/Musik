@@ -1,0 +1,21 @@
+{
+  "name": "wasapi-loopback",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Native addon: Windows WASAPI loopback capture for game-audio ducking",
+  "main": "index.js",
+  "gypfile": true,
+  "os": [
+    "win32"
+  ],
+  "scripts": {
+    "build": "node-gyp rebuild",
+    "rebuild": "node-gyp rebuild"
+  },
+  "dependencies": {
+    "node-addon-api": "^8.0.0"
+  },
+  "devDependencies": {
+    "node-gyp": "^10.0.0"
+  }
+}

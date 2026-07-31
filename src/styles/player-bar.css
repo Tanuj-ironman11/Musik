@@ -1,0 +1,840 @@
+/* component/player-bar.css — extracted from: layouts.css, playback.css */
+
+/* Player bar */
+#now-playing-bar {
+  position: fixed;
+  bottom: 16px;
+  left: calc(var(--sidebar-width-collapsed) + 32px);
+  width: calc(100% - var(--sidebar-width-collapsed) - 48px);
+  height: var(--player-bar-height);
+  z-index: 10000;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0) 40%),
+    rgba(14, 14, 14, 0.38);
+  backdrop-filter: blur(18px) saturate(1.4);
+  -webkit-backdrop-filter: blur(18px) saturate(1.4);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 22px;
+  box-shadow:
+    var(--player-shadow),
+    0 0 0 1px rgba(255, 255, 255, 0.03) inset,
+    0 0 60px -20px var(--color-accent-glow);
+  overflow: hidden;
+  opacity: 1;
+  transition:
+    box-shadow 0.4s var(--ease-out),
+    transform 0.4s var(--ease-spring),
+    border-color 0.4s var(--ease-out),
+    left 0.32s var(--ease-spring),
+    width 0.32s var(--ease-spring),
+    opacity 0.26s var(--ease-out);
+}
+
+/* Fullscreen Now Playing is up — player bar slides down out of view.
+   Slightly longer delay than the sidebar so the exit reads as a
+   sequence (titlebar → sidebar → player bar) rather than everything
+   vanishing in one flat cut. */
+body.npf-open #now-playing-bar {
+  transform: translateY(calc(100% + 32px));
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    transform 0.34s var(--ease-out) 0.06s,
+    opacity 0.22s var(--ease-out) 0.06s;
+}
+
+/* Player bar no longer shifts on hover-expand — see pinned-state rules
+   below for the opt-in push behavior. */
+#now-playing-bar::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 8%; right: 8%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.35), transparent);
+  pointer-events: none;
+}
+
+#now-playing-bar:hover {
+  border-color: rgba(255, 255, 255, 0.16);
+  box-shadow:
+    var(--player-shadow),
+    0 0 0 1px rgba(255, 255, 255, 0.04) inset,
+    0 0 80px -16px var(--color-accent-glow);
+}
+
+body[data-active-view="now-playing"] #now-playing-bar {
+  transform: translateY(140%);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* ─── 3. Cards & Covers ─── */
+.pb-art-wrap {
+  position: relative;
+  width: 52px;
+  height: 52px;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  flex-shrink: 0;
+  background: var(--color-bg-surface);
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.06), 0 4px 16px -6px var(--color-accent-glow);
+}
+
+.pb-art-wrap::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-md);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.07);
+  pointer-events: none;
+}
+
+.pb-art { width: 100%; height: 100%; object-fit: cover; }
+
+.pb-art--placeholder {
+  width: 100%; height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, rgba(var(--color-accent-rgb),0.08), var(--color-bg-surface));
+}
+
+.pb-title {
+  color: var(--color-text);
+  font-weight: 600;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin: 0 0 2px;
+  line-height: 1.3;
+}
+
+.pb-artist {
+  color: var(--color-text-secondary);
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin: 0;
+}
+
+.pb-fullscreen-btn {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0,0,0,0.5);
+  opacity: 0;
+  border-radius: var(--radius-md);
+  transition: opacity var(--anim-fast, 0.15s) var(--anim-ease, ease), background var(--anim-fast, 0.15s) var(--anim-ease, ease);
+  cursor: pointer;
+}
+
+.pb-art-wrap:hover .pb-fullscreen-btn { opacity: 1; }
+
+.pb-fullscreen-btn:hover { background: rgba(0,0,0,0.65); }
+
+.pb-fullscreen-btn:active {
+  background: rgba(0,0,0,0.8);
+}
+
+.pb-fullscreen-btn:active svg {
+  transform: scale(0.85);
+}
+
+.pb-fullscreen-btn svg {
+  transition: transform var(--anim-fast, 0.15s) var(--anim-ease, ease);
+}
+
+.pb-artist:hover { color: var(--color-text); cursor: pointer; }
+
+/* ── Left: track info ── */
+.pb-track-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.pb-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+}
+
+/* ── Center: transport controls + progress ── */
+.pb-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-width: 0;
+  width: 100%;
+}
+
+.pb-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.pb-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: color var(--anim-fast, 0.15s) var(--anim-ease, ease), background var(--anim-fast, 0.15s) var(--anim-ease, ease), box-shadow 0.2s var(--anim-ease, ease), transform var(--anim-fast, 0.15s) var(--anim-ease, ease);
+}
+
+.pb-btn svg { width: 16px; height: 16px; flex-shrink: 0; }
+
+.pb-btn:hover {
+  color: var(--color-text);
+  background: var(--color-accent-dim);
+  box-shadow: 0 0 0 1px var(--color-accent-subtle), 0 0 12px var(--color-accent-glow);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+/* Had hover but nothing acknowledged an actual click — prev/next/shuffle/
+   repeat all felt unresponsive compared to the play button next to them.
+   0.88 was too subtle to register as a "press" on a rapid click; 0.8 plus
+   a tighter glow ring gives it an actual thud, closer in weight to what
+   pb-btn-play already does. */
+.pb-btn:active {
+  transform: scale(0.8);
+  background: var(--color-accent-subtle);
+  box-shadow: 0 0 0 3px var(--color-accent-subtle);
+}
+
+/* Toggle-style pb-btns (shuffle/repeat) use aria-pressed rather than a
+   separate class — give the active state a visible accent so it's clear
+   the toggle is actually on, not just hovered. */
+.pb-btn[aria-pressed="true"] {
+  color: var(--color-accent);
+  background: var(--color-accent-subtle);
+}
+
+.pb-btn-play {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: var(--color-text);
+  color: var(--color-bg);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: transform 0.22s var(--ease-spring), background var(--anim-fast, 0.15s) var(--anim-ease, ease), box-shadow 0.2s var(--anim-ease, ease);
+}
+
+/* Both icons are always in the DOM now, stacked on top of each other,
+   positioned absolutely so they share the same center. .is-playing
+   (toggled in player-bar.js) cross-fades between them with a slight
+   rotation on each — reads as one icon morphing into the other rather
+   than a hard cut between two separate glyphs. */
+.pb-btn-play svg {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  transition: transform 0.28s var(--ease-spring), opacity 0.2s var(--ease-out);
+}
+
+.pb-icon-play {
+  opacity: 1;
+  transform: scale(1) rotate(0deg);
+}
+
+.pb-btn-play.is-playing .pb-icon-play {
+  opacity: 0;
+  transform: scale(0.5) rotate(35deg);
+}
+
+.pb-icon-pause {
+  opacity: 0;
+  transform: scale(0.5) rotate(-35deg);
+}
+
+.pb-btn-play.is-playing .pb-icon-pause {
+  opacity: 1;
+  transform: scale(1) rotate(0deg);
+}
+
+.pb-btn-play:hover {
+  transform: scale(1.1);
+  box-shadow:
+    0 0 0 7px var(--color-accent-dim),
+    0 0 22px var(--color-accent-glow),
+    0 4px 14px rgba(0, 0, 0, 0.25);
+}
+
+/* Old version scaled to 0.94 — barely registered as a press. This is an
+   actual compression: button drops further (0.8) than the icon inside it
+   (0.7), then the spring easing above overshoots slightly on release
+   rather than just snapping back, which is what makes a press feel like
+   it "landed" instead of just toggling a size. Active-state icon scale
+   is layered on top of whichever transform .is-playing already set. */
+.pb-btn-play:active {
+  transform: scale(0.8);
+  box-shadow:
+    0 0 0 4px var(--color-accent-subtle),
+    0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
+.pb-btn-play:active .pb-icon-play { transform: scale(0.35) rotate(0deg); }
+
+.pb-btn-play.is-playing:active .pb-icon-pause { transform: scale(0.7) rotate(0deg); }
+
+/* Click ripple — spawned/removed by player-bar.js on click. Clipped to
+   the button's circular bounds via overflow:hidden on .pb-btn/.pb-btn-play. */
+.pb-ripple {
+  position: absolute;
+  border-radius: 50%;
+  background: currentColor;
+  pointer-events: none;
+  will-change: transform, opacity;
+}
+
+/* .pb-btn-play's currentColor is --color-bg (dark icon on a light circle) —
+   a ripple in that color would barely show. Accent reads clearly against
+   the button's light fill instead. */
+.pb-btn-play .pb-ripple {
+  background: var(--color-accent);
+}
+
+#pb-queue-toggle.pb-queue-kick .q-line-1 {
+  animation: pb-queue-wave 0.4s var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1)) 0s;
+}
+
+#pb-queue-toggle.pb-queue-kick .q-line-2 {
+  animation: pb-queue-wave 0.4s var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1)) 0.055s;
+}
+
+#pb-queue-toggle.pb-queue-kick .q-line-3 {
+  animation: pb-queue-wave 0.4s var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1)) 0.11s;
+}
+
+#pb-queue-toggle.pb-queue-kick .q-arrow {
+  animation: pb-queue-arrow-nudge 0.4s var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1)) 0.11s;
+}
+
+.pb-progress-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  max-width: 520px;
+}
+
+.pb-time {
+  flex-shrink: 0;
+  width: 34px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-dim);
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.pb-progress {
+  flex: 1;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(
+    to right,
+    var(--color-accent) 0%,
+    var(--color-accent) var(--progress, 0%),
+    rgba(255, 255, 255, 0.12) var(--progress, 0%),
+    rgba(255, 255, 255, 0.12) 100%
+  );
+  cursor: pointer;
+  outline: none;
+}
+
+.pb-progress::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--color-text);
+  box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.3);
+  opacity: 0;
+  transition: opacity var(--anim-fast, 0.15s) var(--anim-ease, ease);
+  cursor: pointer;
+}
+
+.pb-progress::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border: none;
+  border-radius: 50%;
+  background: var(--color-text);
+  opacity: 0;
+  transition: opacity var(--anim-fast, 0.15s) var(--anim-ease, ease);
+  cursor: pointer;
+}
+
+.pb-progress::-moz-range-track {
+  height: 4px;
+  border-radius: 2px;
+  background: transparent;
+}
+
+.pb-progress-row:hover .pb-progress::-webkit-slider-thumb,
+.pb-progress:focus-visible::-webkit-slider-thumb { opacity: 1; }
+
+.pb-progress-row:hover .pb-progress::-moz-range-thumb,
+.pb-progress:focus-visible::-moz-range-thumb { opacity: 1; }
+
+/* ── Right: queue toggle + volume ── */
+.pb-right {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 14px;
+  min-width: 0;
+}
+
+.pb-volume-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-dim);
+  flex-shrink: 0;
+}
+
+.pb-volume-leds {
+  flex-shrink: 0;
+}
+
+/* ── Volume slider — deliberately NOT glass. A thin hover-only thumb on
+   a flat line read as unfinished; this is a proper filled track with an
+   always-visible thumb, closer to the Windows volume flyout than the
+   seek bar's minimal hover treatment. ── */
+.pb-volume-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 90px;
+  flex: none;
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(
+    to right,
+    var(--color-accent) 0%,
+    var(--color-accent) var(--progress, 100%),
+    rgba(255, 255, 255, 0.14) var(--progress, 100%),
+    rgba(255, 255, 255, 0.14) 100%
+  );
+  cursor: pointer;
+  outline: none;
+  transition: height 0.15s var(--ease-out);
+}
+
+.pb-volume-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--color-text);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  cursor: pointer;
+  transition: transform 0.15s var(--ease-out);
+}
+
+.pb-volume-slider::-moz-range-thumb {
+  width: 11px;
+  height: 11px;
+  border: none;
+  border-radius: 50%;
+  background: var(--color-text);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  cursor: pointer;
+  transition: transform 0.15s var(--ease-out);
+}
+
+.pb-volume-slider::-moz-range-track {
+  height: 4px;
+  border-radius: 2px;
+  background: transparent;
+}
+
+.pb-volume-slider:hover {
+  height: 6px;
+}
+
+.pb-volume-slider:hover::-webkit-slider-thumb,
+.pb-volume-slider:focus-visible::-webkit-slider-thumb { transform: scale(1.15); }
+
+.pb-volume-slider:hover::-moz-range-thumb,
+.pb-volume-slider:focus-visible::-moz-range-thumb { transform: scale(1.15); }
+
+#player-bar {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  grid-template-columns: 1fr 1.6fr 1fr;
+  align-items: center;
+  padding: 0 24px;
+  gap: 20px;
+}
+
+/* Queue toggle: previously shared pb-btn's generic hover/active with no
+   animation of its own — prev/next got the carousel kick, play got the
+   morph, this got nothing, then got a whole-icon pop which read too much
+   like a generic bounce. This version treats the three bars as a queue
+   themselves: a wave passes through them left-to-right with a per-line
+   stagger and each bar compresses/snaps like an accordion, distinct from
+   the carousel's horizontal exit/re-enter and the play button's morph.
+   Keyframes (pb-queue-wave / pb-queue-arrow-nudge) live in animations.css. */
+#pb-queue-toggle svg {
+  transition: color var(--anim-fast, 0.15s) var(--anim-ease, ease);
+}
+
+/* Panel-open state: same visual language as the existing aria-pressed
+   rule (shuffle/repeat), so "queue is open" reads the same way those do. */
+#pb-queue-toggle[aria-pressed="true"] {
+  color: var(--color-accent);
+  background: var(--color-accent-subtle);
+}
+
+/* Miniplayer toggle — same family as pb-queue-toggle (base .pb-btn hover/
+   active already covers most of it), aria-pressed reflects whether the
+   miniplayer window is currently open. Kick animation is pb-mini-kick,
+   defined in animations.css. */
+#pb-miniplayer-toggle[aria-pressed="true"] {
+  color: var(--color-accent);
+  background: var(--color-accent-subtle);
+}
+
+#np-meta {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--color-text-dim);
+  margin-top: 14px;
+  letter-spacing: 0.3px;
+}
+
+
+/* ─── Miniplayer window ───
+   Reuses pb-art-wrap/pb-art/pb-title/pb-artist/pb-btn/pb-btn-play/
+   pb-controls/pb-progress-row as-is. Genuinely new pieces below: the
+   window's own background (this is a separate transparent BrowserWindow
+   with nothing behind it worth blurring, so a real semi-opaque fill +
+   border stands in for backdrop-filter here rather than depending on
+   .glass-surface, which assumes being layered over other app content),
+   the art-sizing frame, and the inline queue popup. #pb-queue-toggle
+   keeps its real id so it inherits the existing wave-kick animation
+   above instead of needing a duplicate. */
+
+/* Window itself has square corners by default (transparent BrowserWindow) —
+   #mp-root being rounded isn't enough, the frame behind it shows through
+   the corner gaps. Round + clip at the html/body level too.
+   Plain selector, not :has() — a silent no-match here means the whole
+   rounding is skipped with no visible error. Also zero out the browser's
+   default 8px body margin: left unset, that margin sits outside #mp-root's
+   own radius/overflow, inside html's box, showing as an unclipped square
+   sliver at each corner regardless of the radius below. */
+html,
+body[data-window="miniplayer"] {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  border-radius: 18px;
+  overflow: hidden;
+}
+
+#mp-root {
+  width: 100%;
+  height: 100%;
+  padding: 12px 14px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0) 40%),
+    rgba(14, 14, 14, 0.86);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow:
+    0 8px 32px -8px rgba(0, 0, 0, 0.6),
+    0 0 0 1px rgba(255, 255, 255, 0.03) inset;
+  overflow: hidden;
+  -webkit-app-region: drag;
+}
+
+#mp-root .pb-controls,
+#mp-root .pb-progress-row,
+#mp-root #mp-queue-panel,
+#mp-root .mp-art-frame {
+  -webkit-app-region: no-drag;
+}
+
+/* Art sizes off whichever axis is tighter — bounded by max-height AND
+   max-width at once, so widening the window without adding height can't
+   balloon it, and it never grows past what's actually left over after
+   text/controls/progress take their space. */
+.mp-art-frame {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#mp-root .pb-art-wrap {
+  width: auto;
+  height: 100%;
+  max-width: 100%;
+  aspect-ratio: 1 / 1;
+}
+
+/* Was object-fit: contain so no part of the cover got cropped, but any
+   non-square art then left a letterboxed gap around the image — small
+   enough to be invisible at the player bar's 52px size, but as the
+   miniplayer's art frame grows that gap widens into a visible gray
+   boundary between the image and the wrap's rounded edge. Filling the
+   frame removes the gap entirely; corners stay clean at every size. */
+#mp-root .pb-art {
+  object-fit: cover;
+}
+
+#mp-root .pb-art-wrap {
+  background: transparent;
+}
+
+/* The wrap's hover ring (box-shadow + ::after inset shadow) is sized for
+   the tiny 52px player-bar art. At miniplayer scale it read as a stray
+   gray border sitting outside the image's rounded corners — drop it here. */
+#mp-root .pb-art-wrap {
+  box-shadow: none;
+}
+
+#mp-root .pb-art-wrap::after {
+  content: none;
+}
+
+#mp-root .pb-text,
+#mp-root .pb-controls,
+#mp-root .pb-progress-row {
+  flex-shrink: 0;
+}
+
+#mp-root .pb-text {
+  text-align: center;
+}
+
+.mp-progress-track {
+  width: 100%;
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(
+    to right,
+    var(--color-accent) 0%,
+    var(--color-accent) var(--progress, 0%),
+    rgba(255, 255, 255, 0.12) var(--progress, 0%),
+    rgba(255, 255, 255, 0.12) 100%
+  );
+}
+
+.mp-queue-panel {
+  margin-top: 4px;
+  padding: 8px;
+  overflow-y: auto;
+  flex: 1 1 auto;
+  min-height: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.mp-queue-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.mp-queue-item,
+.mp-queue-empty {
+  padding: 6px 8px;
+  border-radius: var(--radius-md);
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mp-queue-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background var(--anim-fast, 0.15s) var(--anim-ease, ease), color var(--anim-fast, 0.15s) var(--anim-ease, ease), border-color var(--anim-fast, 0.15s) var(--anim-ease, ease);
+}
+
+.mp-queue-item-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mp-queue-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity var(--anim-fast, 0.15s) var(--anim-ease, ease);
+}
+
+.mp-queue-item:hover .mp-queue-item-actions {
+  opacity: 1;
+}
+
+.mp-queue-item-btn {
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  line-height: 1;
+  color: var(--color-text-dim);
+  transition: background var(--anim-fast, 0.15s) var(--anim-ease, ease), color var(--anim-fast, 0.15s) var(--anim-ease, ease);
+}
+
+.mp-queue-item-btn:hover {
+  background: var(--color-accent-subtle);
+  color: var(--color-text);
+}
+
+.mp-queue-item-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.mp-queue-item-btn:disabled:hover {
+  background: transparent;
+  color: var(--color-text-dim);
+}
+
+.mp-queue-item-btn--remove:hover {
+  background: rgba(var(--color-danger-rgb), 0.15);
+  color: var(--color-danger);
+}
+
+/* Drag handle — replaces the old up/down arrow buttons. Grab cursor signals
+   draggability; the li itself carries `draggable`, but dragstart bails out
+   unless it originated on this handle (see miniplayer-ui.js), so clicking
+   the label/remove button never accidentally starts a drag. */
+.mp-queue-item-handle {
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-dim);
+  cursor: grab;
+  transition: background var(--anim-fast, 0.15s) var(--anim-ease, ease), color var(--anim-fast, 0.15s) var(--anim-ease, ease);
+}
+
+.mp-queue-item-handle:hover {
+  background: var(--color-accent-subtle);
+  color: var(--color-text);
+}
+
+.mp-queue-item-handle:active {
+  cursor: grabbing;
+}
+
+.mp-queue-item-handle svg {
+  width: 12px;
+  height: 12px;
+  pointer-events: none;
+}
+
+.mp-queue-item--dragging {
+  opacity: 0.4;
+}
+
+/* Drop position indicator — a thin accent line on whichever edge of the
+   hovered row the dragged item would land on. */
+.mp-queue-item--drop-before {
+  box-shadow: inset 0 2px 0 var(--color-accent);
+}
+
+.mp-queue-item--drop-after {
+  box-shadow: inset 0 -2px 0 var(--color-accent);
+}
+
+.mp-queue-item:hover {
+  background: var(--color-accent-subtle);
+  color: var(--color-text);
+  border-color: var(--glass-border-color);
+}
+
+/* Currently-playing track — set via .mp-queue-item--active in
+   miniplayer-ui.js's renderQueue(), matched against currentFilePath. */
+.mp-queue-item--active {
+  background: var(--color-accent-subtle);
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+  font-weight: 600;
+}
+
+.mp-queue-empty {
+  color: var(--color-text-dim);
+  text-align: center;
+  cursor: default;
+}
+
+/* Height threshold: below this, art gets cut entirely so controls
+   always keep their room, no matter how short the window gets. */
+#mp-root.mp-no-art .mp-art-frame {
+  display: none;
+}
+
+/* Width threshold: below this, title/artist drop since there's no
+   room for text next to the controls without wrapping/clipping badly. */
+#mp-root.mp-no-text .pb-text {
+  display: none;
+}

@@ -1,0 +1,383 @@
+/* styles/search-overlay.css */
+
+/* Full-screen scrim behind the panel. Blur ramps in via a class toggle
+   rather than being present at 0 opacity, since backdrop-filter blur
+   is expensive to animate at full strength on an inset:0 element. */
+.search-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10200;
+  background: rgba(6, 6, 6, 0.55);
+  backdrop-filter: blur(0px);
+  -webkit-backdrop-filter: blur(0px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s var(--ease-out), backdrop-filter 0.24s var(--ease-out);
+}
+
+.search-backdrop--visible {
+  opacity: 1;
+  pointer-events: auto;
+  backdrop-filter: blur(14px) saturate(1.3);
+  -webkit-backdrop-filter: blur(14px) saturate(1.3);
+}
+
+/* Panel floats top-center, not full-screen. Backdrop finishes its fade
+   a hair before the panel finishes scaling in (backdrop: 0.2s, panel:
+   0.26s) so there's no felt lag between "background reacts" and "panel
+   lands". */
+.search-overlay {
+  position: fixed;
+  top: 15%;
+  left: 50%;
+  width: min(660px, 90vw);
+  max-height: 60vh;
+  transform: translate(-50%, -8px) scale(0.96);
+  opacity: 0;
+  pointer-events: none;
+  z-index: 10210;
+  transition: transform 0.26s var(--ease-spring), opacity 0.2s var(--ease-out);
+}
+
+.search-overlay--visible {
+  transform: translate(-50%, 0) scale(1);
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.search-panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  max-height: 60vh;
+  border-radius: 20px;
+  overflow: hidden;
+  /* Normal UI typeface, not the monospace terminal font. Not relying on
+     a project --font-* var here since it was the mono var that caused
+     the terminal look in the first place — this stack is explicit. */
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
+}
+
+/* Corner registration marks, matching the rest of the app's visual
+   language instead of reading as a bolted-on generic modal. */
+.search-panel-corner {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid color-mix(in srgb, var(--color-accent) 55%, transparent);
+  opacity: 0.8;
+  pointer-events: none;
+}
+.search-panel-corner--tl { top: 8px; left: 8px; border-right: none; border-bottom: none; }
+.search-panel-corner--tr { top: 8px; right: 8px; border-left: none; border-bottom: none; }
+.search-panel-corner--bl { bottom: 8px; left: 8px; border-right: none; border-top: none; }
+.search-panel-corner--br { bottom: 8px; right: 8px; border-left: none; border-top: none; }
+
+.search-input-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 18px 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  flex-shrink: 0;
+}
+
+.search-input-icon {
+  width: 18px;
+  height: 18px;
+  color: var(--color-text-dim);
+  flex-shrink: 0;
+}
+
+.search-input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--color-text);
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 500;
+  caret-color: var(--color-accent);
+}
+
+.search-input::placeholder {
+  color: var(--color-text-dim);
+  font-weight: 400;
+}
+
+.search-esc-hint {
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--color-text-dim);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--radius-sm);
+  padding: 2px 6px;
+  flex-shrink: 0;
+}
+
+.search-results {
+  overflow-y: auto;
+  padding: 8px 8px 12px;
+}
+
+.search-empty-hint {
+  padding: 24px 10px;
+  text-align: center;
+  color: var(--color-text-dim);
+  font-size: 13px;
+}
+
+.search-dym-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--color-accent);
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.search-dym-btn:hover {
+  opacity: 0.8;
+}
+
+/* Used briefly by closeInstant() (search.js) so a result-selection close
+   skips the normal fade instead of visibly overlapping the page swap. */
+.search-overlay--no-transition {
+  transition: none !important;
+}
+
+/* Staggered entrance per row via animation-delay set inline as
+   --row-delay (see search.js) — rows animate in as you type instead of
+   snap-replacing. Single flat list now, ranked by match quality across
+   all result types, with a colored tag identifying the type instead of
+   grouping rows under section headers. */
+.search-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  opacity: 0;
+  transform: translateY(4px);
+  animation: search-row-in 0.18s var(--ease-out) forwards;
+  animation-delay: var(--row-delay, 0ms);
+}
+
+@keyframes search-row-in {
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.search-tag {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 3px 7px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.search-tag--track {
+  color: #8fd3ff;
+  background: rgba(143, 211, 255, 0.14);
+}
+.search-tag--artist {
+  color: #c9a4ff;
+  background: rgba(201, 164, 255, 0.14);
+}
+.search-tag--album {
+  color: #ffcf8f;
+  background: rgba(255, 207, 143, 0.14);
+}
+.search-tag--playlist {
+  color: #8fffb0;
+  background: rgba(143, 255, 176, 0.14);
+}
+
+.search-row-text {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+.search-row-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.search-row-sub {
+  font-size: 12px;
+  color: var(--color-text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex-shrink: 1;
+}
+
+.search-row:hover,
+.search-row--active {
+  background: var(--color-accent-dim);
+}
+
+.search-row:active {
+  background: var(--color-accent-subtle);
+  transform: scale(0.99);
+}
+
+/* ── Persistent topbar search bar (all tabs) ─────────────────────────
+   Fixed, appended to document.body by search.js's injectTopbarTrigger —
+   see that function's comment for the positioning caveat re: sidebar
+   width var. Visually a big pill "input" but is actually a button; it
+   only ever opens the real overlay, never accepts text itself, so there's
+   one source of truth for search state instead of two inputs to keep
+   in sync. */
+.global-search-bar {
+  position: fixed;
+  /* Was a flat 18px from the viewport top, which put it directly under
+     the custom titlebar/tab-strip (frameless window chrome isn't part
+     of document flow, so this element has no natural way to know it
+     exists). --titlebar-height is expected to be set globally wherever
+     the titlebar itself is sized; 40px fallback matches a typical
+     Windows custom-titlebar + tab-strip stack until that var is
+     confirmed to exist. If it turns out layouts.css already defines
+     this under a different name, swap it in here instead of adding a
+     second competing var. */
+  top: calc(var(--titlebar-height, 40px) + 12px);
+  /* Was spanning the entire content area edge-to-edge (way too wide).
+     Now a fixed, centered pill within the content area (viewport minus
+     the sidebar), same idea as .search-overlay's own min(660px, 90vw)
+     but smaller since this is a resting affordance, not the active panel. */
+  left: calc(
+    var(--sidebar-width-collapsed, 76px) +
+    (100vw - var(--sidebar-width-collapsed, 76px)) / 2
+  );
+  transform: translateX(-50%);
+  width: min(420px, 60vw);
+  height: 46px;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 18px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border, rgba(255, 255, 255, 0.08));
+  background: color-mix(in srgb, var(--color-bg-surface, #111) 88%, transparent);
+  backdrop-filter: blur(16px) saturate(1.2);
+  -webkit-backdrop-filter: blur(16px) saturate(1.2);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 6px 20px -12px rgba(0, 0, 0, 0.5);
+  cursor: pointer;
+  color: var(--color-text-dim);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
+  transition: opacity 0.2s var(--ease-out), border-color 0.18s var(--ease-out), transform 0.15s var(--ease-out);
+}
+
+.global-search-bar:hover {
+  border-color: var(--color-accent-subtle);
+  color: var(--color-text);
+}
+
+.global-search-bar:active {
+  transform: translateX(-50%) scale(0.995);
+}
+
+.global-search-bar-icon {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+.global-search-bar-placeholder {
+  flex: 1;
+  text-align: left;
+  font-size: 14px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.global-search-bar-hint {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: var(--color-text-dim);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--radius-sm);
+  padding: 3px 6px;
+  line-height: 1;
+}
+
+/* One-shot "handoff" punch on click — the bar visibly compresses toward
+   the overlay's origin point right as the morph transition kicks off,
+   instead of just sitting there while something else happens elsewhere. */
+.global-search-bar--handoff {
+  animation: global-search-bar-handoff 0.16s var(--ease-out) forwards;
+}
+
+@keyframes global-search-bar-handoff {
+  0%   { transform: translateX(-50%) scale(1); opacity: 1; }
+  100% { transform: translateX(-50%) scale(0.98); opacity: 0; }
+}
+
+/* Ghost element that actually travels from the bar's screen position to
+   the overlay's resting position — see playMorphGhost() in search.js.
+   Sits between the backdrop (10200) and the overlay itself (10210) so it
+   reads as "the bar becoming the panel" rather than a separate object. */
+.search-morph-ghost {
+  position: fixed;
+  z-index: 10205;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-bg-surface, #111) 88%, transparent);
+  border: 1px solid var(--color-border, rgba(255, 255, 255, 0.08));
+  backdrop-filter: blur(16px) saturate(1.2);
+  -webkit-backdrop-filter: blur(16px) saturate(1.2);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 6px 20px -12px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+}
+
+/* Fade out while the big overlay is open — avoids two search affordances
+   competing for attention at once, and it's what's "underneath" the
+   overlay conceptually. */
+body.search-open .global-search-bar {
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+/* Sidebar recedes very slightly the instant search opens — a visual
+   handoff cue from sidebar to overlay. Deliberately NOT the same blur
+   treatment as the backdrop; just a couple percent of opacity. */
+body.search-open #sidebar {
+  opacity: 0.97;
+  transition: opacity 0.15s var(--ease-out);
+}
+
+/* Tiny settle bounce on the page underneath when the overlay closes. */
+body.search-closing-settle #main {
+  animation: search-page-settle 0.26s var(--ease-out);
+}
+
+@keyframes search-page-settle {
+  0% { transform: scale(1); }
+  40% { transform: scale(0.997); }
+  100% { transform: scale(1); }
+}

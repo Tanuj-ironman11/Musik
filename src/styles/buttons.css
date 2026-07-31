@@ -1,0 +1,354 @@
+/* ═══════════════════════════════════════════════════════════════
+   buttons.css — Reusable button formats, transport play keys, toggles
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ─── Generic Actions ─── */
+.btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: transparent;
+  border: 1px solid rgba(255,255,255,0.1);
+  color: var(--color-text-secondary);
+  border-radius: var(--radius-sm);
+  padding: 8px 16px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  letter-spacing: 0.2px;
+}
+
+.btn::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: rgba(255,255,255,0.04);
+  opacity: 0;
+}
+.btn:hover::before { opacity: 1; }
+
+.btn:hover {
+  color: var(--color-text);
+  border-color: rgba(255,255,255,0.18);
+}
+
+.btn-sm { padding: 6px 12px; font-size: 11px; }
+
+.btn-primary {
+  background: var(--color-accent);
+  border-color: transparent;
+  color: #000;
+  font-weight: 700;
+}
+.btn-primary::before { display: none; }
+.btn-primary:hover {
+  background: color-mix(in srgb, var(--color-accent) 85%, #fff);
+  border-color: transparent;
+  color: #000;
+}
+
+.btn-danger {
+  color: var(--color-danger);
+  border-color: rgba(224,85,85,0.2);
+}
+.btn-danger:hover {
+  border-color: rgba(224,85,85,0.4);
+  background: rgba(224,85,85,0.08);
+  color: var(--color-danger);
+}
+
+.btn-warning { color: #c98a3d; border-color: rgba(201,138,61,0.2); }
+.btn-warning:hover { border-color: rgba(201,138,61,0.4); background: rgba(201,138,61,0.08); color: #d99840; }
+
+.icon-btn,
+.pb-btn,
+.control-btn,
+.queue-action-btn {
+  position: relative;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+/* ─── Player Bar Buttons ─── */
+.pb-btn {
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  color: var(--color-text-dim);
+  flex-shrink: 0;
+}
+.pb-btn:hover {
+  color: var(--color-text);
+  background: rgba(255,255,255,0.06);
+}
+.pb-btn--active { color: var(--color-accent) !important; }
+
+/* Large circular Accent Play Button */
+.pb-btn-play {
+  width: clamp(38px, 4vw, 46px);
+  height: clamp(38px, 4vw, 46px);
+  border-radius: 50%;
+  background: var(--color-accent);
+  color: #000;
+  box-shadow: 0 4px 20px var(--color-accent-glow);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.pb-btn-play:hover {
+  background: color-mix(in srgb, var(--color-accent) 85%, #fff);
+  box-shadow: 0 6px 28px rgba(var(--color-accent-rgb), 0.45);
+}
+
+.pb-btn-play .pb-icon-play {
+  width: clamp(13px, 1.6vw, 18px);
+  height: clamp(13px, 1.6vw, 18px);
+  fill: #000;
+  transform: translateX(1px);
+  display: block;
+}
+
+.pb-btn-play .pb-icon-pause {
+  width: clamp(13px, 1.6vw, 18px);
+  height: clamp(13px, 1.6vw, 18px);
+  fill: #000;
+  display: block;
+}
+
+.pb-btn-repeat,
+.pb-btn-queue { position: relative; }
+
+.pb-repeat-badge {
+  position: absolute;
+  font-size: 7px;
+  font-weight: 700;
+  bottom: 3px;
+  right: 3px;
+  background: var(--color-accent);
+  color: #000;
+  border-radius: 50%;
+  width: 10px;
+  height: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  pointer-events: none;
+}
+
+/* ─── Fullscreen & Lyrics Buttons ─── */
+.np-topbar-btn {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  color: rgba(255,255,255,0.45);
+}
+.np-topbar-btn:hover { color: #fff; background: rgba(255,255,255,0.07); }
+.np-topbar-btn svg { width: 18px; height: 18px; }
+
+.np-btn {
+  background: none;
+  color: rgba(255,255,255,0.4);
+  width: clamp(36px, 5vw, 52px);
+  height: clamp(36px, 5vw, 52px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.np-btn:hover {
+  color: #fff;
+  background: rgba(255,255,255,0.06);
+}
+.np-btn--active { color: var(--color-accent) !important; }
+.np-btn svg { width: 20px; height: 20px; }
+
+.np-play-btn {
+  background: var(--color-accent);
+  color: #000;
+  width: clamp(60px, calc(8vmin * var(--app-scale, 1)), 96px);
+  height: clamp(60px, calc(8vmin * var(--app-scale, 1)), 96px);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 12px 40px var(--color-accent-glow);
+  flex-shrink: 0;
+}
+.np-play-btn:hover {
+  box-shadow: 0 16px 56px rgba(var(--color-accent-rgb),0.45);
+  background: color-mix(in srgb, var(--color-accent) 85%, #fff);
+}
+.np-play-btn svg { width: clamp(22px, 3.2vmin, 38px); height: clamp(22px, 3.2vmin, 38px); fill: #000; }
+
+.np-repeat-badge {
+  position: absolute;
+  font-size: 7px;
+  font-weight: 700;
+  bottom: 5px;
+  right: 5px;
+  background: var(--color-accent);
+  color: #000;
+  border-radius: 50%;
+  width: 11px;
+  height: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.np-lyrics-btn-bottom {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 6px 14px;
+  border-radius: 20px;
+  color: rgba(255, 255, 255, 0.4);
+  cursor: pointer;
+}
+.np-lyrics-btn-bottom svg { width: 14px; height: 14px; }
+.np-lyrics-btn-bottom:hover {
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.08);
+}
+.np-lyrics-btn-bottom.active {
+  color: var(--color-accent);
+  border-color: rgba(var(--color-accent-rgb), 0.25);
+  background: rgba(var(--color-accent-rgb), 0.1);
+  box-shadow: 0 0 12px rgba(var(--color-accent-rgb), 0.15);
+}
+
+/* Transliteration, Censor & Manual Lyric triggers */
+.np-lyrics-translit-toggle {
+  background: rgba(0,0,0,0.55);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 20px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: rgba(255,255,255,0.45);
+  padding: 6px 12px;
+  cursor: pointer;
+}
+.np-lyrics-translit-toggle:hover {
+  color: rgba(255,255,255,0.8);
+  border-color: rgba(var(--color-accent-rgb),0.3);
+}
+.np-lyrics-translit-toggle.active {
+  color: var(--color-accent);
+  border-color: rgba(var(--color-accent-rgb),0.4);
+}
+
+.np-lyrics-add-btn {
+  background: rgba(var(--color-accent-rgb), 0.06);
+  border: 1px solid rgba(var(--color-accent-rgb), 0.2);
+  color: var(--color-accent);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 8px 18px;
+  border-radius: 20px;
+  cursor: pointer;
+}
+.np-lyrics-add-btn:hover {
+  background: var(--color-accent);
+  color: #000000;
+  box-shadow: 0 0 12px var(--color-accent-glow);
+}
+
+.np-lyrics-editor-btn {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 8px 18px;
+  border-radius: 20px;
+  cursor: pointer;
+}
+.np-lyrics-editor-btn.cancel {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.4);
+}
+.np-lyrics-editor-btn.cancel:hover {
+  border-color: rgba(255, 255, 255, 0.3);
+  color: #ffffff;
+}
+.np-lyrics-editor-btn.save {
+  background: var(--color-accent);
+  border: 1px solid transparent;
+  color: #000000;
+}
+.np-lyrics-editor-btn.save:hover {
+  background: color-mix(in srgb, var(--color-accent) 85%, #ffffff);
+  box-shadow: 0 0 12px var(--color-accent-glow);
+}
+
+/* ─── Extra Utilities ─── */
+.queue-clear-btn {
+  background: transparent;
+  border: 1px solid rgba(224, 85, 85, 0.22);
+  color: var(--color-danger, #e05555);
+  border-radius: var(--radius-sm);
+  padding: 6px 14px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  cursor: pointer;
+}
+.queue-clear-btn:hover {
+  background: rgba(224, 85, 85, 0.08);
+  border-color: rgba(224, 85, 85, 0.4);
+}
+
+.confirm-modal-btn {
+  width: 100%;
+  padding: 10px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--color-border, rgba(255, 255, 255, 0.1));
+  background: transparent;
+  color: var(--color-text, #f2f2f2);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.confirm-modal-btn:hover { background: rgba(255, 255, 255, 0.05); }
+.confirm-modal-btn--primary {
+  background: var(--color-accent, #3db8f5);
+  border-color: var(--color-accent, #3db8f5);
+  color: #0a0a0a;
+}
+.confirm-modal-btn--primary:hover { filter: brightness(1.08); }
+
+.queue-remove-item-btn {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: transparent;
+  border: none;
+  font-size: 15px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}

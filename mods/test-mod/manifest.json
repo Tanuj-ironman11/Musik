@@ -1,0 +1,10 @@
+{
+  "name": "Pastel Glass",
+  "version": "1.0.0",
+  "author": "Musik",
+  "description": "Test/demo mod — soft pastel accent palette plus a small terminal-style now-playing ticker. Proves out theme.css overrides and the window.Musik JS API in one mod.",
+  "entry": {
+    "css": "theme.css",
+    "js": "index.js"
+  }
+}

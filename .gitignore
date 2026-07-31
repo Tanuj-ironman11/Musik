@@ -1,0 +1,8 @@
+node_modules/
+native/wasapi-loopback/node_modules/
+native/wasapi-loopback/build/
+dist/
+build/*.ico
+build/*.icns
+*.log
+musik-library.json
