@@ -27,6 +27,9 @@
       album: track.album || '',
       artwork: artworkFrom(track.artData),
     });
+    // Electron's taskbar/alt-tab preview follows document.title by default.
+    // Just title — artist, nothing extra (no app-name suffix cluttering it).
+    document.title = `${track.title || 'Unknown Title'} — ${track.artist || 'Unknown Artist'}`;
   }
 
   window.Musik.events.on('trackupdate', updateMetadata);

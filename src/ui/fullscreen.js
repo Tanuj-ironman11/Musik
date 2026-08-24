@@ -1,11 +1,5 @@
-// src/ui/fullscreen.js
-// In-app fullscreen Now Playing overlay. Distinct from OS-level fullscreen
-// (window.Musik.window.toggleFullscreen()) — keeps the real window as-is
-// and takes over the content area instead.
-//
-// Entry point: #pb-fullscreen-btn + double-click on the art (wired from
-// player-bar.js). This file only owns the overlay's own DOM.
-// Load order: after player-ui.js.
+// src/ui/fullscreen.js — Now Playing overlay DOM and simple controls.
+// Keeps OS fullscreen separate; this file only manages the in-app overlay.
 
 (function () {
   let root = null;
@@ -53,8 +47,8 @@
 
         <div class="npf-info">
           <div id="npf-meta">
-            <p id="npf-title">Nothing playing</p>
-            <p id="npf-artist"></p>
+            <p id="npf-title" class="marquee">Nothing playing</p>
+            <p id="npf-artist" class="marquee"></p>
           </div>
 
           <div id="npf-lyrics-panel">
@@ -121,6 +115,20 @@
     root.querySelector('#npf-lyrics-save').addEventListener('click', saveManualLyrics);
     root.querySelector('#npf-lyrics-clear').addEventListener('click', clearManualLyrics);
 
+    root.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      root.classList.add('npf-dragover');
+    });
+    root.addEventListener('dragleave', (e) => {
+      if (e.target === root) root.classList.remove('npf-dragover');
+    });
+    root.addEventListener('drop', (e) => {
+      e.preventDefault();
+      root.classList.remove('npf-dragover');
+      const file = e.dataTransfer?.files?.[0];
+      if (file) handleLyricFileDrop(file);
+    });
+
     root.querySelector('#npf-prev').addEventListener('click', (e) => {
       kick(e.currentTarget);
       window.MusikPlayerUI?.previous();
@@ -152,6 +160,8 @@
     if (!root) return;
     root.querySelector('#npf-title').textContent = track?.title ?? 'Unknown Title';
     root.querySelector('#npf-artist').textContent = track?.artist ?? 'Unknown Artist';
+    window.MusikMarquee?.refresh(root.querySelector('#npf-title'));
+    window.MusikMarquee?.refresh(root.querySelector('#npf-artist'));
     loadLyrics(track);
   }
 
@@ -210,14 +220,26 @@
     }
   }
 
+  function wordsForLine(words, synced, i) {
+    const startMs = synced[i].time * 1000;
+    const endMs = i + 1 < synced.length ? synced[i + 1].time * 1000 : Infinity;
+    // small tolerance for float round-trip through seconds<->ms
+    return words.filter((w) => w.startMs >= startMs - 25 && w.startMs < endMs - 25);
+  }
+
   function renderLyrics() {
     const scroll = root?.querySelector('#npf-lyrics-scroll');
     if (!scroll || !lyricsState) return;
 
     if (lyricsState.synced?.length) {
+      const words = lyricsState.words;
       scroll.innerHTML = lyricsState.synced.map((line, i) => {
         const text = lyricsState.showRomanized && line.romanized ? line.romanized : line.text;
-        return `<p class="npf-lyric-line" data-index="${i}" data-time="${line.time}">${escapeHtml(text)}</p>`;
+        const lineWords = words && !lyricsState.showRomanized ? wordsForLine(words, lyricsState.synced, i) : null;
+        const inner = lineWords?.length
+          ? lineWords.map((w) => `<span class="npf-lyric-word" data-start="${w.startMs}" data-end="${w.endMs}">${escapeHtml(w.text)}</span>`).join(' ')
+          : escapeHtml(text);
+        return `<p class="npf-lyric-line" data-index="${i}" data-time="${line.time}">${inner}</p>`;
       }).join('');
     } else if (lyricsState.plain) {
       const cls = lyricsState.source === 'manual' ? '' : ' npf-lyric-unsynced';
@@ -235,6 +257,30 @@
   }
 
   let lastActiveLyricIndex = -1;
+  function updateActiveWord(lineEl, timeMs) {
+    const wordEls = lineEl.querySelectorAll('.npf-lyric-word');
+    for (const el of wordEls) {
+      const start = Number(el.dataset.start);
+      const end = Number(el.dataset.end);
+
+      if (timeMs >= end) {
+        // already sung — solid, no partial fill needed
+        el.classList.add('npf-lyric-word--sung');
+        el.classList.remove('npf-lyric-word--active');
+      } else if (timeMs >= start) {
+        // currently being sung — sweep the fill left to right across its duration
+        const dur = Math.max(end - start, 1);
+        const pct = Math.max(0, Math.min(1, (timeMs - start) / dur)) * 100;
+        el.classList.remove('npf-lyric-word--sung');
+        el.classList.add('npf-lyric-word--active');
+        el.style.setProperty('--word-fill', `${pct}%`);
+      } else {
+        // not reached yet — stays dim
+        el.classList.remove('npf-lyric-word--sung', 'npf-lyric-word--active');
+      }
+    }
+  }
+
   function updateActiveLyricLine(currentTime) {
     if (!lyricsState?.synced?.length) return;
     const scroll = root?.querySelector('#npf-lyrics-scroll');
@@ -245,15 +291,21 @@
       if (lyricsState.synced[i].time <= currentTime) idx = i;
       else break;
     }
-    if (idx === lastActiveLyricIndex) return;
-    lastActiveLyricIndex = idx;
+    if (idx !== lastActiveLyricIndex) {
+      lastActiveLyricIndex = idx;
 
-    const prevActive = scroll.querySelector('.npf-lyric-active');
-    prevActive?.classList.remove('npf-lyric-active');
-    if (idx >= 0) {
-      const el = scroll.querySelector(`.npf-lyric-line[data-index="${idx}"]`);
-      el?.classList.add('npf-lyric-active');
-      el?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      const prevActive = scroll.querySelector('.npf-lyric-active');
+      prevActive?.classList.remove('npf-lyric-active');
+      if (idx >= 0) {
+        const el = scroll.querySelector(`.npf-lyric-line[data-index="${idx}"]`);
+        el?.classList.add('npf-lyric-active');
+        el?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      }
+    }
+
+    if (lyricsState.words?.length && idx >= 0) {
+      const activeLineEl = scroll.querySelector(`.npf-lyric-line[data-index="${idx}"]`);
+      if (activeLineEl) updateActiveWord(activeLineEl, currentTime * 1000);
     }
   }
 
@@ -300,6 +352,83 @@
     await window.Musik.lyrics.clearManual({ artist: lyricsTrackRef.artist, title: lyricsTrackRef.title, album: lyricsTrackRef.album });
     exitEditMode();
     loadLyrics(lyricsTrackRef);
+  }
+
+  // ---------------------------------------------------------------------
+  // Drag-and-drop lyric file import — drop a rich sync JSON (Apple-style
+  // syllable export), a .lrc, or a plain .txt anywhere on the fullscreen
+  // overlay and it saves as the manual override for whatever's playing.
+  // Same conversion as scripts/import-richsync.js; no shared-module setup
+  // between renderer and that Node CLI (no bundler), so mirror any change
+  // to that script's logic here too.
+  // ---------------------------------------------------------------------
+
+  function convertRichSyncJson(raw) {
+    const content = raw?.lyrics?.Content;
+    if (!Array.isArray(content) || !content.length) return null;
+
+    const words = [];
+    const synced = [];
+    const plainLines = [];
+
+    for (const line of content) {
+      const syllables = line?.Lead?.Syllables;
+      if (!Array.isArray(syllables) || !syllables.length) continue;
+
+      let lineText = '';
+      for (const syl of syllables) {
+        const text = (syl.Text || '').trim();
+        if (!text) continue;
+
+        if (syl.IsPartOfWord && words.length) {
+          const prev = words[words.length - 1];
+          prev.text += text;
+          prev.endMs = syl.EndTime;
+          lineText += text;
+        } else {
+          words.push({ text, startMs: syl.StartTime, endMs: syl.EndTime });
+          lineText += (lineText ? ' ' : '') + text;
+        }
+      }
+
+      if (lineText) {
+        synced.push({ time: (line.Lead.StartTime ?? 0) / 1000, text: lineText });
+        plainLines.push(lineText);
+      }
+    }
+
+    if (!words.length) return null;
+    return { plain: plainLines.join('\n') || null, synced: synced.length ? synced : null, words };
+  }
+
+  async function handleLyricFileDrop(file) {
+    if (!lyricsTrackRef?.title || !window.Musik?.lyrics?.saveManual) return;
+    const text = await file.text();
+
+    let payload = null;
+    try {
+      const json = JSON.parse(text);
+      payload = convertRichSyncJson(json);
+      if (!payload && (json.plain || json.synced || json.words)) {
+        // already Musik-shaped, e.g. a previously exported manual file
+        payload = { plain: json.plain || null, synced: json.synced || null, words: json.words || null };
+      }
+    } catch (_) {
+      // not JSON — fall through to LRC/plain text handling below
+    }
+
+    if (!payload) {
+      const looksLikeLrc = /^\[\d{1,2}:\d{2}/m.test(text);
+      payload = looksLikeLrc ? { plain: null, synced: text } : { plain: text, synced: null };
+    }
+
+    const saved = await window.Musik.lyrics.saveManual(
+      { artist: lyricsTrackRef.artist, title: lyricsTrackRef.title, album: lyricsTrackRef.album },
+      payload
+    );
+    lyricsState = { ...saved, showRomanized: false };
+    root.querySelector('.npf-info')?.classList.add('npf-info--lyrics-open');
+    renderLyrics();
   }
 
   function escapeHtml(str) {
@@ -365,6 +494,8 @@
     root.classList.remove('is-closing');
     isOpen = true;
     document.body.classList.add('npf-open');
+    // ensure visualizer topbar controls are present in the fullscreen topbar
+    try { window.MusikVisualizer?.ensureControls?.(); } catch (e) {}
 
     const track = window.MusikPlayerUI?.getCurrentTrackData?.();
     updateMeta(track);

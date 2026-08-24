@@ -248,12 +248,7 @@
     applyIconOnlySearchFix(iconOnly);
   }
 
-  // ── Search trigger ──────────────────────────────────────────────────
-  // Search's hover/click feedback (cursor-following glow, scale-punch)
-  // is intentionally different from a normal nav-link's flat highlight,
-  // so it reads as "summons an overlay" rather than "navigates somewhere".
-  // CSS: navigation.css (.nav-link--action rules). Overlay itself lives
-  // in search.js / search-overlay.css.
+  // ── Search trigger ── opens the overlay in search.js, doesn't route
   function wireSearchTrigger(container) {
     const btn = container.querySelector('.nav-link--action[data-action="open-search"]');
     if (!btn) return;
@@ -268,11 +263,7 @@
     });
   }
 
-  // ── Drag-to-reorder ─────────────────────────────────────────────────
-  // Native HTML5 drag-and-drop, no library. The drop-target indicator
-  // (.nav-link--drop-target in navigation.css) shows a top-edge line in
-  // vertical-rail mode or a left-edge line in topbar mode, matching
-  // whichever axis nav items actually reorder along.
+  // ── Drag-to-reorder ── native HTML5 drag-and-drop, no library
   function wireNavLinkDrag(container) {
     let dragFromId = null;
 
@@ -317,14 +308,8 @@
     });
   }
 
-  // ── Hide / restore sections ─────────────────────────────────────────
-  // Right-click a section to hide it (can't hide the last visible one —
-  // an empty sidebar isn't a useful state). Hidden ones surface via a
-  // small "+N hidden" pill that appears at the end of the nav list.
-  // Reuses the .ctx-menu look from track-actions.css (context-menu.js's
-  // track menu) rather than inventing new menu chrome, but this is its
-  // own small self-contained menu — nav items aren't tracks, so it
-  // doesn't reuse MusikContextMenu's internals directly.
+  // ── Hide / restore sections ── right-click to hide (can't hide the
+  // last visible item). Hidden ones surface via a "+N hidden" pill.
   let openNavMenuEl = null;
 
   function closeNavMenu() {
@@ -428,11 +413,7 @@
     });
   }
 
-  // ── Icon-only collapse toggle ───────────────────────────────────────
-  // Distinct from the dynamic/pinned/topbar layout modes above — those
-  // control *hover* behavior. This forces icon-only permanently,
-  // regardless of hover or pin state. Hidden entirely in topbar mode,
-  // which is already icon-only by design (see navigation.css).
+  // ── Icon-only collapse ── forces icon-only regardless of hover/pin
   const ICON_ONLY_KEY = 'musikSidebarIconOnly';
 
   function getIconOnly() {
@@ -457,11 +438,8 @@
     });
   }
 
-  // Nav icon click-kick: same trigger-class pattern as the sidebar logo's
-  // egg and every other .icon-kick animation in the app (see
-  // animations.css). Works for every .nav-link regardless of whether the
-  // sidebar is currently in vertical-rail or topbar layout mode — it's
-  // the exact same anchors either way, only their position/size changes.
+  // Nav icon click-kick — same .icon-kick pattern as every other icon
+  // bounce in the app (animations.css).
   function initNavIconKicks() {
     document.querySelectorAll('.nav-link').forEach((link) => {
       link.addEventListener('click', () => {
@@ -473,11 +451,8 @@
     });
   }
 
-  // Wordmark ("Musik" text) click easter egg — sibling to the sidebar
-  // mark's confetti/hue-cycle egg, but with its own pop/skew motion so
-  // it doesn't feel like the same effect twice. Shares the confetti burst
-  // and colorway cycling helpers already defined for the mark below, and
-  // keeps its own independent click counter/localStorage key.
+  // Wordmark click easter egg — shares confetti/colorway helpers below,
+  // own click counter.
   function initWordmarkEgg() {
     const word = document.querySelector('.logo-text-wrap');
     const logo = document.getElementById('sidebar-logo');
@@ -501,17 +476,8 @@
     word.addEventListener('animationend', () => word.classList.remove('egg-pop'));
   }
 
-  // Sidebar logo: playback-reactive glow + beat pulse, and a click easter
-  // egg (confetti burst, every 5th click also cycles a hidden colorway).
-  //
-  // FLAGGED DEPENDENCY: the beat-pulse portion listens for a
-  // `musik:audiolevel` CustomEvent on `window`, detail: { level: 0..1 }.
-  // That event does not exist yet — it needs to be dispatched by whichever
-  // renderer module owns the AnalyserNode (audio-engine.js or player-ui.js,
-  // neither of which were provided), on a rAF loop, only while playing.
-  // Until that's wired up, the logo still gets the slow idle glow
-  // (.is-playing, driven by the existing play/pause events) but no beat
-  // pulse — --beat-scale just stays at 0.
+  // Sidebar logo: playback-reactive glow + beat pulse + click easter egg.
+  // Beat pulse reads player-ui.js's live AnalyserNode via getAnalyser().
   function initSidebarLogo() {
     const logo = document.getElementById('sidebar-logo');
     if (!logo || !window.Musik) return;
@@ -523,29 +489,14 @@
       if (state && state.isPlaying) logo.classList.add('is-playing');
     }).catch(() => {});
 
-    // --- Beat pulse: mini audio-visualizer, each bar its own band -----
-    // player-ui.js exposes the live AnalyserNode via getAnalyser(), so we
-    // read it directly on a rAF loop rather than needing a new event.
-    // Instead of scaling the whole mark uniformly, the 5 waveform bars
-    // each sample a different low-to-high frequency slice so the logo
-    // actually reads as a tiny live EQ rather than a single pulsing blob.
+    // --- Beat pulse: 5 bars, each its own frequency band -------------
     const VIZ_BARS = logo.querySelectorAll('.viz-bar');
     let beatDataArray = null;
     let beatRafId = null;
-    let barLevels = new Array(VIZ_BARS.length).fill(0); // smoothed state, persists across frames
-
-    // Weighted toward the lower half of the spectrum overall (bass/mid
-    // carries the beat), but each bar still gets a distinct band so they
-    // move independently instead of in lockstep.
+    let barLevels = new Array(VIZ_BARS.length).fill(0); // smoothed, persists across frames
     const BAND_EDGES = [0, 0.04, 0.1, 0.22, 0.4, 0.65]; // fraction of bin range, low->high
-
-    // Classic meter ballistics: snap up fast on a transient so it reads as
-    // synced to the hit, fall off slower so it doesn't flicker to zero
-    // between frames. This is what actually makes it feel "in time" —
-    // raw per-frame values alone look twitchy/random even when technically
-    // accurate.
-    const ATTACK = 0.9;
-    const DECAY = 0.16;
+    const ATTACK = 0.9; // fast rise on transients
+    const DECAY = 0.16; // slower fall so it doesn't flicker to zero
 
     function beatTick() {
       const analyser = window.MusikPlayerUI?.getAnalyser?.();
@@ -571,10 +522,7 @@
           barLevels[i] += (rawLevel - barLevels[i]) * coeff;
           maxLevel = Math.max(maxLevel, barLevels[i]);
 
-          // Floor keeps bars from fully flattening between beats — reads
-          // as "alive" rather than resting at zero every frame. Wider
-          // range than before now that the bars are bigger.
-          const scale = 0.22 + barLevels[i] * 1.6;
+          const scale = 0.22 + barLevels[i] * 1.6; // floor keeps bars from flattening to zero
           bar.style.transform = `scaleY(${scale.toFixed(3)})`;
         });
 
@@ -608,9 +556,8 @@
     });
   }
 
-  // Small burst of colored squares flung outward from the logo's center,
-  // animated with the Web Animations API (no new CSS keyframes needed —
-  // only the static particle shape lives in layouts.css). Self-cleans up.
+  // Colored squares flung outward from the logo's center, Web Animations
+  // API (particle shape lives in layouts.css). Self-cleans up.
   function spawnLogoConfetti(logo) {
     const rect = logo.getBoundingClientRect();
     const cx = rect.left + rect.width / 2;
@@ -647,30 +594,19 @@
     }
   }
 
-  // Every 5th click, nudge the logo's glow into a different hidden
-  // colorway via a hue-rotate filter layered on top of the existing
-  // drop-shadow glow. Cycles through a fixed set; not persisted across
-  // reload (click count itself still is, so the milestone keeps counting).
+  // Every 5th click cycles the logo's glow through a hidden colorway.
   const LOGO_COLORWAY_HUES = [0, 45, 130, 200, 280];
   function cycleLogoColorway(logo, milestoneIndex) {
     const hue = LOGO_COLORWAY_HUES[milestoneIndex % LOGO_COLORWAY_HUES.length];
     logo.style.setProperty('--logo-hue', `${hue}deg`);
   }
 
-  // Nav layout: dynamic (hover-overlay, default), pinned (locked expanded,
-  // pushes #main over), or topbar (the sidebar itself flips into a
-  // horizontal bar across the top instead of a left column).
+  // Nav layout: dynamic (hover-overlay), pinned (locked expanded), or
+  // topbar (sidebar flips to a horizontal bar). Source of truth:
+  // 'musikLayoutMode' in localStorage, shared with settings.js.
   //
-  // Single source of truth: 'musikLayoutMode' in localStorage, shared with
-  // settings.js's Layout section. Old installs only had a
-  // 'sidebarPinned' boolean — migrated once below, then ignored.
-  //
-  // FLAGGED DEPENDENCY: applying 'topbar' here only toggles
-  // `body.classList` — the actual restyle (sidebar going from a vertical
-  // rail to a horizontal bar: flex-direction, width/height swap, nav
-  // links laid out inline) needs corresponding rules in layouts.css for
-  // `body.layout-topbar #sidebar`. That file wasn't provided, so the
-  // visual transform isn't in yet — wire it up there. A reasonable start:
+  // STILL NEEDED: this only toggles body.classList('layout-topbar') —
+  // the actual restyle needs matching rules in layouts.css. Starting point:
   //
   //   body.layout-topbar #sidebar {
   //     flex-direction: row;
@@ -768,6 +704,8 @@
   document.addEventListener('DOMContentLoaded', () => {
     initSidebar();
     render();
+    // Fire-and-forget: don't block first paint on an IPC round trip.
+    window.MusikViews?.syncLastfmCredsToMain?.();
   });
 
   window.addEventListener('hashchange', render);

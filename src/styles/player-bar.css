@@ -10,10 +10,10 @@
   z-index: 10000;
   background:
     linear-gradient(180deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0) 40%),
-    rgba(14, 14, 14, 0.38);
+    var(--glass-bg-standard);
   backdrop-filter: blur(18px) saturate(1.4);
   -webkit-backdrop-filter: blur(18px) saturate(1.4);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid var(--glass-border-color);
   border-radius: 22px;
   box-shadow:
     var(--player-shadow),
@@ -55,7 +55,7 @@ body.npf-open #now-playing-bar {
 }
 
 #now-playing-bar:hover {
-  border-color: rgba(255, 255, 255, 0.16);
+  border-color: color-mix(in srgb, var(--color-text) 16%, transparent);
   box-shadow:
     var(--player-shadow),
     0 0 0 1px rgba(255, 255, 255, 0.04) inset,
@@ -326,19 +326,19 @@ body[data-active-view="now-playing"] #now-playing-bar {
 }
 
 #pb-queue-toggle.pb-queue-kick .q-line-1 {
-  animation: pb-queue-wave 0.4s var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1)) 0s;
+  animation: pb-queue-wave 0.4s var(--ease-bounce) 0s;
 }
 
 #pb-queue-toggle.pb-queue-kick .q-line-2 {
-  animation: pb-queue-wave 0.4s var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1)) 0.055s;
+  animation: pb-queue-wave 0.4s var(--ease-bounce) 0.055s;
 }
 
 #pb-queue-toggle.pb-queue-kick .q-line-3 {
-  animation: pb-queue-wave 0.4s var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1)) 0.11s;
+  animation: pb-queue-wave 0.4s var(--ease-bounce) 0.11s;
 }
 
 #pb-queue-toggle.pb-queue-kick .q-arrow {
-  animation: pb-queue-arrow-nudge 0.4s var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1)) 0.11s;
+  animation: pb-queue-arrow-nudge 0.4s var(--ease-bounce) 0.11s;
 }
 
 .pb-progress-row {
@@ -369,8 +369,8 @@ body[data-active-view="now-playing"] #now-playing-bar {
     to right,
     var(--color-accent) 0%,
     var(--color-accent) var(--progress, 0%),
-    rgba(255, 255, 255, 0.12) var(--progress, 0%),
-    rgba(255, 255, 255, 0.12) 100%
+    color-mix(in srgb, var(--color-text) 12%, transparent) var(--progress, 0%),
+    color-mix(in srgb, var(--color-text) 12%, transparent) 100%
   );
   cursor: pointer;
   outline: none;
@@ -450,8 +450,8 @@ body[data-active-view="now-playing"] #now-playing-bar {
     to right,
     var(--color-accent) 0%,
     var(--color-accent) var(--progress, 100%),
-    rgba(255, 255, 255, 0.14) var(--progress, 100%),
-    rgba(255, 255, 255, 0.14) 100%
+    color-mix(in srgb, var(--color-text) 14%, transparent) var(--progress, 100%),
+    color-mix(in srgb, var(--color-text) 14%, transparent) 100%
   );
   cursor: pointer;
   outline: none;
@@ -569,13 +569,12 @@ body[data-window="miniplayer"] {
   width: 100%;
   height: 100%;
   background: transparent;
-  border-radius: 18px;
-  overflow: hidden;
 }
 
 #mp-root {
-  width: 100%;
-  height: 100%;
+  width: calc(100% - 4px);
+  height: calc(100% - 4px);
+  margin: 2px;
   padding: 12px 14px;
   box-sizing: border-box;
   display: flex;
@@ -584,8 +583,8 @@ body[data-window="miniplayer"] {
   border-radius: 18px;
   background:
     linear-gradient(180deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0) 40%),
-    rgba(14, 14, 14, 0.86);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+    color-mix(in srgb, var(--color-bg-elevated) 86%, transparent);
+  border: 1px solid var(--glass-border-color);
   box-shadow:
     0 8px 32px -8px rgba(0, 0, 0, 0.6),
     0 0 0 1px rgba(255, 255, 255, 0.03) inset;
@@ -662,8 +661,8 @@ body[data-window="miniplayer"] {
     to right,
     var(--color-accent) 0%,
     var(--color-accent) var(--progress, 0%),
-    rgba(255, 255, 255, 0.12) var(--progress, 0%),
-    rgba(255, 255, 255, 0.12) 100%
+    color-mix(in srgb, var(--color-text) 12%, transparent) var(--progress, 0%),
+    color-mix(in srgb, var(--color-text) 12%, transparent) 100%
   );
 }
 
@@ -673,7 +672,7 @@ body[data-window="miniplayer"] {
   overflow-y: auto;
   flex: 1 1 auto;
   min-height: 0;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-top: 1px solid var(--color-border);
 }
 
 .mp-queue-list {

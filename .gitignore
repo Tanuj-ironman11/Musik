@@ -1,11 +1,25 @@
+# Dependencies
 node_modules/
-native/wasapi-loopback/node_modules/
-native/wasapi-loopback/build/
-dist/
-build/*.ico
-build/*.icns
-*.log
-musik-library.json
-package-lock.json
+**/node_modules/
 
-file-list.txt
+# Lockfiles
+package-lock.json
+**/package-lock.json
+
+# Native C++ build outputs
+build/
+**/build/
+
+# Mods & local asset folders
+mods/
+
+# Test & scratch scripts (including wasapi-loopback)
+native/wasapi-loopback/check-sessions.js
+test.json
+test.js
+check-sessions.js
+
+# OS & Environment junk
+*.log
+.DS_Store
+Thumbs.db

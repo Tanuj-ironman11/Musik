@@ -5,43 +5,57 @@
 // metering — see addon.cc) and turns its live level into a smoothed
 // 0..1 multiplier pushed to the renderer as 'duckupdate'.
 //
-// v2 fix (this pass): addon.cc already excludes Musik's own PID via
-// per-session metering, so the old "ducking itself" theory was wrong.
-// Real bug was the multiplier ramp assuming level travels all the way
-// to 1.0 (true digital-scale clipping) before reaching maxDuck. Real
-// game audio peaks rarely get anywhere near that, so the old curve
-// barely ducked at all. Fixed via a new `duckCeiling` setting — the
-// level treated as "fully loud" — default well below 1.0.
-//
-// Also added: optional debug callback in init() so callers can wire up
-// a live level/multiplier readout (Settings meter, on-screen toast on
-// Ctrl+Shift+D, whatever). Purely additive — existing 2-arg init() call
-// sites keep working unchanged.
-//
 // Settings semantics:
 //   enabled        — master on/off (Settings toggle)
 //   sensitivity     0..1 — level threshold above which ducking starts
 //                    kicking in. Lower = ducks on quieter sounds.
 //   duckCeiling     0..1 — level treated as "fully loud" for ramp
-//                    purposes. NEW. Must be > sensitivity. Real game
-//                    peaks rarely approach 1.0, so this used to make
-//                    the duck effectively never reach maxDuck. Default
-//                    0.4 — tune per-game if needed later via a UI slider.
+//                    purposes. Must be > sensitivity. Default 0.4.
 //   maxDuck         0..1 — floor multiplier when fully ducked (e.g. 0.3
 //                    means volume never drops below 30% no matter how
 //                    loud the target app gets)
 //   manualOverride  — Ctrl+Shift+D in player-ui.js. When true, ducking is
 //                    forced off (multiplier always 1.0) regardless of
 //                    `enabled` or live level. Not persisted — resets to
-//                    false on relaunch, matching the renderer-side comment.
+//                    false on relaunch.
 //
-// Multiplier curve: below `sensitivity`, multiplier is 1.0 (no duck).
-// From `sensitivity` to `duckCeiling` level, multiplier ramps linearly
-// down to `maxDuck`. At or above `duckCeiling`, multiplier is pinned to
-// `maxDuck`. Smoothed with simple attack/decay so it doesn't snap.
+// Multiplier curve: below effective sensitivity, multiplier is 1.0 (no
+// duck). From effective sensitivity to effective duckCeiling, multiplier
+// ramps linearly down to maxDuck. At/above ceiling, pinned to maxDuck.
+// Smoothed with simple attack/decay so it doesn't snap.
+//
+// Track-loudness auto-tuning (setTrackLoudness): player-ui.js feeds a
+// rolling BS.1770-ish LUFS estimate of the currently playing track. A
+// quiet track (e.g. -28 LUFS) needs the game to be relatively less loud
+// before ducking makes sense to the ear, so effective sensitivity/ceiling
+// shift down; a loud track (e.g. -8 LUFS) shifts them up. Reference point
+// is -18 LUFS (roughly "normal" streaming-normalized loudness) — no
+// adjustment at that point. Adjustment is clamped so it can only nudge
+// the curve, never invert sensitivity > ceiling or push either out of
+// 0..1.
+//
+// Self-exclusion (added — fixes feedback loop): the addon only auto-
+// excludes the PID of whatever process calls addon.start(). Electron
+// apps are multiple OS processes (main/browser, renderer(s), GPU,
+// utility) — Musik's actual audio comes out of a renderer process, not
+// the main process that calls start(). Previously only the main
+// process PID was excluded, so the addon saw Musik's own renderer
+// audio as "an outside app," ducked it, saw the level drop, un-ducked,
+// saw it rise again, and looped — audibly "tweaking" the volume.
+// getOwnProcessPids() pulls every PID belonging to this Electron
+// instance via app.getAppMetrics() and hands the whole list to
+// addon.start(), which unions it with its own GetCurrentProcessId()
+// call on the native side. addon.cc re-applies whatever exclude list
+// is passed EVERY time start() is called, even if already running, so
+// this can be safely re-called later (e.g. after a new window like the
+// miniplayer spawns a new renderer PID) without needing to stop/start
+// the capture thread. That refresh-on-new-window wiring isn't added
+// yet — flagging it as a known follow-up, not doing it here to keep
+// this patch surgical.
 
 const fs = require('fs');
 const path = require('path');
+const { app } = require('electron');
 
 const DEFAULTS = {
   enabled: false,
@@ -50,8 +64,13 @@ const DEFAULTS = {
   maxDuck: 0.35,
 };
 
+const LUFS_REFERENCE = -18;
+const LUFS_ADJUST_RANGE = 20; // +/-20 LUFS from reference maps to +/-MAX_LUFS_ADJUST
+const MAX_LUFS_ADJUST = 0.12; // cap on how far loudness can shift sensitivity/ceiling
+
 // Separate from persisted settings — resets every launch by design.
 let manualOverride = false;
+let trackLoudnessLufs = null; // null = no adjustment (silence/no track/not yet measured)
 
 let settings = { ...DEFAULTS };
 let settingsPath = null;
@@ -73,15 +92,43 @@ const POLL_MS = 100;
 function loadAddon() {
   if (process.platform !== 'win32') return null;
   try {
-    // Adjust path if the native module ends up living elsewhere — kept
-    // relative to project root via __dirname since this file is in
-    // src/core/.
     return require(path.join(__dirname, '..', '..', 'native', 'wasapi-loopback'));
   } catch (err) {
     console.warn('[Musik] game-duck: native addon not available:', err.message);
     return null;
   }
 }
+
+// Every OS process belonging to this Electron instance — browser (main),
+// all renderers, GPU, utility, etc. Musik's actual audio output lives in
+// one of the renderer processes, not necessarily the main process, so
+// excluding only process.pid (or letting the addon default to whoever
+// called start()) isn't enough. See file-header note.
+let lastLoggedPidsKey = null; // only re-log when the set actually changes, avoid spam
+function getOwnProcessPids() {
+  try {
+    const pids = app.getAppMetrics().map((m) => m.pid);
+    const key = pids.slice().sort((a, b) => a - b).join(',');
+    if (key !== lastLoggedPidsKey) {
+      lastLoggedPidsKey = key;
+      console.log('[Musik] game-duck: excluding own PIDs:', pids);
+    }
+    return pids;
+  } catch (err) {
+    console.warn('[Musik] game-duck: getAppMetrics() failed, falling back to own PID only:', err.message);
+    return [process.pid];
+  }
+}
+
+// The exclude list is only accurate at the instant it's captured — Musik
+// spawns processes lazily (e.g. Chromium's audio-handling process doesn't
+// exist until playback actually starts, a new miniplayer window spawns its
+// own renderer PID, etc). A one-time snapshot at boot misses all of that.
+// addon.cc re-applies whatever PID list is passed EVERY call to start(),
+// even while already running, without resetting the capture thread or its
+// level smoothing — so it's safe to call this on a timer.
+let refreshCounter = 0;
+const REFRESH_EVERY_TICKS = 20; // ~2s at POLL_MS=100
 
 function loadSettingsFromDisk() {
   if (!settingsPath || !fs.existsSync(settingsPath)) return;
@@ -102,21 +149,42 @@ function saveSettingsToDisk() {
   }
 }
 
+function loudnessAdjustment() {
+  if (trackLoudnessLufs === null || !Number.isFinite(trackLoudnessLufs)) return 0;
+  const delta = trackLoudnessLufs - LUFS_REFERENCE;
+  const normalized = Math.max(-1, Math.min(1, delta / LUFS_ADJUST_RANGE));
+  return normalized * MAX_LUFS_ADJUST;
+}
+
 function computeTargetMultiplier(level) {
   if (manualOverride) return 1.0;
   if (!settings.enabled) return 1.0;
-  if (level <= settings.sensitivity) return 1.0;
 
-  const ceiling = Math.max(settings.duckCeiling, settings.sensitivity + 0.001);
-  const range = ceiling - settings.sensitivity;
-  const over = range > 0 ? (level - settings.sensitivity) / range : 1.0;
+  const adjust = loudnessAdjustment();
+  const effectiveSensitivity = Math.max(0, Math.min(0.95, settings.sensitivity + adjust));
+  const effectiveCeiling = Math.max(effectiveSensitivity + 0.001, Math.min(1, settings.duckCeiling + adjust));
+
+  if (level <= effectiveSensitivity) return 1.0;
+
+  const range = effectiveCeiling - effectiveSensitivity;
+  const over = range > 0 ? (level - effectiveSensitivity) / range : 1.0;
   const clamped = Math.max(0, Math.min(1, over));
-  // over=0 -> multiplier 1.0 (just crossed threshold), over=1 -> maxDuck
   return 1.0 - clamped * (1.0 - settings.maxDuck);
 }
 
 function tick() {
   if (!addon) return;
+
+  refreshCounter++;
+  if (refreshCounter >= REFRESH_EVERY_TICKS) {
+    refreshCounter = 0;
+    try {
+      addon.start(getOwnProcessPids());
+    } catch (err) {
+      console.warn('[Musik] game-duck: exclude-list refresh failed:', err.message);
+    }
+  }
+
   const level = addon.getLevel();
   const target = computeTargetMultiplier(level);
   const coeff = target < smoothedMultiplier ? DUCK_IN : DUCK_RELEASE;
@@ -128,7 +196,7 @@ function tick() {
 function startPolling() {
   if (pollInterval || !addon) return;
   try {
-    addon.start();
+    addon.start(getOwnProcessPids());
   } catch (err) {
     console.warn('[Musik] game-duck: addon.start() failed:', err.message);
     return;
@@ -149,10 +217,6 @@ function stopPolling() {
 }
 
 function syncPollingState() {
-  // Poll whenever the feature is enabled — manualOverride still forces
-  // the multiplier to 1.0 inside computeTargetMultiplier(), but we keep
-  // the addon running so there's no start/stop lag when override toggles
-  // back off mid-session.
   if (settings.enabled && available) {
     startPolling();
   } else {
@@ -160,11 +224,8 @@ function syncPollingState() {
   }
 }
 
-// userDataPath, onMultiplierChangeCb: (multiplier:number) => void  [existing contract, unchanged]
-// onDebugTickCb (optional, NEW): (level:number, target:number, smoothed:number) => void
-//   Fire this into an IPC event (e.g. 'duckdebug') if you want a live
-//   meter in Settings or an on-screen readout. Omit entirely and nothing
-//   about existing call sites needs to change.
+// userDataPath, onMultiplierChangeCb: (multiplier:number) => void
+// onDebugTickCb (optional): (level:number, target:number, smoothed:number) => void
 function init(userDataPath, onMultiplierChangeCb, onDebugTickCb) {
   onMultiplierChange = typeof onMultiplierChangeCb === 'function' ? onMultiplierChangeCb : () => {};
   onDebugTick = typeof onDebugTickCb === 'function' ? onDebugTickCb : null;
@@ -185,6 +246,7 @@ function getSettings() {
     duckCeiling: settings.duckCeiling,
     maxDuck: settings.maxDuck,
     manualOverride,
+    trackLoudnessLufs,
   };
 }
 
@@ -215,13 +277,15 @@ function setMaxDuck(value) {
 
 function setManualOverride(value) {
   manualOverride = !!value;
-  // Not persisted — intentional, see file header.
   return getSettings();
 }
 
-// Optional, for a future Settings UI process picker — mirrors the
-// addon's getSessions() so callers don't need to reach into
-// native/wasapi-loopback directly.
+// Fed continuously by player-ui.js's rolling LUFS estimate. Pass null to
+// clear (new track loading, playback stopped) — see loudnessAdjustment().
+function setTrackLoudness(lufs) {
+  trackLoudnessLufs = (typeof lufs === 'number' && Number.isFinite(lufs)) ? lufs : null;
+}
+
 function getAudioSessions() {
   if (!addon) return [];
   try {
@@ -251,6 +315,7 @@ module.exports = {
   setDuckCeiling,
   setMaxDuck,
   setManualOverride,
+  setTrackLoudness,
   getAudioSessions,
   setTargetProcesses,
 };

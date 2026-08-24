@@ -136,6 +136,59 @@
 }
 .npf-topbar-btn:hover { color: #fff; background: rgba(255, 255, 255, 0.07); }
 
+/* Drag-and-drop lyric file import feedback — see fullscreen.js.
+   Two layers, deliberately separated:
+     ::before — full-screen dim, sits ABOVE the player UI while dragging
+                (z-index bumped above the topbar/media/info panels, which
+                normally sit at z-index 2) so the drop target reads as the
+                focus, not competing with visible controls underneath.
+                Never animates transform — a static overlay can't overflow.
+     ::after  — the actual drop card: icon + label, fixed/clamped size,
+                centered via translate(-50%, -50%). Previously this was
+                the SAME viewport-sized box as the backdrop, animated with
+                the album-art glow keyframe (an 8% scale) — fine on a small
+                element, but on something already filling the screen an 8%
+                scale pushes it past every edge. Keeping the moving piece
+                small and centered means the pulse can never reach the
+                viewport bounds no matter how it animates. */
+
+#now-playing-fullscreen.npf-dragover::before {
+  background: radial-gradient(circle at center, rgba(0, 0, 0, 0.4) 0%, rgba(0, 0, 0, 0.86) 100%);
+  z-index: 4;
+  transition: background 0.2s ease;
+}
+
+#now-playing-fullscreen.npf-dragover::after {
+  content: '\1F4DD  Drop lyrics file here\A .lrc   ·   .json   ·   .txt';
+  white-space: pre-line;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 6;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: min(78vw, 380px);
+  padding: 36px 28px;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: clamp(13px, 1.6vw, 16px);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1.8;
+  color: rgba(255, 255, 255, 0.92);
+  border: 2px dashed rgba(var(--color-accent-rgb), 0.65);
+  border-radius: var(--radius-lg, 16px);
+  background: rgba(var(--color-accent-rgb), 0.08);
+  box-shadow: 0 0 60px rgba(var(--color-accent-rgb), 0.25);
+  transform: translate(-50%, -50%) scale(1);
+  animation: npf-drop-card-in 0.22s cubic-bezier(0.16, 1, 0.3, 1) both,
+             npf-drop-card-pulse 1.6s ease-in-out infinite 0.22s;
+}
+
 .npf-layout {
   position: relative;
   z-index: 2;
@@ -330,6 +383,37 @@
   color: #fff;
   transform: scale(1.04);
   text-shadow: 0 0 12px rgba(var(--color-accent-rgb), 0.5), 0 0 30px rgba(var(--color-accent-rgb), 0.22);
+}
+
+.npf-lyric-word { display: inline-block; }
+
+/* Words not yet reached in the active line stay at the same dim tone as
+   an inactive line — only sung/active words stand out. */
+.npf-lyric-line.npf-lyric-active .npf-lyric-word {
+  color: rgba(255, 255, 255, 0.22);
+  text-shadow: none;
+}
+
+.npf-lyric-line.npf-lyric-active .npf-lyric-word--sung {
+  color: #fff;
+  text-shadow: 0 0 10px rgba(var(--color-accent-rgb), 0.4);
+}
+
+/* Currently-singing word: a hard-edge gradient clipped to the text,
+   swept left-to-right via --word-fill (0%-100%, set every frame in JS).
+   No transition here — the sweep itself IS the animation, a CSS
+   transition would just add lag chasing the per-frame updates. */
+.npf-lyric-line.npf-lyric-active .npf-lyric-word--active {
+  background-image: linear-gradient(
+    to right,
+    #fff var(--word-fill, 0%),
+    rgba(255, 255, 255, 0.22) var(--word-fill, 0%)
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  text-shadow: none;
 }
 
 .npf-lyric-plain {
@@ -535,4 +619,14 @@
 @keyframes npf-play-ring {
   0%   { box-shadow: 0 0 0 0 rgba(var(--color-accent-rgb), 0.45); }
   100% { box-shadow: 0 0 0 18px rgba(var(--color-accent-rgb), 0); }
+}
+
+@keyframes npf-drop-card-in {
+  from { opacity: 0; transform: translate(-50%, -50%) scale(0.85); }
+  to   { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+
+@keyframes npf-drop-card-pulse {
+  0%, 100% { transform: translate(-50%, -50%) scale(1);     box-shadow: 0 0 60px rgba(var(--color-accent-rgb), 0.22); }
+  50%      { transform: translate(-50%, -50%) scale(1.035); box-shadow: 0 0 92px rgba(var(--color-accent-rgb), 0.4); }
 }

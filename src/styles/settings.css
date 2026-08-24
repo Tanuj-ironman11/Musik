@@ -1,7 +1,7 @@
 /* src/styles/settings.css — glass card treatment, matches sidebar/player-bar */
 
 .settings-page {
-  max-width: 680px;
+  max-width: 960px;
   margin: 64px auto;
   padding: 0 32px 80px;
   color: var(--color-text);
@@ -363,8 +363,7 @@
   height: 8px;
 }
 
-/* Segmented control — not currently wired to anything, kept for future
-   single-choice toggles (e.g. Appearance). */
+/* Segmented control — unwired, kept for future single-choice toggles. */
 .segmented {
   display: inline-flex;
   border: 1px solid var(--color-border);
@@ -391,8 +390,7 @@
   color: var(--color-bg);
 }
 
-/* Live-preview swatch for the deferred "hover a setting, see a mini
-   mockup" feature. Not wired to JS yet. */
+/* Live-preview swatch, deferred hover-mockup feature. Not wired yet. */
 .settings-preview-pane {
   width: 100%;
   aspect-ratio: 16 / 9;
@@ -411,24 +409,20 @@
   transform: translateY(0);
 }
 
-/* Background style (Appearance section). Ideally belongs in tokens.css/
-   base.css — move it over next reorg pass.
-   solid/gradient are pure CSS and work today. acrylic-mica additionally
+/* Background style (Appearance section). Belongs in tokens.css/base.css
+   really — move next reorg. solid/gradient are pure CSS. acrylic-mica
    needs main.js to call BrowserWindow.setBackgroundMaterial('acrylic')
-   (Win11+, Electron 29+) — that main-process wiring status should be
-   confirmed against main.js directly. Until confirmed, this falls back
-   to a blurred-gradient look with backdrop-filter so it's not a silent
-   no-op. See settings.js applyBackgroundPrefs().
-   --musik-bg-opacity is set by settings.js — no dedicated background
-   layer exists yet in the files on hand to apply it to; wire an #app-bg
-   layer in the app shell to consume it. Do not apply to body/html
-   directly, that would fade the entire UI including text. */
+   (Win11+, Electron 29+) — confirm that's wired before relying on it;
+   falls back to a blurred-gradient look otherwise. See settings.js's
+   applyBackgroundPrefs(). --musik-bg-opacity is set by settings.js but
+   has no layer consuming it yet — wire an #app-bg layer for it, don't
+   apply to body/html directly (that'd fade text too). */
 :root {
   --musik-bg-opacity: 1;
 }
 
-/* Background visuals render in #app-bg so body doesn't paint its own
-   background over native Acrylic/Mica. */
+/* Background visuals render in #app-bg so body doesn't paint over
+   native Acrylic/Mica. */
 body[data-bg-style="gradient"], body[data-bg-style="acrylic-mica"], body[data-bg-style="solid"] {
   background-image: none !important;
   background-color: transparent !important;
@@ -448,7 +442,7 @@ body[data-bg-style="gradient"], body[data-bg-style="acrylic-mica"], body[data-bg
 .settings-grid {
   display: flex;
   flex-direction: column;
-  background: rgba(255, 255, 255, 0.02);
+  background: color-mix(in srgb, var(--color-text) 3%, transparent);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   overflow: hidden;
@@ -497,8 +491,8 @@ body[data-bg-style="gradient"], body[data-bg-style="acrylic-mica"], body[data-bg
   display: flex;
   flex-direction: column;
   padding: 14px 16px;
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: color-mix(in srgb, var(--color-text) 3%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-text) 6%, transparent);
   border-radius: var(--radius-sm);
 }
 
@@ -564,8 +558,8 @@ body[data-bg-style="gradient"], body[data-bg-style="acrylic-mica"], body[data-bg
   align-items: center;
   justify-content: space-between;
   padding: 10px 14px;
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: color-mix(in srgb, var(--color-text) 3%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-text) 6%, transparent);
   border-radius: var(--radius-sm);
   gap: 16px;
 }
@@ -581,3 +575,330 @@ body[data-bg-style="gradient"], body[data-bg-style="acrylic-mica"], body[data-bg
 }
 
 .folder-list-container { margin-bottom: 12px; }
+
+/* Equalizer — one unified glass console instead of isolated per-band
+   boxes: shared background, one centerline, one SVG curve stitching all
+   faders together. Faders are hand-built (pointer events in settings.js),
+   not native <input type="range"> — vertical range sliders in Chromium
+   snap imprecisely; this gets true continuous 0.1dB drag instead. */
+
+.eq-preset-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.eq-preset-btn {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 14px 7px;
+  min-width: 76px;
+  border-radius: 12px;
+  border: 1px solid var(--color-border);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--color-bg-surface) 65%, transparent) 0%,
+    color-mix(in srgb, var(--color-bg) 60%, transparent) 100%
+  );
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  overflow: hidden;
+  transition: transform var(--anim-fast) var(--anim-spring),
+              border-color var(--anim-fast) var(--anim-ease),
+              box-shadow var(--anim-fast) var(--anim-ease),
+              background var(--anim-fast) var(--anim-ease);
+}
+.eq-preset-btn::before {
+  /* faint diagonal sheen, same "glass" language as the rest of the app */
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(115deg, rgba(255, 255, 255, 0.06) 0%, transparent 35%);
+  pointer-events: none;
+}
+.eq-preset-btn-spark {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1;
+  letter-spacing: -1px;
+  color: color-mix(in srgb, var(--color-accent) 75%, var(--color-text-dim));
+  transition: color var(--anim-fast) var(--anim-ease), text-shadow var(--anim-fast) var(--anim-ease);
+}
+.eq-preset-btn-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+.eq-preset-btn:hover {
+  border-color: color-mix(in srgb, var(--color-accent) 45%, var(--color-border));
+  color: var(--color-text);
+  transform: translateY(-2px);
+  box-shadow: 0 10px 24px -14px color-mix(in srgb, var(--color-accent) 50%, transparent);
+}
+.eq-preset-btn:hover .eq-preset-btn-spark {
+  text-shadow: 0 0 10px color-mix(in srgb, var(--color-accent) 60%, transparent);
+}
+.eq-preset-btn:active { transform: translateY(-1px) scale(0.97); }
+
+.eq-preset-btn--active {
+  border-color: var(--color-accent);
+  color: var(--color-text);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--color-accent) 20%, var(--color-bg-surface)) 0%,
+    color-mix(in srgb, var(--color-accent) 10%, var(--color-bg)) 100%
+  );
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-accent) 40%, transparent),
+              0 10px 26px -14px color-mix(in srgb, var(--color-accent) 65%, transparent);
+}
+.eq-preset-btn--active .eq-preset-btn-spark {
+  color: var(--color-accent);
+  text-shadow: 0 0 10px color-mix(in srgb, var(--color-accent) 70%, transparent);
+}
+
+/* ── The console ─────────────────────────────────────────────────────── */
+
+.eq-bands-grid {
+  margin-top: 16px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.eq-console {
+  position: relative;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  padding: 20px 20px 14px;
+  border-radius: 14px;
+  border: 1px solid var(--color-border);
+  background:
+    radial-gradient(140% 100% at 50% -10%, color-mix(in srgb, var(--color-accent) 7%, transparent), transparent 55%),
+    linear-gradient(180deg,
+      color-mix(in srgb, var(--color-bg) 88%, black) 0%,
+      color-mix(in srgb, var(--color-bg) 78%, black) 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04),
+              inset 0 2px 10px rgba(0, 0, 0, 0.45),
+              0 10px 30px -18px rgba(0, 0, 0, 0.6);
+  /* Bands are flex:1 and compress to fit — overflow is a last-resort
+     safety net for pathologically narrow windows, not the primary
+     strategy. Fixed 44px columns summing past the panel width (10 bands
+     = 620px+) is what caused the old "goes off screen" bug. */
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+/* One line spanning the whole console, not one per band — reads as a
+   single 0dB reference for the whole strip. */
+.eq-console-centerline {
+  position: absolute;
+  left: 20px;
+  right: 20px;
+  height: 1px;
+  /* Real position is set in px by updateEqCurve() in settings.js. 0
+     here is just a safe pre-JS fallback. */
+  top: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--color-text) 18%, transparent) 10%,
+    color-mix(in srgb, var(--color-text) 18%, transparent) 90%,
+    transparent 100%
+  );
+  pointer-events: none;
+  z-index: 1;
+}
+
+.eq-console-curve {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: visible;
+  z-index: 2;
+}
+.eq-console-curve-line {
+  fill: none;
+  stroke: var(--color-accent);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--color-accent) 65%, transparent));
+  opacity: 0.9;
+}
+.eq-console-curve-fill {
+  fill: color-mix(in srgb, var(--color-accent) 12%, transparent);
+  stroke: none;
+}
+
+.eq-console-bands {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  z-index: 3;
+  width: 100%;
+}
+
+.eq-band {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 0;
+  min-width: 30px;
+  max-width: 64px;
+}
+
+.eq-band-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--color-text-secondary);
+  text-align: center;
+  white-space: nowrap;
+}
+
+.eq-band-gain-field {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.eq-band-gain-value {
+  width: 44px;
+  background: color-mix(in srgb, var(--color-bg-surface) 70%, transparent);
+  border: 1px solid var(--color-border);
+  border-radius: 5px;
+  color: var(--color-accent);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 2px;
+  text-align: center;
+  outline: none;
+  transition: border-color var(--anim-fast) var(--anim-ease), box-shadow var(--anim-fast) var(--anim-ease);
+  -moz-appearance: textfield;
+}
+
+.eq-band-gain-value::-webkit-outer-spin-button,
+.eq-band-gain-value::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.eq-band-gain-value:focus {
+  border-color: color-mix(in srgb, var(--color-accent) 55%, var(--color-border));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-accent) 20%, transparent);
+}
+
+.eq-band-gain-unit {
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-dim);
+}
+
+/* Rail is just a hit-target + guide; accent fill and thumb are what
+   read as "the fader". 132px height is keyed to the centerline offset
+   above — change one, change the other. */
+.eq-band-rail {
+  position: relative;
+  width: 3px;
+  height: 132px;
+  margin: 8px 0;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--color-border) 80%, transparent);
+  cursor: ns-resize;
+}
+
+.eq-band-thumb {
+  position: absolute;
+  left: 50%;
+  width: 20px;
+  height: 12px;
+  border-radius: 4px;
+  transform: translate(-50%, -50%);
+  background: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--color-accent) 92%, white) 0%,
+    var(--color-accent) 45%,
+    color-mix(in srgb, var(--color-accent) 78%, black) 100%
+  );
+  border: 1px solid color-mix(in srgb, var(--color-accent) 60%, black);
+  box-shadow: 0 0 0 5px color-mix(in srgb, var(--color-accent) 16%, transparent),
+              0 3px 10px rgba(0, 0, 0, 0.5),
+              inset 0 1px 0 rgba(255, 255, 255, 0.35);
+  cursor: ns-resize;
+  transition: box-shadow var(--anim-fast) var(--anim-ease);
+}
+.eq-band-rail:hover .eq-band-thumb {
+  box-shadow: 0 0 0 7px color-mix(in srgb, var(--color-accent) 22%, transparent),
+              0 3px 10px rgba(0, 0, 0, 0.5),
+              inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+.eq-band-thumb--dragging {
+  background: color-mix(in srgb, var(--color-accent) 95%, white);
+  box-shadow: 0 0 0 8px color-mix(in srgb, var(--color-accent) 28%, transparent),
+              0 4px 14px rgba(0, 0, 0, 0.55),
+              inset 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+
+.eq-band-gain-value {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--color-text-dim);
+  min-width: 36px;
+  text-align: center;
+}
+.eq-band:has(.eq-band-thumb--dragging) .eq-band-gain-value {
+  color: var(--color-accent);
+}
+
+/* Master-tier freq/Q inputs — compact, stacked under the fader value. */
+.eq-band-subfield {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-dim);
+}
+.eq-band-subfield input[type="number"] {
+  width: 42px;
+  background: color-mix(in srgb, var(--color-bg-surface) 70%, transparent);
+  border: 1px solid var(--color-border);
+  border-radius: 5px;
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  padding: 3px 4px;
+  text-align: center;
+  outline: none;
+  transition: border-color var(--anim-fast) var(--anim-ease);
+  /* hide native spinner arrows — they don't fit the compact width */
+  -moz-appearance: textfield;
+}
+.eq-band-subfield input[type="number"]::-webkit-outer-spin-button,
+.eq-band-subfield input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.eq-band-subfield input[type="number"]:focus {
+  border-color: color-mix(in srgb, var(--color-accent) 55%, var(--color-border));
+}

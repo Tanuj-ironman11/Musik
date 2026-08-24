@@ -6,12 +6,15 @@
 // Resolution order per track:
 //   1. Manual override (user-entered, always wins, never overwritten by
 //      a later network fetch unless the user clears it)
-//   2. Disk cache (previous successful LRCLIB/Lyrica fetch)
-//   3. LRCLIB (https://lrclib.net) — synced + plain, no API key
-//   4. Lyrica (https://github.com/Wilooper/Lyrica) — prehosted, HF Space
+//   2. Disk cache (previous successful fetch)
+//   3. NetEase Cloud Music klyric — word-level, no auth
+//   4. LRCLIB (https://lrclib.net) — synced + plain, no API key
+//   5. Lyrica (https://github.com/Wilooper/Lyrica) — prehosted, HF Space
 //      primary with Render as failover — see the known Mac/Windows
 //      discrepancy in the project brief (200 OK on Windows, not
 //      confirmed working on Mac)
+//
+// Musixmatch richsync was removed (gray-area ToS) — do not reintroduce.
 //
 // IPC wiring required in main.js + preload.js — NOT done here, see the
 // wiring snippets delivered alongside this file. New IPC surface:
@@ -85,9 +88,9 @@ function manualPath(key) { return path.join(manualDir, `${key}.json`); }
 // "keep deps minimal" pattern already used for fpcalc/AcoustID calls.
 // ---------------------------------------------------------------------
 
-function httpGetJson(url) {
+function httpGetJson(url, extraHeaders) {
   return new Promise((resolve, reject) => {
-    const req = https.get(url, { timeout: REQUEST_TIMEOUT_MS, headers: { 'User-Agent': 'Musik/1.0' } }, (res) => {
+    const req = https.get(url, { timeout: REQUEST_TIMEOUT_MS, headers: { 'User-Agent': 'Musik/1.0', ...extraHeaders } }, (res) => {
       if (res.statusCode && res.statusCode >= 400) {
         res.resume();
         return reject(new Error(`HTTP ${res.statusCode} for ${url}`));
@@ -210,6 +213,62 @@ async function fetchFromLyrica({ artist, title }) {
 }
 
 // ---------------------------------------------------------------------
+// Source: NetEase Cloud Music klyric (word-level). No auth needed.
+// Format for each klyric line: [lineStartMs,lineDurationMs]word(offsetMs,durationMs)word(...)...
+// This is best-effort parsing based on the commonly-documented format —
+// verify against a couple of real tracks and adjust the regex below if
+// NetEase has since changed their response shape.
+// ---------------------------------------------------------------------
+
+const NETEASE_SEARCH = 'https://music.163.com/api/search/get/web';
+const NETEASE_LYRIC = 'https://music.163.com/api/song/lyric';
+
+async function fetchFromNetease({ artist, title }) {
+  try {
+    const neteaseHeaders = { Referer: 'https://music.163.com' };
+    const q = new URLSearchParams({ s: `${title || ''} ${artist || ''}`.trim(), type: '1', limit: '3' });
+    const searchData = await httpGetJson(`${NETEASE_SEARCH}?${q.toString()}`, neteaseHeaders);
+    const songId = searchData?.result?.songs?.[0]?.id;
+    if (!songId) return null;
+
+    const lyricParams = new URLSearchParams({ os: 'pc', id: String(songId), lv: '-1', kv: '-1', tv: '-1' });
+    const lyricData = await httpGetJson(`${NETEASE_LYRIC}?${lyricParams.toString()}`, neteaseHeaders);
+    const klyric = lyricData?.klyric?.lyric;
+    console.log(`[Musik] netease for "${title}": songId=${songId}, klyric=${klyric ? 'found' : 'none'}`);
+    if (!klyric) return null;
+
+    const words = [];
+    const lineRe = /^\[(\d+),(\d+)\](.*)$/;
+    const wordRe = /([^(]+)\((\d+),(\d+)\)/g;
+    for (const raw of klyric.split(/\r?\n/)) {
+      const lineMatch = raw.match(lineRe);
+      if (!lineMatch) continue;
+      const [, lineStart, , rest] = lineMatch;
+      let m;
+      while ((m = wordRe.exec(rest)) !== null) {
+        const [, text, offset, dur] = m;
+        if (!text.trim()) continue;
+        const startMs = Number(lineStart) + Number(offset);
+        words.push({ text: text.trim(), startMs, endMs: startMs + Number(dur) });
+      }
+    }
+
+    if (words.length) {
+      const plainLrc = lyricData?.lrc?.lyric || null;
+      return {
+        source: 'netease',
+        words,
+        synced: parseLrc(plainLrc),
+        plain: plainLrc ? plainLrc.replace(/\[[^\]]*\]/g, '').trim() : null,
+      };
+    }
+  } catch (_) {
+    // search miss, no klyric for this song, or format drift — fall through
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------
 // Public: getLyrics
 // ---------------------------------------------------------------------
 
@@ -229,12 +288,16 @@ async function getLyrics(track) {
     return { ...cached, key };
   }
 
-  // 3 & 4. Network, in order, first hit wins
-  let result = await fetchFromLrclib(track);
+  // 3-5. Network, in order, first hit wins. NetEase tried first since
+  // it's the remaining word-level source; line-level sources remain as
+  // fallbacks so coverage doesn't regress for tracks/languages NetEase
+  // doesn't have. (Musixmatch removed — ToS reasons, don't reintroduce.)
+  let result = await fetchFromNetease(track);
+  if (!result) result = await fetchFromLrclib(track);
   if (!result) result = await fetchFromLyrica(track);
 
   if (!result) {
-    result = { source: 'none', synced: null, plain: null };
+    result = { source: 'none', synced: null, plain: null, words: null };
   }
 
   // Cache even "not found" so we don't hammer both APIs every play —
@@ -250,11 +313,19 @@ async function getLyrics(track) {
 // Public: manual entry
 // ---------------------------------------------------------------------
 
-function saveManualLyrics(track, { plain, synced }) {
+function saveManualLyrics(track, { plain, synced, words }) {
   assertInit();
+  // manualDir is only created once in init(); if it's deleted mid-session
+  // (e.g. someone manually clearing all manual lyrics via the filesystem),
+  // writeFileSync below would throw ENOENT with no recovery. Cheap check,
+  // avoids that class of bug entirely.
+  if (!fs.existsSync(manualDir)) fs.mkdirSync(manualDir, { recursive: true });
   const key = trackKey(track);
   const parsedSynced = typeof synced === 'string' ? parseLrc(synced) : (synced || null);
-  const payload = { plain: plain || null, synced: parsedSynced, savedAt: Date.now() };
+  // words: optional word-level rich sync, [{ text, startMs, endMs }, ...].
+  // Same flat shape fetchFromNetease already returns, so the UI needs no
+  // format branching based on where the data came from.
+  const payload = { plain: plain || null, synced: parsedSynced, words: words || null, savedAt: Date.now() };
   fs.writeFileSync(manualPath(key), JSON.stringify(payload), 'utf8');
   return { ...payload, source: 'manual', key };
 }
@@ -351,16 +422,31 @@ function romanizeGreek(text) {
 // no dictionary, unlike Chinese/Japanese which need one for logographic
 // characters.
 
-function buildAbugidaRomanizer({ consonants, vowels, matras, virama, anusvara, visarga, nasal }) {
+function buildAbugidaRomanizer({ consonants, vowels, matras, virama, anusvara, anusvaraMap, visarga, nasal, nukta, nuktaMap, addak }) {
+  const anusvaraChars = Array.isArray(anusvara) ? anusvara : (anusvara ? [anusvara] : []);
   return function romanizeAbugida(text) {
     const chars = Array.from(text);
     let out = '';
+    let pendingGeminate = false; // set by addak (Gurmukhi gemination mark) — doubles the NEXT consonant
     for (let i = 0; i < chars.length; i++) {
       const ch = chars[i];
-      const next = chars[i + 1];
+      let next = chars[i + 1];
+
+      if (addak && ch === addak) { pendingGeminate = true; continue; }
 
       if (Object.prototype.hasOwnProperty.call(consonants, ch)) {
-        const base = consonants[ch];
+        // Nukta: a combining dot that swaps a Devanagari consonant's sound
+        // for a Persian/Arabic-borrowed one (ज+nukta -> ज़ "za", फ+nukta ->
+        // फ़ "fa", etc). Must resolve BEFORE virama/matra lookahead, since
+        // the nukta sits between the base consonant and whatever follows it.
+        let base = consonants[ch];
+        if (nukta && next === nukta && nuktaMap && Object.prototype.hasOwnProperty.call(nuktaMap, ch)) {
+          base = nuktaMap[ch];
+          i++; // consume nukta
+          next = chars[i + 1]; // re-check what comes after the nukta
+        }
+        if (pendingGeminate) { base += base; pendingGeminate = false; }
+
         if (next === virama) {
           out += base;
           i++; // consume virama, no vowel
@@ -377,9 +463,18 @@ function buildAbugidaRomanizer({ consonants, vowels, matras, virama, anusvara, v
         out += vowels[ch];
         continue;
       }
-      if (anusvara && ch === anusvara) { out += 'm'; continue; }
+      if (anusvaraChars.includes(ch)) {
+        // Nasalization's actual sound depends on the consonant right after
+        // it (labial -> m, dental/alveolar -> n, velar -> ng). Hardcoding
+        // 'm' broke anything not followed by a labial consonant — e.g.
+        // ज़िंदा ("zindaa") was coming out "zimdaa" since द (d) follows.
+        const followingChar = chars[i + 1];
+        out += (anusvaraMap && followingChar && anusvaraMap[followingChar]) || 'n';
+        continue;
+      }
       if (visarga && ch === visarga) { out += 'h'; continue; }
       if (nasal && ch === nasal) { out += 'n'; continue; }
+      if (nukta && ch === nukta) continue; // stray/unmatched nukta — drop, don't leak into output
 
       out += ch; // punctuation, spaces, digits, anything unmapped
     }
@@ -408,8 +503,24 @@ const romanizeDevanagari = buildAbugidaRomanizer({
   },
   virama: '्',
   anusvara: 'ं',
+  anusvaraMap: {
+    // velar (क-वर्ग) -> ng
+    क: 'ng', ख: 'ng', ग: 'ng', घ: 'ng', ङ: 'ng',
+    // palatal (च-वर्ग) -> n
+    च: 'n', छ: 'n', ज: 'n', झ: 'n', ञ: 'n',
+    // retroflex (ट-वर्ग) -> n
+    ट: 'n', ठ: 'n', ड: 'n', ढ: 'n', ण: 'n',
+    // dental (त-वर्ग) -> n
+    त: 'n', थ: 'n', द: 'n', ध: 'n', न: 'n',
+    // labial (प-वर्ग) -> m
+    प: 'm', फ: 'm', ब: 'm', भ: 'm', म: 'm',
+  },
   visarga: 'ः',
   nasal: 'ँ',
+  nukta: '़',
+  nuktaMap: {
+    क: 'q', ख: 'kh', ग: 'gh', ज: 'z', ड: 'r', ढ: 'rh', फ: 'f', य: 'y',
+  },
 });
 
 // Tamil
@@ -452,7 +563,55 @@ const romanizeTelugu = buildAbugidaRomanizer({
   },
   virama: '్',
   anusvara: 'ం',
+  anusvaraMap: {
+    క: 'ng', ఖ: 'ng', గ: 'ng', ఘ: 'ng', ఙ: 'ng',
+    చ: 'n', ఛ: 'n', జ: 'n', ఝ: 'n', ఞ: 'n',
+    ట: 'n', ఠ: 'n', డ: 'n', ఢ: 'n', ణ: 'n',
+    త: 'n', థ: 'n', ద: 'n', ధ: 'n', న: 'n',
+    ప: 'm', ఫ: 'm', బ: 'm', భ: 'm', మ: 'm',
+  },
   visarga: 'ః',
+});
+
+// Gurmukhi (Punjabi)
+// Confidence note: consonant/vowel/matra codepoints follow the same
+// structural offset pattern as Devanagari (Gurmukhi block is U+0A00-U+0A7F,
+// mirroring U+0900-U+097F), a well-documented Unicode design choice, so
+// those are solid — sanity-checked by codepoint below before shipping. The
+// nukta-derived letters (ਖ਼ ਗ਼ ਜ਼ ਫ਼) are typically encoded as their own
+// precomposed codepoints in real-world text rather than built from
+// base+combining-nukta, so they're listed directly in `consonants` rather
+// than run through the nuktaMap mechanism used for Devanagari.
+const romanizeGurmukhi = buildAbugidaRomanizer({
+  consonants: {
+    ਕ: 'k', ਖ: 'kh', ਗ: 'g', ਘ: 'gh', ਙ: 'ng',
+    ਚ: 'ch', ਛ: 'chh', ਜ: 'j', ਝ: 'jh', ਞ: 'ny',
+    ਟ: 't', ਠ: 'th', ਡ: 'd', ਢ: 'dh', ਣ: 'n',
+    ਤ: 't', ਥ: 'th', ਦ: 'd', ਧ: 'dh', ਨ: 'n',
+    ਪ: 'p', ਫ: 'ph', ਬ: 'b', ਭ: 'bh', ਮ: 'm',
+    ਯ: 'y', ਰ: 'r', ਲ: 'l', ਵ: 'v', ੜ: 'r',
+    ਸ: 's', ਹ: 'h',
+    // precomposed nukta-derived letters (see confidence note above)
+    ਖ਼: 'kh', ਗ਼: 'gh', ਜ਼: 'z', ਫ਼: 'f', ਸ਼: 'sh',
+  },
+  vowels: {
+    ਅ: 'a', ਆ: 'aa', ਇ: 'i', ਈ: 'ii', ਉ: 'u', ਊ: 'uu',
+    ਏ: 'e', ਐ: 'ai', ਓ: 'o', ਔ: 'au',
+  },
+  matras: {
+    'ਾ': 'aa', 'ਿ': 'i', 'ੀ': 'ii', 'ੁ': 'u', 'ੂ': 'uu',
+    'ੇ': 'e', 'ੈ': 'ai', 'ੋ': 'o', 'ੌ': 'au',
+  },
+  virama: '੍',
+  anusvara: ['ਂ', 'ੰ'], // bindi + tippi — both nasalize, treated identically here
+  anusvaraMap: {
+    ਕ: 'ng', ਖ: 'ng', ਗ: 'ng', ਘ: 'ng', ਙ: 'ng',
+    ਚ: 'n', ਛ: 'n', ਜ: 'n', ਝ: 'n', ਞ: 'n',
+    ਟ: 'n', ਠ: 'n', ਡ: 'n', ਢ: 'n', ਣ: 'n',
+    ਤ: 'n', ਥ: 'n', ਦ: 'n', ਧ: 'n', ਨ: 'n',
+    ਪ: 'm', ਫ: 'm', ਬ: 'm', ਭ: 'm', ਮ: 'm',
+  },
+  addak: 'ੱ', // gemination mark — doubles the consonant right after it
 });
 
 function detectScript(text) {
@@ -462,6 +621,7 @@ function detectScript(text) {
   if (/[\u0900-\u097F]/.test(text)) return 'devanagari';
   if (/[\u0B80-\u0BFF]/.test(text)) return 'tamil';
   if (/[\u0C00-\u0C7F]/.test(text)) return 'telugu';
+  if (/[\u0A00-\u0A7F]/.test(text)) return 'gurmukhi';
   if (/[\u3040-\u30FF\u4E00-\u9FFF]/.test(text)) return 'cjk'; // unsupported for now (needs dictionary)
   return 'latin';
 }
@@ -475,6 +635,7 @@ function romanize(text) {
     case 'devanagari': return romanizeDevanagari(text);
     case 'tamil': return romanizeTamil(text);
     case 'telugu': return romanizeTelugu(text);
+    case 'gurmukhi': return romanizeGurmukhi(text);
     default: return null; // includes 'cjk' and 'latin' — nothing to do (dictionary needed)
   }
 }

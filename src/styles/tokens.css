@@ -50,6 +50,7 @@ body[data-active-view="now-playing"] #main {
   --color-accent:         #3db8f5;
   --color-accent-rgb:     61, 184, 245;
   --color-accent-glow:    rgba(61, 184, 245, 0.25);
+  --color-accent-glow-strong: rgba(61, 184, 245, 0.4);
   --color-accent-subtle:  rgba(61, 184, 245, 0.10);
   --color-accent-dim:     rgba(61, 184, 245, 0.06);
 
@@ -78,10 +79,11 @@ body[data-active-view="now-playing"] #main {
   --titlebar-height:        38px;
   --sidebar-width:          clamp(52px, 4.2vw, 60px);
   --sidebar-width-expanded: clamp(180px, 15vw, 220px);
-  --player-bar-height:      clamp(72px, 7vh, 88px);
+  --player-bar-height:      clamp(80px, 7vh, 96px);
 
   --ease-spring:     cubic-bezier(0.16, 1, 0.3, 1);
   --ease-out:        cubic-bezier(0.0, 0.0, 0.2, 1);
+  --ease-bounce:     cubic-bezier(0.34, 1.56, 0.64, 1);
 
   --anim-instant: 80ms;
   --anim-fast:    150ms;
@@ -102,11 +104,11 @@ body[data-active-view="now-playing"] #main {
   --glass-blur-subtle:   10px;
   --glass-blur-standard: 16px;
   --glass-blur-elevated: 26px;
-  --glass-saturate:      1.3;
+  --glass-saturate:      1.5;
 
   --glass-bg-subtle:     rgba(255, 255, 255, 0.035);
-  --glass-bg-standard:   rgba(18, 18, 18, 0.58);
-  --glass-bg-elevated:   rgba(12, 12, 12, 0.74);
+  --glass-bg-standard:   rgba(18, 18, 18, 0.48);
+  --glass-bg-elevated:   rgba(12, 12, 12, 0.6);
 
   --glass-edge-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.06);
   --glass-border-color:   rgba(255, 255, 255, 0.09);
@@ -300,6 +302,7 @@ input[type="range"]::-moz-range-track {
   width: 2px;
   background: var(--color-accent);
   border-radius: 1px;
+  box-shadow: 0 0 5px var(--color-accent-glow);
   transform-origin: bottom;
 }
 
@@ -319,6 +322,7 @@ input[type="range"]::-moz-range-track {
   background: var(--color-accent-dim);
   color: var(--color-text);
   transform: translateY(-1px);
+  box-shadow: 0 4px 16px var(--color-accent-glow);
 }
 
 .btn:active {
@@ -341,6 +345,7 @@ input[type="range"]::-moz-range-track {
 .custom-switch input:checked + .switch-slider {
   background-color: var(--color-accent);
   border-color: transparent;
+  box-shadow: 0 0 10px var(--color-accent-glow);
 }
 
 .custom-switch input:checked + .switch-slider::before {
@@ -348,7 +353,17 @@ input[type="range"]::-moz-range-track {
   background-color: #060608;
 }
 
+.custom-select {
+  position: relative;
+  min-width: 140px;
+}
+
 .custom-select-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
   padding: 8px 14px;
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -356,6 +371,7 @@ input[type="range"]::-moz-range-track {
   color: var(--color-text, #f2f2f2);
   font-size: 12px;
   font-weight: 600;
+  cursor: pointer;
   transition: background var(--anim-fast) var(--anim-ease), border-color var(--anim-fast) var(--anim-ease);
 }
 
@@ -365,6 +381,7 @@ input[type="range"]::-moz-range-track {
 }
 
 .custom-select-trigger .select-arrow {
+  flex-shrink: 0;
   color: var(--color-text-dim, rgba(255, 255, 255, 0.4));
   transition: transform var(--anim-fast) var(--anim-ease);
 }
@@ -374,14 +391,22 @@ input[type="range"]::-moz-range-track {
 }
 
 .custom-select-options {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 30;
+  max-height: 240px;
+  overflow-y: auto;
   background: rgba(14, 14, 14, 0.96);
-  backdrop-filter: blur(24px);
+  backdrop-filter: blur(var(--glass-blur-elevated));
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: var(--radius-sm, 6px);
   box-shadow: 0 12px 36px rgba(0, 0, 0, 0.6);
   opacity: 0;
   visibility: hidden;
   transform: translateY(-4px);
+  pointer-events: none;
   transition: opacity var(--anim-fast) var(--anim-ease), transform var(--anim-fast) var(--anim-spring), visibility var(--anim-fast) var(--anim-ease);
 }
 
@@ -389,9 +414,11 @@ input[type="range"]::-moz-range-track {
   opacity: 1;
   visibility: visible;
   transform: translateY(0);
+  pointer-events: auto;
 }
 
 .custom-option {
+  cursor: pointer;
   padding: 8px 14px;
   font-size: 12px;
   color: var(--color-text-secondary, rgba(255, 255, 255, 0.7));

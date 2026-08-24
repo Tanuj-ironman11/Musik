@@ -3,9 +3,19 @@
 // here per the brief: MediaElementAudioSourceNode -> AnalyserNode -> destination.
 
 (function () {
+  // 10-band graphic EQ, ISO-standard center frequencies. Nodes are always
+  // wired into the graph (source -> eqNodes[0..9] -> analyser -> dest) —
+  // "off" just means every band forced to 0dB gain at render time, not
+  // node removal, so toggling/tier-switching never touches live graph
+  // topology mid-playback. eq.js owns the actual gain/freq/Q values and
+  // re-applies them to fresh nodes on every 'audiograph-rebuilt' (a new
+  // AudioContext + node set is created per track, see createAudioGraph).
+  const EQ_FREQUENCIES = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
+
   let audioCtx = null;
   let sourceNode = null;
   let analyserNode = null;
+  let eqNodes = [];
   let audioEl = null; // swappable — MediaElementAudioSourceNode is one-per-element for life
   let currentTrack = null;
   let currentVolume = 1.0; // user's actual volume setting, survives graph rebuilds
@@ -57,11 +67,29 @@
     analyserNode.smoothingTimeConstant = 0.35;
     analyserNode.fftSize = 512;
 
-    sourceNode.connect(analyserNode);
+    // EQ chain: 10 peaking filters in series, source -> eq -> analyser.
+    // Fresh nodes every graph rebuild (see comment above) — eq.js reapplies
+    // its persisted gain/freq/Q onto these via 'audiograph-rebuilt' below.
+    eqNodes = EQ_FREQUENCIES.map((freq) => {
+      const filter = audioCtx.createBiquadFilter();
+      filter.type = 'peaking';
+      filter.frequency.value = freq;
+      filter.Q.value = 1.0;
+      filter.gain.value = 0; // flat until eq.js applies saved state
+      return filter;
+    });
+    sourceNode.connect(eqNodes[0]);
+    for (let i = 0; i < eqNodes.length - 1; i++) eqNodes[i].connect(eqNodes[i + 1]);
+    const eqOutput = eqNodes[eqNodes.length - 1];
+
+    eqOutput.connect(analyserNode);
     analyserNode.connect(audioCtx.destination);
 
     // Loudness tap — independent branch, never reaches destination.
     // highshelf + highpass approximate BS.1770's K-weighting pre-filter.
+    // Tapped POST-EQ (off eqOutput, not sourceNode) so game-duck measures
+    // what's actually audible — a bass-boosted track really is louder,
+    // duck math should see that rather than the pre-EQ signal.
     loudnessFilterHigh = audioCtx.createBiquadFilter();
     loudnessFilterHigh.type = 'highshelf';
     loudnessFilterHigh.frequency.value = 1500;
@@ -74,9 +102,12 @@
     loudnessAnalyser = audioCtx.createAnalyser();
     loudnessAnalyser.fftSize = 2048;
 
-    sourceNode.connect(loudnessFilterHigh);
+    eqOutput.connect(loudnessFilterHigh);
     loudnessFilterHigh.connect(loudnessFilterRLB);
     loudnessFilterRLB.connect(loudnessAnalyser);
+
+    // eq.js listens for this to reapply saved band values to the fresh nodes.
+    window.Musik?.events?.push('audiograph-rebuilt', { eqNodes });
 
     audioEl.addEventListener('play', () => window.Musik.events.push('play', currentTrack));
     audioEl.addEventListener('pause', () => window.Musik.events.push('pause', currentTrack));
@@ -238,6 +269,12 @@
   function setVolume(value) {
     currentVolume = Math.max(0, Math.min(1, value));
     applyEffectiveVolume();
+    // Mirrors the honest user-set volume (not duck-multiplied) into main's
+    // AudioEngine state via the already-wired player:set-volume channel.
+    // Previously never called — AudioEngine.state.volume sat permanently
+    // stale at its 1.0 default. Fire-and-forget: nothing should block the
+    // slider on an IPC round trip.
+    window.Musik?.player?.setVolume?.(currentVolume);
   }
 
   async function next() {
@@ -357,6 +394,7 @@
     previous,
     jumpTo,
     getAnalyser: () => analyserNode, // future visualizer hook
+    getEQNodes: () => eqNodes, // live BiquadFilterNode[10] — eq.js drives these directly
     getCurrentTime: () => audioEl?.currentTime ?? 0,
     getDuration: () => audioEl?.duration || (currentTrack?.duration ?? 0),
     getVolume: () => currentVolume,

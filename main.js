@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, shell, screen } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, screen, nativeImage } = require('electron');
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 const path = require('path');
 const fs = require('fs');
@@ -14,8 +14,7 @@ function safeRequire(relPath) {
 
 const AudioEngine = safeRequire('./src/core/audio-engine');
 const Library = safeRequire('./src/core/library');
-const ArtExtractor = safeRequire('./src/core/art-extractor');
-const ArtFetcher = safeRequire('./src/core/art-fetcher');
+const ArtProvider = safeRequire('./src/core/art-provider');
 const ModLoader = safeRequire('./src/core/mod-loader');
 const QueueManager = safeRequire('./src/core/queue-manager');
 const Lyrics = safeRequire('./src/core/lyrics');
@@ -34,6 +33,72 @@ function emitToRenderer(name, payload) {
     if (win && !win.isDestroyed()) {
       win.webContents.send('musik:event', { name, payload });
     }
+  }
+}
+
+// --- Taskbar thumbnail toolbar (Windows only — ITaskbarList3) ---
+// This is the row of buttons Windows draws BELOW the hover-preview
+// thumbnail (what Edge/Spotify/etc show) — distinct from the window's own
+// content shrunk down, and distinct from the SMTC tray widget. Electron
+// exposes it via win.setThumbarButtons(); it silently no-ops on non-Windows
+// platforms but we still gate on process.platform.
+//
+// Button clicks route through the existing 'miniplayer-command' event
+// player-ui.js already handles (togglePlayPause/previous/next) — reused
+// deliberately rather than adding a parallel handler.
+//
+// nativeImage needs real bitmap data (no SVG support), so the four glyphs
+// are embedded as base64 PNG data URLs rather than shipped as separate
+// files.
+let isPlayingForThumbar = false;
+
+const THUMBAR_ICONS = {
+  play: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAeUlEQVR4nO3WsQ3AMAhEURJlEPafypvEFRKdDRyiuV9HuSfSRIQxxgKp6o9+55tBICFhgIeMAgxRhZQAHjIKMEQGAgNkIXCAh4wCDHGCfJ2AtdZzeqbtAjfjIg0XuB2GA6LDFuQTZMdFiheoDFvpCyDGw3X8DzDGxttAjScf+nlinAAAAABJRU5ErkJggg==',
+  pause: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAATUlEQVR4nO2VQQoAIAgErZf4/1f5k7qGeRAhKJq5uaw4N0UA4HdatqiqY53NbNvNdDy9cjzKMp2ywEkQQAABBBBA4A2B6K/7LNMBgCuZddcYIlCq23MAAAAASUVORK5CYII=',
+  previous: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAfUlEQVR4nO2WMRLAIAgEMZOH8P9X8ROtbGMOzqG5rdXbwQE1E0KIA+4+3X1m957WPH8PQCQQ6U+BDGi13q7gDaUC2XCzYgUqwSUBRvAGvgJmOCzADocFImK0CtyQSLVhRAyWSGkOMEQog6giQXsLstWgP0b0Trn9HxBCtLMAlcIxvsphKh8AAAAASUVORK5CYII=',
+  next: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAfUlEQVR4nO3Wuw2AMAxF0QdiEO8/lTeBylKEkPAvcvNuRUHio6QJwBhjjkTkzq77W3t2bvb+/+s7DfBslikMMEQXJAVYIaMAQ1QgZUAV0gZYIaOAKGILQFWPMUBkOABcU4PbANnBVukKqsOB5Al0DLbCJ9A53N3O9wBjbLwHunIt+AGt6ogAAAAASUVORK5CYII=',
+};
+
+function thumbarIcon(name) {
+  const img = nativeImage.createFromDataURL(THUMBAR_ICONS[name]);
+  if (img.isEmpty()) {
+    console.warn(`[Musik] thumbar icon "${name}" decoded EMPTY — bad base64 or unsupported format`);
+  }
+  return img;
+}
+
+function updateThumbarButtons(win, isPlaying) {
+  if (process.platform !== 'win32') {
+    console.log('[Musik] skipping setThumbarButtons — not win32 (platform:', process.platform, ')');
+    return;
+  }
+  if (!win || win.isDestroyed()) {
+    console.warn('[Musik] skipping setThumbarButtons — window missing/destroyed');
+    return;
+  }
+  try {
+    const ok = win.setThumbarButtons([
+      {
+        tooltip: 'Previous',
+        icon: thumbarIcon('previous'),
+        click: () => emitToRenderer('miniplayer-command', { action: 'previous' }),
+      },
+      {
+        tooltip: isPlaying ? 'Pause' : 'Play',
+        icon: thumbarIcon(isPlaying ? 'pause' : 'play'),
+        click: () => emitToRenderer('miniplayer-command', { action: 'togglePlayPause' }),
+      },
+      {
+        tooltip: 'Next',
+        icon: thumbarIcon('next'),
+        click: () => emitToRenderer('miniplayer-command', { action: 'next' }),
+      },
+    ]);
+    // setThumbarButtons returns false if it failed WITHOUT throwing — this
+    // return value is easy to miss and was silently ignored before.
+    console.log(`[Musik] setThumbarButtons(${isPlaying ? 'playing' : 'paused'}) returned:`, ok);
+  } catch (err) {
+    console.warn('[Musik] setThumbarButtons threw:', err.message);
   }
 }
 
@@ -57,7 +122,7 @@ function createMiniplayerWindow() {
     width: settings.width || 320,
     height: settings.height || 180,
     minWidth: 220,
-    minHeight: 120,
+    minHeight: 150,
     // transparent:true + no backgroundColor — combining the two on Windows
     // paints an opaque square instead of real per-pixel transparency.
     transparent: true,
@@ -171,6 +236,7 @@ function createWindow() {
   });
 
   mainWindow.loadFile('index.html');
+  updateThumbarButtons(mainWindow, isPlayingForThumbar);
 
   if (process.argv.includes('--dev')) {
     mainWindow.webContents.openDevTools();
@@ -241,6 +307,13 @@ app.on('activate', () => {
 });
 
 ipcMain.handle('musik:push-event', (_e, name, payload) => {
+  if (name === 'play') {
+    isPlayingForThumbar = true;
+    updateThumbarButtons(mainWindow, true);
+  } else if (name === 'pause') {
+    isPlayingForThumbar = false;
+    updateThumbarButtons(mainWindow, false);
+  }
   emitToRenderer(name, payload);
   return true;
 });
@@ -269,6 +342,10 @@ ipcMain.handle('set-mod-enabled', async (_e, modId, enabled) => {
 
 ipcMain.handle('mods:open-folder', async () => {
   return ModLoader?.openModsFolder ? ModLoader.openModsFolder() : false;
+});
+
+ipcMain.handle('mods:get-dir', async () => {
+  return ModLoader?.getModsDir ? ModLoader.getModsDir() : null;
 });
 
 ipcMain.handle('read-tags', async (_e, filePath) => {
@@ -365,8 +442,8 @@ ipcMain.handle('library:remove-track', async (_e, id, filePath) => Library?.remo
 ipcMain.handle('library:reorder-tracks', async (_e, id, fromIndex, toIndex) => Library?.reorderPlaylistTracks?.(id, fromIndex, toIndex) ?? null);
 
 // --- Art ---
-ipcMain.handle('art:extract', async (_e, filePath) => ArtExtractor?.extract?.(filePath) ?? null);
-ipcMain.handle('art:fetch-online', async (_e, trackMeta) => ArtFetcher?.fetch?.(trackMeta) ?? null);
+ipcMain.handle('art:extract', async (_e, filePath) => ArtProvider?.extract?.(filePath) ?? null);
+ipcMain.handle('art:fetch-online', async (_e, trackMeta) => ArtProvider?.fetchOnline?.(trackMeta) ?? null);
 
 // --- Lyrics ---
 ipcMain.handle('lyrics:get', async (_e, trackMeta) => Lyrics?.get?.(trackMeta) ?? null);
@@ -400,6 +477,7 @@ ipcMain.handle('game-duck:set-sensitivity', async (_e, value) => GameDuck?.setSe
 ipcMain.handle('game-duck:set-duck-ceiling', async (_e, value) => GameDuck?.setDuckCeiling?.(value) ?? null);
 ipcMain.handle('game-duck:set-max-duck', async (_e, value) => GameDuck?.setMaxDuck?.(value) ?? null);
 ipcMain.handle('game-duck:set-manual-override', async (_e, value) => GameDuck?.setManualOverride?.(value) ?? null);
+ipcMain.handle('game-duck:set-track-loudness', async (_e, lufs) => GameDuck?.setTrackLoudness?.(lufs) ?? null);
 
 // --- Stats ---
 ipcMain.handle('stats:get-session', async () => Stats?.getSessionStats?.() ?? null);

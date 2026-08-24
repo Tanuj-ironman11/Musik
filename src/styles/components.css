@@ -15,5 +15,6 @@
 @import url('./animations.css');
 @import url('./track-actions.css');
 @import url('./profile.css');
-@import url('./navigation.css');
 @import url('./search-overlay.css');
+@import url('./buttons.css');
+@import url('./marquee.css');

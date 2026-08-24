@@ -117,6 +117,7 @@ const Musik = {
     setDuckCeiling: (value) => ipcRenderer.invoke('game-duck:set-duck-ceiling', value),
     setMaxDuck: (value) => ipcRenderer.invoke('game-duck:set-max-duck', value),
     setManualOverride: (value) => ipcRenderer.invoke('game-duck:set-manual-override', value),
+    setTrackLoudness: (lufs) => ipcRenderer.invoke('game-duck:set-track-loudness', lufs),
   },
 
   mods: {
@@ -124,6 +125,7 @@ const Musik = {
     getFile: (modName, fileName) => ipcRenderer.invoke('get-mod-file', modName, fileName),
     setEnabled: (modId, enabled) => ipcRenderer.invoke('set-mod-enabled', modId, enabled),
     openFolder: () => ipcRenderer.invoke('mods:open-folder'),
+    getDir: () => ipcRenderer.invoke('mods:get-dir'),
   },
 
   ui: {

@@ -50,9 +50,8 @@
           <span class="q-row-title">${escapeHTML(track.title)}</span>
           <span class="q-row-artist">${escapeHTML(track.artist)}</span>
         </div>
-        ${isCurrent
-          ? `<span class="eq-bars"><span class="eq-bar eq-bar--1"></span><span class="eq-bar eq-bar--2"></span><span class="eq-bar eq-bar--3"></span></span>`
-          : `<span class="q-row-time">${fmtTime(track.duration)}</span>`}
+        <span class="eq-bars ${isCurrent ? '' : 'q-hidden'}"><span class="eq-bar eq-bar--1"></span><span class="eq-bar eq-bar--2"></span><span class="eq-bar eq-bar--3"></span></span>
+        <span class="q-row-time ${isCurrent ? 'q-hidden' : ''}">${fmtTime(track.duration)}</span>
         <button class="q-row-remove" data-action="remove" title="Remove from queue">
           <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
         </button>
@@ -77,7 +76,7 @@
     }
 
     listEl.innerHTML = queue
-      .map((t, i) => rowHTML(t, i, current && t.filePath === current.filePath))
+      .map((t) => rowHTML(t, t.queueIndex, current && t.filePath === current.filePath))
       .join('');
 
     wireRows(queue);
@@ -90,14 +89,16 @@
     const current = window.MusikPlayerUI?.getCurrentTrackData?.();
     listEl.querySelectorAll('.q-row').forEach((row) => {
       const isCurrent = !!current && row.dataset.filePath === current.filePath;
-      row.classList.toggle('q-row--active', !!isCurrent);
+      row.classList.toggle('q-row--active', isCurrent);
+      row.querySelector('.eq-bars')?.classList.toggle('q-hidden', !isCurrent);
+      row.querySelector('.q-row-time')?.classList.toggle('q-hidden', isCurrent);
     });
   }
 
   function wireRows(queue) {
-    listEl.querySelectorAll('.q-row').forEach((row) => {
-      const index = Number(row.dataset.index);
-      const track = queue[index];
+    listEl.querySelectorAll('.q-row').forEach((row, pos) => {
+      const track = queue[pos];
+      const index = track.queueIndex;
 
       if (track) window.MusikContextMenu?.attachTrack?.(row, track);
 

@@ -1,9 +1,10 @@
 // src/ui/accent-extractor.js
 // Renderer-side. Samples decoded album art on a hidden canvas to get a
 // dominant color, then rewrites --color-accent-* tokens on 'artupdate'.
+// Emits 'accentupdate' { r, g, b, css } for mods that want to react to accent changes.
 
 (function () {
-  const FALLBACK_RGB = [61, 184, 245]; // matches core.css --color-accent-rgb default
+  const FALLBACK_RGB = [61, 184, 245]; // matches tokens.css --color-accent-rgb default
   const SAMPLE_SIZE = 48;
 
   let canvas = null;
@@ -19,9 +20,6 @@
     return { canvas, ctx };
   }
 
-  // Bucket pixels into coarse RGB bins, skip near-black/near-white/
-  // low-saturation pixels, return the highest-weighted bucket averaged
-  // back to RGB.
   function extractDominantColor(imageData) {
     const data = imageData.data;
     const buckets = new Map();
@@ -120,7 +118,7 @@
     root.setProperty('--color-accent-dim', `rgba(${rgb}, 0.06)`);
 
     // Sets vars directly rather than via window.Musik.theme.setVar, which
-    // rebroadcasts on 'artupdate' and causes a feedback loop.
+    // rebroadcasts on 'artupdate' and would cause a feedback loop.
     window.Musik?.events?.emit('accentupdate', { r, g, b, css: `rgb(${rgb})` });
 
     setTimeout(() => { applyingAccent = false; }, 0);

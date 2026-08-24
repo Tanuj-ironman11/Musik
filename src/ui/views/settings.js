@@ -17,6 +17,20 @@ function broadcastLayoutChange() {
   }));
 }
 
+// 3D visualizer quality — visualizer.js is the source of truth for
+// applying this live (window.MusikVisualizer.setQuality), this just
+// persists the pref and broadcasts so an already-open Fullscreen view
+// picks it up without needing a reload. Kept out of the topbar per explicit
+// call: fullscreen stays uncluttered, quality lives in Settings only.
+const VIS_QUALITY_KEY = 'musik:visualizer-quality';
+
+function getVisQuality() {
+  return localStorage.getItem(VIS_QUALITY_KEY) || 'medium';
+}
+function broadcastVisualizerChange(detail) {
+  window.dispatchEvent(new CustomEvent('musik:visualizer-settings-change', { detail }));
+}
+
 // "Always on top" needs window.Musik.miniplayer.setAlwaysOnTop() —
 // preload.js/main.js don't expose it yet. Saves the pref, no visible
 // effect until that IPC surface exists.
@@ -50,6 +64,13 @@ async function syncLastfmCredsToMain() {
   if (!apiKey && !apiSecret) return;
   await window.Musik?.scrobble?.setCredentials?.({ apiKey, apiSecret });
 }
+
+// Exposed so app.js can call this once on app boot — right now it only
+// ever ran when the Settings view itself rendered, meaning a saved key
+// wasn't actually pushed into the scrobbler until you opened Settings that
+// session. If you played a track first, scrobbling would fail with a
+// misleading "API key missing" error despite the key being saved fine.
+window.MusikViews.syncLastfmCredsToMain = syncLastfmCredsToMain;
 
 function layoutCardHTML(mode, title, desc) {
   if (mode === 'topbar') {
@@ -256,6 +277,83 @@ window.MusikViews['settings'] = async function renderSettings(main) {
         </div>
       </section>
 
+      <section class="settings-section" id="settings-eq">
+        <h2 class="settings-section-title">Equalizer</h2>
+        <div class="settings-row">
+          <div class="settings-row-label">
+            <span class="settings-row-name">Mode</span>
+            <span class="settings-row-desc">Off is flat, zero effect on playback. Simple/Advanced are gain-only sliders. Master unlocks frequency and Q per band.</span>
+          </div>
+          <div class="settings-row-control">
+            <div class="custom-select" id="settings-eq-mode">
+              <button type="button" class="custom-select-trigger">
+                <span class="custom-select-trigger-label">Off</span>
+                <svg class="select-arrow" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+              </button>
+              <div class="custom-select-options">
+                <div class="custom-option" data-value="off">Off</div>
+                <div class="custom-option" data-value="simple">Simple</div>
+                <div class="custom-option" data-value="advanced">Advanced</div>
+                <div class="custom-option" data-value="master">Master</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="settings-row" id="settings-eq-advanced-count-row">
+          <div class="settings-row-label">
+            <span class="settings-row-name">Bands</span>
+          </div>
+          <div class="settings-row-control">
+            <div class="custom-select" id="settings-eq-advanced-count">
+              <button type="button" class="custom-select-trigger">
+                <span class="custom-select-trigger-label">5-band</span>
+                <svg class="select-arrow" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+              </button>
+              <div class="custom-select-options">
+                <div class="custom-option" data-value="5">5-band</div>
+                <div class="custom-option" data-value="10">10-band</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="settings-row settings-row--stack" id="settings-eq-presets-row">
+          <div class="settings-row-label">
+            <span class="settings-row-name">Presets</span>
+            <span class="settings-row-desc">Applies to the underlying 10 bands, so it shows correctly no matter which tier you're viewing.</span>
+          </div>
+          <div class="eq-preset-grid" id="settings-eq-presets"></div>
+        </div>
+        <div class="settings-row settings-row--stack" id="settings-eq-bands-row">
+          <div class="settings-row-label">
+            <span class="settings-row-name">Bands</span>
+          </div>
+          <div class="eq-bands-grid" id="settings-eq-bands"></div>
+        </div>
+      </section>
+
+      <section class="settings-section" id="settings-visualizer">
+        <h2 class="settings-section-title">Visualizer</h2>
+        <div class="settings-row">
+          <div class="settings-row-label">
+            <span class="settings-row-name">Quality</span>
+            <span class="settings-row-desc">Low disables extra fill/glow rendering and thins point density for weaker hardware. High turns it all up.</span>
+          </div>
+          <div class="settings-row-control">
+            <div class="custom-select" id="settings-vis-quality">
+              <button type="button" class="custom-select-trigger">
+                <span class="custom-select-trigger-label">Low</span>
+                <svg class="select-arrow" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+              </button>
+              <div class="custom-select-options">
+                <div class="custom-option" data-value="low">Low</div>
+                <div class="custom-option" data-value="medium">Medium</div>
+                <div class="custom-option" data-value="high">High</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <section class="settings-section" id="settings-library">
         <h2 class="settings-section-title">Library</h2>
         <div class="settings-row">
@@ -264,12 +362,18 @@ window.MusikViews['settings'] = async function renderSettings(main) {
             <span class="settings-row-desc">Automatically rescans all watched folders on launch and on this interval. Set to Off to only scan manually.</span>
           </div>
           <div class="settings-row-control">
-            <select id="settings-rescan-interval">
-              <option value="0">Off</option>
-              <option value="15">Every 15 min</option>
-              <option value="30">Every 30 min</option>
-              <option value="60">Every 60 min</option>
-            </select>
+            <div class="custom-select" id="settings-rescan-interval">
+              <button type="button" class="custom-select-trigger">
+                <span class="custom-select-trigger-label">Off</span>
+                <svg class="select-arrow" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+              </button>
+              <div class="custom-select-options">
+                <div class="custom-option" data-value="0">Off</div>
+                <div class="custom-option" data-value="15">Every 15 min</div>
+                <div class="custom-option" data-value="30">Every 30 min</div>
+                <div class="custom-option" data-value="60">Every 60 min</div>
+              </div>
+            </div>
           </div>
         </div>
         <div class="settings-row">
@@ -410,14 +514,12 @@ window.MusikViews['settings'] = async function renderSettings(main) {
   const rescanNowBtn = document.getElementById('settings-rescan-now');
   const rescanStatus = document.getElementById('settings-rescan-status');
 
-  window.Musik?.library?.getRescanSettings?.().then((settings) => {
-    if (settings && rescanIntervalSelect) {
-      rescanIntervalSelect.value = String(settings.intervalMinutes ?? 0);
-    }
+  const rescanIntervalCustomSelect = initCustomSelect(rescanIntervalSelect, (value) => {
+    window.Musik?.library?.setRescanInterval?.(Number(value));
   });
 
-  rescanIntervalSelect?.addEventListener('change', () => {
-    window.Musik?.library?.setRescanInterval?.(Number(rescanIntervalSelect.value));
+  window.Musik?.library?.getRescanSettings?.().then((settings) => {
+    rescanIntervalCustomSelect?.setValue(String(settings?.intervalMinutes ?? 0));
   });
 
   rescanNowBtn?.addEventListener('click', async () => {
@@ -434,6 +536,249 @@ window.MusikViews['settings'] = async function renderSettings(main) {
       setTimeout(() => { rescanStatus.textContent = ''; }, 3000);
     }
   });
+
+  const visQualitySelect = document.getElementById('settings-vis-quality');
+
+  const visQualityCustomSelect = initCustomSelect(visQualitySelect, (value) => {
+    localStorage.setItem(VIS_QUALITY_KEY, value);
+    window.MusikVisualizer?.setQuality?.(value);
+    broadcastVisualizerChange({ quality: value });
+  });
+  visQualityCustomSelect?.setValue(window.MusikVisualizer?.getQuality?.() ?? getVisQuality());
+
+  // ── Equalizer ─────────────────────────────────────────────────────────
+  // window.MusikEQ (eq.js) owns state/persistence/live-node wiring; this
+  // block only renders and reads/writes through its API.
+
+  const eqModeSelect = document.getElementById('settings-eq-mode');
+  const eqAdvancedCountRow = document.getElementById('settings-eq-advanced-count-row');
+  const eqAdvancedCountSelect = document.getElementById('settings-eq-advanced-count');
+  const eqPresetsRow = document.getElementById('settings-eq-presets-row');
+  const eqPresetsWrap = document.getElementById('settings-eq-presets');
+  const eqBandsRow = document.getElementById('settings-eq-bands-row');
+  const eqBandsWrap = document.getElementById('settings-eq-bands');
+
+  // Minimal, self-contained wiring for the app's existing .custom-select
+  // component (styled in tokens.css, previously unused by any JS) — click
+  // trigger to open, click an option to pick it, click outside to close.
+  function initCustomSelect(root, onChange) {
+    if (!root) return null;
+    const trigger = root.querySelector('.custom-select-trigger');
+    const label = root.querySelector('.custom-select-trigger-label');
+    const options = root.querySelectorAll('.custom-option');
+
+    trigger.addEventListener('click', (e) => {
+      e.stopPropagation();
+      root.classList.toggle('open');
+    });
+    options.forEach((opt) => {
+      opt.addEventListener('click', () => {
+        root.classList.remove('open');
+        onChange(opt.dataset.value);
+      });
+    });
+    document.addEventListener('click', () => root.classList.remove('open'));
+
+    return {
+      setValue(value) {
+        let match = null;
+        options.forEach((o) => {
+          const isMatch = o.dataset.value === String(value);
+          o.classList.toggle('selected', isMatch);
+          if (isMatch) match = o;
+        });
+        if (label && match) label.textContent = match.textContent;
+      },
+    };
+  }
+
+  const eqModeCustomSelect = initCustomSelect(eqModeSelect, (value) => window.MusikEQ?.setMode(value));
+  const eqAdvancedCountCustomSelect = initCustomSelect(eqAdvancedCountSelect, (value) => window.MusikEQ?.setBandCount('advanced', Number(value)));
+
+  // Percent-based math against each rail's own rect, not a hardcoded
+  // pixel height, so this stays correct if .eq-band-rail's height changes.
+
+  function gainToTopPercent(dB) {
+    return (1 - (dB + 12) / 24) * 100; // -12dB -> 100% (bottom), +12dB -> 0% (top)
+  }
+
+  // Redraws the connecting curve from live DOM thumb positions — turns
+  // separate sliders into one continuous shape. Cheap enough for every
+  // drag tick (no re-render, just path-string math).
+  function updateEqCurve(consoleEl) {
+    const svg = consoleEl.querySelector('.eq-console-curve');
+    if (!svg) return;
+    const bandEls = Array.from(consoleEl.querySelectorAll('.eq-band'));
+    if (bandEls.length < 2) { svg.innerHTML = ''; return; }
+
+    const consoleRect = consoleEl.getBoundingClientRect();
+
+    // Centerline uses a rail's own rect (position never moves mid-drag,
+    // only the thumb does) as an exact 0dB reference. Same rect gives us
+    // the rail's bottom edge, which is where the fill below should stop
+    // — it was previously running the full console height and washing
+    // out the dB inputs sitting underneath.
+    const centerline = consoleEl.querySelector('.eq-console-centerline');
+    const railRect = bandEls[0].querySelector('.eq-band-rail').getBoundingClientRect();
+    const railBottomY = railRect.bottom - consoleRect.top;
+    if (centerline) {
+      const railMidY = railRect.top + railRect.height / 2 - consoleRect.top;
+      centerline.style.top = `${railMidY}px`;
+    }
+
+    const points = bandEls.map((el) => {
+      const thumb = el.querySelector('.eq-band-thumb');
+      const r = thumb.getBoundingClientRect();
+      return [r.left + r.width / 2 - consoleRect.left, r.top + r.height / 2 - consoleRect.top];
+    });
+
+    svg.setAttribute('viewBox', `0 0 ${consoleRect.width} ${consoleRect.height}`);
+
+    const linePath = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(' ');
+    const bottom = railBottomY;
+    const fillPath = `M${points[0][0].toFixed(1)},${bottom} ` +
+      points.map((p) => `L${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(' ') +
+      ` L${points[points.length - 1][0].toFixed(1)},${bottom} Z`;
+
+    svg.innerHTML = `
+      <defs>
+        <linearGradient id="eq-fill-fade" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" style="stop-color:var(--color-accent); stop-opacity:0.28" />
+          <stop offset="100%" style="stop-color:var(--color-accent); stop-opacity:0" />
+        </linearGradient>
+      </defs>
+      <path class="eq-console-curve-fill" d="${fillPath}" fill="url(#eq-fill-fade)"></path>
+      <path class="eq-console-curve-line" d="${linePath}"></path>
+    `;
+  }
+
+  function attachFaderDrag(bandEl, bandIndex, consoleEl) {
+    const rail = bandEl.querySelector('.eq-band-rail');
+    const thumb = bandEl.querySelector('.eq-band-thumb');
+    const valueEl = bandEl.querySelector('.eq-band-gain-value');
+
+    function applyFromClientY(clientY) {
+      const rect = rail.getBoundingClientRect();
+      let frac = 1 - (clientY - rect.top) / rect.height; // 1 = top = +12dB, 0 = bottom = -12dB
+      frac = Math.max(0, Math.min(1, frac));
+      const dB = Math.round((frac * 24 - 12) * 10) / 10; // continuous 0.1dB resolution, no native-slider snapping
+      const applied = window.MusikEQ.previewBandGain(bandIndex, dB);
+      thumb.style.top = `${gainToTopPercent(applied)}%`;
+      valueEl.value = applied;
+      updateEqCurve(consoleEl);
+      return applied;
+    }
+
+    function onPointerMove(e) { applyFromClientY(e.clientY); }
+
+    function onPointerUp(e) {
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+      thumb.classList.remove('eq-band-thumb--dragging');
+      // Commit once at drag end — persists + broadcasts musik:eq-change.
+      const finalDb = applyFromClientY(e.clientY);
+      window.MusikEQ.commitBandGain(bandIndex, finalDb);
+    }
+
+    function onPointerDown(e) {
+      e.preventDefault();
+      thumb.classList.add('eq-band-thumb--dragging');
+      applyFromClientY(e.clientY);
+      window.addEventListener('pointermove', onPointerMove);
+      window.addEventListener('pointerup', onPointerUp, { once: true });
+    }
+
+    thumb.addEventListener('pointerdown', onPointerDown);
+    rail.addEventListener('pointerdown', (e) => {
+      if (e.target === thumb) return; // thumb has its own handler
+      onPointerDown(e);
+    });
+  }
+
+  function renderEqSection() {
+    if (!window.MusikEQ) return;
+    const state = window.MusikEQ.getState();
+
+    eqModeCustomSelect?.setValue(state.mode);
+    eqAdvancedCountCustomSelect?.setValue(String(state.advancedBands));
+
+    eqAdvancedCountRow.style.display = state.mode === 'advanced' ? '' : 'none';
+    eqPresetsRow.style.display = state.mode === 'off' ? 'none' : '';
+    eqBandsRow.style.display = state.mode === 'off' ? 'none' : '';
+
+    if (state.mode === 'off') return;
+
+    eqPresetsWrap.innerHTML = window.MusikEQ.listPresets().map((p) => `
+      <button type="button" class="eq-preset-btn ${state.lastPreset === p.id ? 'eq-preset-btn--active' : ''}" data-preset-id="${p.id}">
+        <span class="eq-preset-btn-spark">${p.sparkline}</span>
+        <span class="eq-preset-btn-label">${p.label}</span>
+      </button>
+    `).join('');
+    eqPresetsWrap.querySelectorAll('.eq-preset-btn').forEach((btn) => {
+      btn.addEventListener('click', () => window.MusikEQ.applyPreset(btn.dataset.presetId));
+    });
+
+    const indices = window.MusikEQ.getVisibleIndices();
+    const labels = window.MusikEQ.getBandLabels();
+    const editableFreqQ = state.mode === 'master';
+
+    // One shared glass panel with one centerline + curve overlay, instead
+    // of each band being its own isolated box.
+    eqBandsWrap.innerHTML = `
+      <div class="eq-console" id="eq-console">
+        <div class="eq-console-centerline"></div>
+        <svg class="eq-console-curve" preserveAspectRatio="none"></svg>
+        <div class="eq-console-bands">
+          ${indices.map((bandIndex, i) => {
+            const band = state.bands[bandIndex];
+            return `
+              <div class="eq-band" data-band-index="${bandIndex}">
+                <span class="eq-band-label">${labels[i]}</span>
+                <div class="eq-band-rail">
+                  <div class="eq-band-thumb" style="top:${gainToTopPercent(band.gain)}%"></div>
+                </div>
+                <span class="eq-band-gain-field">
+                  <input type="number" class="eq-band-gain-value" min="-12" max="12" step="0.1" value="${band.gain}" aria-label="Gain in decibels" />
+                  <span class="eq-band-gain-unit">dB</span>
+                </span>
+                ${editableFreqQ ? `
+                  <label class="eq-band-subfield">Hz <input type="number" class="eq-band-freq" min="20" max="20000" step="1" value="${Math.round(band.freq)}" /></label>
+                  <label class="eq-band-subfield">Q <input type="number" class="eq-band-q" min="0.1" max="10" step="0.1" value="${band.q}" /></label>
+                ` : ''}
+              </div>
+            `;
+          }).join('')}
+        </div>
+      </div>
+    `;
+
+    const consoleEl = document.getElementById('eq-console');
+    const commitOnEnter = (e) => { if (e.key === 'Enter') e.target.blur(); };
+
+    consoleEl.querySelectorAll('.eq-band').forEach((el) => {
+      const idx = Number(el.dataset.bandIndex);
+      attachFaderDrag(el, idx, consoleEl);
+      el.querySelector('.eq-band-gain-value')?.addEventListener('change', (e) => {
+        window.MusikEQ.setBandGain(idx, Number(e.target.value));
+      });
+      el.querySelector('.eq-band-freq')?.addEventListener('change', (e) => {
+        window.MusikEQ.setBandFreq(idx, Number(e.target.value));
+      });
+      el.querySelector('.eq-band-q')?.addEventListener('change', (e) => {
+        window.MusikEQ.setBandQ(idx, Number(e.target.value));
+      });
+      el.querySelectorAll('.eq-band-gain-value, .eq-band-freq, .eq-band-q').forEach((input) => {
+        input.addEventListener('keydown', commitOnEnter);
+      });
+    });
+    updateEqCurve(consoleEl);
+  }
+
+  // Presets/mode/band-count changes funnel through this event so the UI
+  // never drifts from real state. Drag-in-progress updates don't — see
+  // previewBandGain in eq.js.
+  window.addEventListener('musik:eq-change', renderEqSection);
+  renderEqSection();
 
   const navGrid = document.getElementById('layout-nav-grid');
 

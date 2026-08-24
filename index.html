@@ -1,43 +1,103 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "./node_modules/three/build/three.module.js"
+      }
+    }
+  </script>
   <meta charset="UTF-8" />
   <meta
     http-equiv="Content-Security-Policy"
     content="default-src 'self' file: data: blob:;
-             script-src 'self' file: 'unsafe-inline' 'unsafe-eval';
+             script-src 'self' file:;
              style-src 'self' file: 'unsafe-inline';
              img-src 'self' file: data: blob: https:;
              media-src 'self' file: blob:;
-             connect-src 'self' https: http:;
+             connect-src 'self' https:;
              font-src 'self' file: data:;"
   />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="color-scheme" content="dark" />
   <title>Musik</title>
 
+  <!-- Preconnect to known external APIs actually contacted at runtime —
+       shaves DNS/TLS handshake time off the first scrobble/lyrics/art
+       lookup. Lyrica's fallback domain isn't confirmed yet, so it's not
+       listed here — add it once known. -->
+  <link rel="preconnect" href="https://ws.audioscrobbler.com" />
+  <link rel="preconnect" href="https://lrclib.net" />
+  <link rel="preconnect" href="https://musicbrainz.org" />
+  <link rel="preconnect" href="https://coverartarchive.org" />
+  <link rel="preconnect" href="https://api.acoustid.org" />
+
   <!-- CSS role-separated: do not merge these -->
   <link rel="stylesheet" href="src/styles/components.css" />
-  <link rel="stylesheet" href="src/styles/component/marquee.css" />
 
   <!-- Mod CSS is injected here at runtime by the mod loader -->
   <style id="mod-css-injection-point"></style>
+
+  <!-- Boot splash — CSS-only, no JS dependency. ~20 scripts parse
+       synchronously before app.js paints real content; without this the
+       window shows a stark black rectangle for a beat. -->
+  <style>
+    #boot-splash {
+      position: fixed;
+      inset: 0;
+      z-index: 99999;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #080808;
+      pointer-events: none;
+      animation: boot-splash-fade 220ms ease-out 900ms forwards;
+    }
+    #boot-splash span {
+      font-family: "Space Mono", monospace;
+      font-weight: 700;
+      font-size: 13px;
+      letter-spacing: 0.14em;
+      color: rgba(240, 240, 240, 0.35);
+      animation: boot-splash-pulse 1100ms ease-in-out infinite;
+    }
+    @keyframes boot-splash-fade {
+      to { opacity: 0; visibility: hidden; }
+    }
+    @keyframes boot-splash-pulse {
+      0%, 100% { opacity: 0.35; }
+      50% { opacity: 0.8; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      #boot-splash span { animation: none; opacity: 0.6; }
+    }
+  </style>
 </head>
 <body>
+  <div id="boot-splash" aria-hidden="true"><span>MUSIK</span></div>
+
   <div id="app-bg" aria-hidden="true"></div>
-  <div id="titlebar"></div>
+  <div id="titlebar" role="banner"></div>
   <div id="app">
-    <div id="sidebar"></div>
-    <div id="main"></div>
-    <div id="now-playing-bar"></div>
+    <nav id="sidebar" aria-label="Main navigation"></nav>
+    <main id="main" role="main"></main>
+    <div id="now-playing-bar" role="region" aria-label="Now playing"></div>
   </div>
+
+  <!-- Screen-reader-only live region — announces track changes without
+       visually cluttering the UI. player-ui.js/player-bar.js should push
+       "{title} by {artist}" text into this on trackupdate; not wired yet,
+       flagging as a follow-up rather than guessing at the exact event
+       payload shape blind. -->
+  <div id="sr-announcer" aria-live="polite" aria-atomic="true" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;"></div>
 
   <!-- Mod injection point for elements added via window.Musik.ui.injectElement -->
   <div id="mod-root"></div>
 
   <!--
-    IMPORTANT: src/core/*.js (audio-engine.js, library.js, art-extractor.js,
-    art-fetcher.js, mod-loader.js, queue-manager.js, lyrics.js, scrobbler.js)
+    IMPORTANT: src/core/*.js (audio-engine.js, library.js, art-provider.js,
+    mod-loader.js, queue-manager.js, lyrics.js, scrobbler.js)
     are CommonJS main-process modules (module.exports, require('fs'), etc).
     They are loaded via require() inside main.js and talked to ONLY through
     the window.Musik / window.Aurelius IPC bridge from preload.js.
@@ -49,24 +109,44 @@
     why player-ui.js previously never ran.
 
     Renderer-side scripts only below.
+
+    All scripts below now use `defer`. This does NOT change execution
+    order — deferred scripts still run in document order, same as before —
+    it just lets the browser fetch/parse them in parallel instead of
+    blocking on each one serially. Safe given the ordering guarantees
+    above are about *when* modules attach to window, not about needing
+    synchronous blocking parses.
   -->
-  <script src="src/ui/titlebar.js"></script>
-  <script src="src/ui/dialog.js"></script>
-  <script src="src/ui/context-menu.js"></script>
-  <script src="src/ui/marquee.js"></script>
-  <script src="src/ui/views/home.js"></script>
-  <script src="src/ui/views/library.js"></script>
-  <script src="src/ui/views/system-check.js"></script>
-  <script src="src/ui/views/settings.js"></script>
-  <script src="src/ui/views/profile.js"></script>
-  <script src="src/ui/app.js"></script>
-  <script src="src/ui/player-ui.js"></script>
-  <script src="src/ui/media-session.js"></script>
-  <script src="src/ui/fullscreen.js"></script>
-  <script src="src/ui/accent-extractor.js"></script>
-  <script src="src/ui/player-bar.js"></script>
-  <script src="src/ui/queue-panel.js"></script>
-  <script src="src/ui/search.js"></script>
+  <script src="src/ui/chrome.js" defer></script>
+  <script src="src/ui/dialog.js" defer></script>
+  <script src="src/ui/context-menu.js" defer></script>
+  <script src="src/ui/marquee.js" defer></script>
+  <script src="src/ui/views/home.js" defer></script>
+  <script src="src/ui/views/library.js" defer></script>
+  <script src="src/ui/views/system-check.js" defer></script>
+  <script src="src/ui/views/settings.js" defer></script>
+  <script src="src/ui/views/profile.js" defer></script>
+  <script src="src/ui/app.js" defer></script>
+  <script src="src/ui/player-ui.js" defer></script>
+  <script src="src/ui/eq.js" defer></script>
+  <script src="src/ui/media-session.js" defer></script>
+  <script src="node_modules/three/build/three.min.js" defer></script>
+  <script src="src/ui/fullscreen.js" defer></script>
+  <script src="src/ui/visualizer.js" defer></script>
+  <script src="src/ui/accent-extractor.js" defer></script>
+  <script src="src/ui/player-bar.js" defer></script>
+  <script src="src/ui/queue-panel.js" defer></script>
+  <script src="src/ui/search.js" defer></script>
+
+  <!-- Mod injection sanitization + runtime. DOMPurify MUST load first —
+       defer preserves this ordering.
+       No integrity hash yet: computing one requires the actual vendored
+       file bytes, which haven't been uploaded this session. A fabricated
+       hash would silently block the script from loading at all (integrity
+       mismatches fail closed) — send the file and I'll generate the real
+       sha384 and add it here. -->
+  <script src="src/vendor/purify.min.js" defer></script>
+  <script src="src/ui/mod-runtime.js" defer></script>
 
 </body>
 </html>

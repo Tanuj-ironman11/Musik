@@ -1,0 +1,58 @@
+/* component/marquee.css
+   Lost in the earlier deletion — rebuilt from scratch, not recovered.
+   Pairs with src/ui/marquee.js. Uses tokens from tokens.css (--anim-ease
+   etc.) so it stays visually consistent with the rest of the glass system. */
+
+.marquee {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  position: relative;
+  mask-image: linear-gradient(
+    90deg,
+    transparent 0,
+    #000 12px,
+    #000 calc(100% - 12px),
+    transparent 100%
+  );
+  -webkit-mask-image: linear-gradient(
+    90deg,
+    transparent 0,
+    #000 12px,
+    #000 calc(100% - 12px),
+    transparent 100%
+  );
+}
+
+/* Static (non-overflowing) state — no mask needed, avoids clipping short text */
+.marquee:not(.is-marquee-active) {
+  mask-image: none;
+  -webkit-mask-image: none;
+  text-overflow: ellipsis;
+}
+
+.marquee-inner {
+  display: inline-block;
+  white-space: nowrap;
+}
+
+.marquee-track {
+  display: inline-flex;
+  white-space: nowrap;
+  will-change: transform;
+}
+
+.marquee-track > .marquee-inner + .marquee-inner {
+  margin-left: var(--marquee-gap, 48px);
+}
+
+/* Respect reduced-motion — freeze on first copy, no scroll */
+@media (prefers-reduced-motion: reduce) {
+  .marquee.is-marquee-active .marquee-track {
+    animation: none !important;
+    transform: none !important;
+  }
+  .marquee.is-marquee-active .marquee-inner:nth-child(2) {
+    display: none;
+  }
+}

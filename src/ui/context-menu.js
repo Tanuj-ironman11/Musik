@@ -59,6 +59,8 @@
         : `<div class="ctx-menu-empty">No playlists yet</div>`}
       <div class="ctx-menu-divider"></div>
       <button class="ctx-menu-item ctx-menu-item--new" data-new-playlist>+ New Playlist...</button>
+      <div class="ctx-menu-divider"></div>
+      <button class="ctx-menu-item" data-refresh-art>Refresh Cover Art</button>
     `;
     document.body.appendChild(menu);
     openMenuEl = menu;
@@ -81,6 +83,24 @@
       if (name === null || name === undefined) return;
       const created = await window.Musik?.library?.createPlaylist?.(name);
       if (created) await window.Musik?.library?.addTrack?.(created.id, track.filePath);
+    });
+
+    // NOTE: this refreshes art for the CURRENT SESSION only — broadcasts an
+    // artupdate so accent-extractor/player-bar/etc pick it up live, but does
+    // NOT persist to musik-library.json. There's no library:update-art IPC
+    // channel yet. Restarting the app reverts to whatever was embedded/cached
+    // originally. Flagging rather than pretending this is a permanent fix.
+    menu.querySelector('[data-refresh-art]')?.addEventListener('click', async () => {
+      closeMenu();
+      let artData = await window.Musik?.art?.extract?.(track.filePath);
+      if (!artData && track.artist && track.album) {
+        artData = await window.Musik?.art?.fetchOnline?.({ artist: track.artist, album: track.album });
+      }
+      if (artData) {
+        window.Musik?.events?.emit('artupdate', artData);
+      } else {
+        window.MusikDialog?.alert?.('No cover art found for this track.');
+      }
     });
 
     // Deferred so the contextmenu event that opened this menu doesn't

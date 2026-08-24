@@ -16,6 +16,6 @@
     "node-addon-api": "^8.0.0"
   },
   "devDependencies": {
-    "node-gyp": "^10.0.0"
+    "node-gyp": "^13.0.1"
   }
 }

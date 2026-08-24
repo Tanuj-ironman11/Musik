@@ -2,11 +2,7 @@
 //
 // Main-process queue state. In-memory only (no persistence yet). Backs the
 // queue:* IPC handlers in main.js, which back window.Musik.queue in
-// preload.js. This file did not exist before — main.js was calling into it
-// via safeRequire(), which failed silently and made every queue:* handler
-// resolve to undefined. That's why next()/previous() did nothing: skip
-// wasn't broken in player-ui.js, it was reading from a queue that never
-// existed.
+// preload.js.
 
 let queue = [];       // array of track objects (same shape as library.readTags output)
 let currentIndex = -1; // index into queue of the currently loaded track
@@ -15,8 +11,15 @@ let repeatMode = 'off'; // 'off' | 'all' | 'one'
 let shuffleOrder = [];  // when shuffle is on, order of indices into `queue`
 let shufflePos = -1;    // position within shuffleOrder
 
+// Returns tracks in the order they'll actually play. When shuffle is off
+// this is plain add-order. When shuffle is on, this now returns tracks in
+// shuffled order (matching what next()/previous() will walk through)
+// instead of raw add-order, so the queue panel and real playback line up.
 function getQueue() {
-  return queue.slice();
+  if (shuffleEnabled && shuffleOrder.length === queue.length) {
+    return shuffleOrder.map((i) => ({ ...queue[i], queueIndex: i }));
+  }
+  return queue.map((t, i) => ({ ...t, queueIndex: i }));
 }
 
 function add(track) {

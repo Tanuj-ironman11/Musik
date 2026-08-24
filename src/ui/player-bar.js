@@ -29,8 +29,8 @@
           </div>
         </div>
         <div class="pb-text">
-          <span id="pb-title" class="pb-title">No track loaded</span>
-          <span id="pb-artist" class="pb-artist"></span>
+          <span id="pb-title" class="pb-title marquee">No track loaded</span>
+          <span id="pb-artist" class="pb-artist marquee"></span>
         </div>
       </div>
       <div class="pb-center">
@@ -137,7 +137,7 @@
       svg.getAnimations().forEach((a) => a.cancel());
       const dist = btn.getBoundingClientRect().width * 1.4;
       const spring =
-        getComputedStyle(document.documentElement).getPropertyValue('--ease-spring').trim() ||
+        getComputedStyle(document.documentElement).getPropertyValue('--ease-bounce').trim() ||
         'cubic-bezier(0.34, 1.56, 0.64, 1)';
       svg.animate(
         [
@@ -309,6 +309,8 @@
       if (!track) return;
       els.title.textContent = track.title ?? 'Unknown Title';
       els.artist.textContent = track.artist ?? 'Unknown Artist';
+      window.MusikMarquee?.refresh(els.title);
+      window.MusikMarquee?.refresh(els.artist);
       els.seek.max = track.duration || 0;
       els.duration.textContent = fmtTime(track.duration || 0);
       setArt(track);
@@ -335,6 +337,8 @@
       if (current) {
         els.title.textContent = current.title ?? 'Unknown Title';
         els.artist.textContent = current.artist ?? 'Unknown Artist';
+        window.MusikMarquee?.refresh(els.title);
+        window.MusikMarquee?.refresh(els.artist);
         setArt(current);
       }
       els.volume.value = window.MusikPlayerUI.getVolume?.() ?? 1;

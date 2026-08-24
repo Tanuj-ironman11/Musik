@@ -68,6 +68,7 @@
   z-index: 9500;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
   transform: translateX(calc(100% + 24px));
   border-radius: var(--glass-radius);
   box-shadow:
@@ -75,6 +76,15 @@
     0 28px 60px rgba(0, 0, 0, 0.55),
     0 10px 24px rgba(0, 0, 0, 0.4);
   transition: transform 0.32s var(--ease-spring);
+  pointer-events: none;
+}
+
+.q-panel::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.07), transparent 45%);
   pointer-events: none;
 }
 
@@ -89,6 +99,8 @@
   border-bottom: 1px solid var(--glass-border-color);
   border-radius: var(--glass-radius) var(--glass-radius) 0 0;
   flex-shrink: 0;
+  position: relative;
+  z-index: 2;
 }
 
 .q-panel-header h3 { font-size: 13px; font-weight: 700; color: var(--color-text); flex: 1; margin: 0; }
@@ -127,7 +139,13 @@
   flex-direction: column;
   gap: 2px;
   border-radius: 0 0 var(--glass-radius) var(--glass-radius);
+  position: relative;
+  z-index: 2;
 }
+
+.q-panel-list::-webkit-scrollbar { width: 4px; }
+.q-panel-list::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.14); border-radius: 2px; }
+.q-panel-list::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.24); }
 
 #pb-queue-toggle .q-line {
   transform-origin: left center;
@@ -359,7 +377,10 @@
   flex-shrink: 0;
   display: block;
   background: var(--color-bg-surface);
+  transition: transform 0.2s var(--ease-out);
 }
+
+.q-row:hover .q-art { transform: scale(1.06); }
 
 .q-art--placeholder {
   display: flex; align-items: center; justify-content: center;
@@ -382,9 +403,16 @@
 
 .q-row:hover { background: rgba(255, 255, 255, 0.05); }
 
-.q-row--active { background: rgba(var(--color-accent-rgb), 0.08); }
+.q-row--active {
+  background: linear-gradient(90deg, rgba(var(--color-accent-rgb), 0.16), rgba(var(--color-accent-rgb), 0.05) 65%, transparent);
+  box-shadow: inset 2px 0 0 var(--color-accent), 0 0 16px -6px var(--color-accent-glow);
+}
 
-.q-row--dragging { opacity: 0.4; }
+.q-row--dragging {
+  opacity: 0.55;
+  transform: scale(0.97);
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.4);
+}
 
 .q-row--drag-over::before {
   content: "";
@@ -393,6 +421,7 @@
   height: 2px;
   border-radius: 1px;
   background: var(--color-accent);
+  box-shadow: 0 0 8px var(--color-accent-glow);
 }
 
 .q-drag-handle {
@@ -426,6 +455,8 @@
   color: var(--color-text-dim);
   flex-shrink: 0;
 }
+
+.q-hidden { display: none; }
 
 .q-row-remove {
   display: flex; align-items: center; justify-content: center;

@@ -36,7 +36,7 @@
     svg.getAnimations().forEach((a) => a.cancel());
     const dist = btn.getBoundingClientRect().width * 1.4;
     const spring =
-      getComputedStyle(document.documentElement).getPropertyValue('--ease-spring').trim() ||
+      getComputedStyle(document.documentElement).getPropertyValue('--ease-bounce').trim() ||
       'cubic-bezier(0.34, 1.56, 0.64, 1)';
     svg.animate(
       [
