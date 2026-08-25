@@ -122,3 +122,85 @@
 
   window.MusikContextMenu = { attachTrack };
 })();
+
+// ---------------------------------------------------------------------------
+// window.MusikPlaylistModals — shared "new playlist" flow (Custom Playlist /
+// Import Folder), called from both Home and Library so they stop drifting
+// into separate implementations. Lives here rather than its own file — this
+// module was already the home for shared overlay/menu utilities.
+// ---------------------------------------------------------------------------
+(function () {
+  function openCreateModal() {
+    const overlay = document.createElement('div');
+    overlay.className = 'playlist-create-overlay';
+    overlay.innerHTML = `
+      <div class="playlist-create-modal glass-surface--elevated">
+        <div class="playlist-create-header">
+          <span>New Playlist</span>
+          <button class="playlist-create-close" id="pcm-close" title="Close">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+
+        <div class="playlist-create-options" id="pcm-options">
+          <button class="playlist-create-option" id="pcm-custom" type="button">
+            <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 18V5l12-2v13M9 18a3 3 0 11-6 0 3 3 0 016 0zm12-2a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+            <span class="playlist-create-option-title">Custom Playlist</span>
+            <span class="playlist-create-option-sub">Start empty, add tracks later</span>
+          </button>
+          <button class="playlist-create-option" id="pcm-folder" type="button">
+            <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/></svg>
+            <span class="playlist-create-option-title">Import Folder</span>
+            <span class="playlist-create-option-sub">Scan a folder and build a playlist from it</span>
+          </button>
+        </div>
+
+        <div class="playlist-create-status" id="pcm-status" hidden></div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+
+    const close = () => overlay.remove();
+    overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) close(); });
+    overlay.querySelector('#pcm-close').addEventListener('click', close);
+
+    overlay.querySelector('#pcm-custom').addEventListener('click', async () => {
+      const name = await window.MusikDialog.prompt('Playlist name:');
+      if (name === null) return; // cancelled — leave the modal open
+      const created = await window.Musik?.library?.createPlaylist?.(name);
+      close();
+      if (created) location.hash = `#/library/${encodeURIComponent(created.id)}`;
+    });
+
+    overlay.querySelector('#pcm-folder').addEventListener('click', async () => {
+      // Reuses the existing open-file-dialog channel (already supports
+      // openDirectory) rather than adding a dedicated folder-only picker.
+      // Only the first selected entry is used; scanFolder() no-ops
+      // silently on a non-folder path, which is detected below and
+      // surfaced as an error instead of leaving the user guessing.
+      const paths = await window.Musik?.dialog?.openFile?.();
+      if (!paths || !paths.length) return;
+      const folderPath = paths[0];
+
+      const options = overlay.querySelector('#pcm-options');
+      const status = overlay.querySelector('#pcm-status');
+      options.style.display = 'none';
+      status.hidden = false;
+      status.textContent = 'Scanning folder…';
+
+      await window.Musik?.library?.scanFolder?.(folderPath);
+      const playlists = (await window.Musik?.library?.getPlaylists?.()) ?? [];
+      const created = playlists.find((p) => p.folderPath === folderPath);
+
+      if (created) {
+        close();
+        location.hash = `#/library/${encodeURIComponent(created.id)}`;
+      } else {
+        status.textContent = 'No folder detected there — please pick a folder, not individual files.';
+        options.style.display = '';
+      }
+    });
+  }
+
+  window.MusikPlaylistModals = { openCreateModal };
+})();

@@ -1,0 +1,274 @@
+/* src/styles/shared.css
+ *
+ * Formerly marquee.css — renamed and expanded to hold small, reusable
+ * pieces of UI that don't have an obvious single-view home, rather than
+ * spinning up a new one-off file per widget. Currently: the scrolling
+ * text marquee (pairs with src/ui/marquee.js) and the shared create-
+ * playlist modal (pairs with window.MusikPlaylistModals in
+ * src/ui/context-menu.js). Uses tokens from tokens.css so both stay
+ * visually consistent with the rest of the glass system.
+ */
+
+/* ── Marquee ─────────────────────────────────────────────────────── */
+
+.marquee {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  position: relative;
+  mask-image: linear-gradient(
+    90deg,
+    transparent 0,
+    #000 12px,
+    #000 calc(100% - 12px),
+    transparent 100%
+  );
+  -webkit-mask-image: linear-gradient(
+    90deg,
+    transparent 0,
+    #000 12px,
+    #000 calc(100% - 12px),
+    transparent 100%
+  );
+}
+
+/* Static (non-overflowing) state — no mask needed, avoids clipping short text */
+.marquee:not(.is-marquee-active) {
+  mask-image: none;
+  -webkit-mask-image: none;
+  text-overflow: ellipsis;
+}
+
+.marquee-inner {
+  display: inline-block;
+  white-space: nowrap;
+}
+
+.marquee-track {
+  display: inline-flex;
+  white-space: nowrap;
+  will-change: transform;
+}
+
+.marquee-track > .marquee-inner + .marquee-inner {
+  margin-left: var(--marquee-gap, 48px);
+}
+
+/* Respect reduced-motion — freeze on first copy, no scroll */
+@media (prefers-reduced-motion: reduce) {
+  .marquee.is-marquee-active .marquee-track {
+    animation: none !important;
+    transform: none !important;
+  }
+  .marquee.is-marquee-active .marquee-inner:nth-child(2) {
+    display: none;
+  }
+}
+
+/* ── Create-playlist modal ───────────────────────────────────────── */
+/* Rework: was a single flat rgba(255,255,255,0.06) slab with a solid
+   border — reads as generic 2015-era glassmorphism, not the acrylic/
+   liquid-glass blend from the UI direction (20% Acrylic noise, 40%
+   frosted base, 40% liquid-glass silhouette/layering). Now built on
+   the elevated glass tier with a gradient-ring border and a real
+   feTurbulence noise layer, matching the treatment used elsewhere
+   (see core.css glass tiers). */
+
+.playlist-create-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  z-index: 300;
+  animation: playlist-create-overlay-in 0.16s var(--ease-out, ease) both;
+}
+
+.playlist-create-modal {
+  width: min(460px, 90vw);
+  border-radius: var(--radius-lg, 16px);
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  background: var(--glass-bg-elevated, rgba(255, 255, 255, 0.08));
+  backdrop-filter: blur(var(--glass-blur-elevated, 32px)) saturate(170%);
+  -webkit-backdrop-filter: blur(var(--glass-blur-elevated, 32px)) saturate(170%);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  box-shadow:
+    0 28px 64px -18px rgba(0, 0, 0, 0.6),
+    0 8px 20px -10px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  animation: playlist-create-modal-in 0.34s var(--ease-bounce) both;
+}
+
+/* Gradient-ring border — a soft diagonal sheen instead of a flat solid
+   line, the "liquid glass" edge treatment the brief calls for. */
+.playlist-create-modal::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  padding: 1px;
+  border-radius: inherit;
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.4),
+    rgba(255, 255, 255, 0.04) 42%,
+    rgba(var(--color-accent-rgb), 0.3) 100%
+  );
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+/* Accent bloom + acrylic noise, combined in one layer so we're not
+   stacking extra pseudo-elements. Noise uses feTurbulence per the
+   UI-direction spec (20% Acrylic), blended with overlay so it reads
+   as grain, not a visible texture. */
+.playlist-create-modal::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image:
+    radial-gradient(120% 90% at 88% -12%, rgba(var(--color-accent-rgb), 0.18), transparent 60%),
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='1' stitchTiles='stitch'/></filter><rect width='100%25' height='100%25' filter='url(%23n)' opacity='0.045'/></svg>");
+  background-size: cover, 160px 160px;
+  background-blend-mode: normal, soft-light;
+}
+
+.playlist-create-header,
+.playlist-create-options,
+.playlist-create-status {
+  position: relative;
+  z-index: 2;
+}
+
+.playlist-create-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-family: var(--font-display, inherit);
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.playlist-create-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: var(--color-text-dim);
+  cursor: pointer;
+  transition: color var(--anim-fast) var(--anim-ease),
+              background var(--anim-fast) var(--anim-ease),
+              transform var(--anim-fast) var(--anim-spring);
+}
+.playlist-create-close:hover {
+  color: var(--color-text);
+  background: rgba(255, 255, 255, 0.1);
+  transform: rotate(90deg);
+}
+.playlist-create-close:active {
+  transform: rotate(90deg) scale(0.88);
+}
+
+.playlist-create-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.playlist-create-option {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 18px 16px;
+  border-radius: var(--radius-md, 8px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--glass-bg-subtle, rgba(255, 255, 255, 0.04));
+  color: var(--color-text);
+  cursor: pointer;
+  text-align: left;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  transition: border-color var(--anim-fast) var(--anim-ease),
+              background var(--anim-fast) var(--anim-ease),
+              transform var(--anim-fast) var(--anim-spring),
+              box-shadow var(--anim-fast) var(--anim-ease);
+}
+.playlist-create-option:hover {
+  border-color: rgba(255, 255, 255, 0.16);
+  background: var(--glass-bg-standard, rgba(255, 255, 255, 0.08));
+  transform: translateY(-3px);
+  box-shadow:
+    0 16px 34px -14px rgba(0, 0, 0, 0.5),
+    0 0 0 1px rgba(var(--color-accent-rgb), 0.35),
+    0 0 26px -6px rgba(var(--color-accent-rgb), 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+.playlist-create-option:active {
+  transform: translateY(-3px) var(--anim-press, scale(0.98));
+}
+
+/* Soft top-left glass highlight — fades in on hover rather than sweeping
+   across, reads as light catching the glass instead of a loading-bar
+   shine gimmick. */
+.playlist-create-option::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(120% 60% at 22% -10%, rgba(255, 255, 255, 0.16), transparent 65%);
+  opacity: 0;
+  transition: opacity var(--anim-fast, 0.2s) var(--anim-ease, ease);
+  pointer-events: none;
+}
+.playlist-create-option:hover::after {
+  opacity: 1;
+}
+
+.playlist-create-option svg {
+  color: var(--color-accent);
+  transition: transform var(--anim-fast) var(--anim-spring),
+              filter var(--anim-fast) var(--anim-ease);
+}
+.playlist-create-option:hover svg {
+  transform: scale(1.12) translateY(-1px);
+  filter: drop-shadow(0 0 10px rgba(var(--color-accent-rgb), 0.55));
+}
+
+.playlist-create-option-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.playlist-create-option-sub {
+  font-size: 12px;
+  color: var(--color-text-dim);
+  line-height: 1.4;
+}
+
+.playlist-create-status {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-text-dim);
+  text-align: center;
+  padding: 6px 0;
+}

@@ -263,45 +263,77 @@
     });
   }
 
-  // ── Drag-to-reorder ── native HTML5 drag-and-drop, no library
+  // ── Drag-to-reorder ── native HTML5 drag-and-drop, no library.
+  // Same before/after midpoint pattern as miniplayer-ui.js's queue
+  // reorder — a single "highlight the target" class doesn't tell you
+  // which side of it you'll land on, which is why this felt like it had
+  // no UI at all.
   function wireNavLinkDrag(container) {
     let dragFromId = null;
+
+    function clearDropIndicators() {
+      container.querySelectorAll('.nav-link--drop-before, .nav-link--drop-after').forEach((el) => {
+        el.classList.remove('nav-link--drop-before', 'nav-link--drop-after');
+      });
+    }
 
     container.querySelectorAll('.nav-link').forEach((link) => {
       link.addEventListener('dragstart', (e) => {
         dragFromId = link.dataset.view;
         link.classList.add('nav-link--dragging');
         e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', dragFromId); // Firefox needs a data payload to allow the drag
       });
 
       link.addEventListener('dragend', () => {
         link.classList.remove('nav-link--dragging');
-        container.querySelectorAll('.nav-link--drop-target').forEach((el) => el.classList.remove('nav-link--drop-target'));
+        clearDropIndicators();
         dragFromId = null;
       });
 
       link.addEventListener('dragover', (e) => {
         e.preventDefault();
         if (!dragFromId || dragFromId === link.dataset.view) return;
-        link.classList.add('nav-link--drop-target');
+        e.dataTransfer.dropEffect = 'move';
+
+        // Topbar mode lays nav items out horizontally — split on X
+        // instead of Y so the line lands on the correct side. (Sidebar
+        // mode is the default/vertical case.)
+        const rect = link.getBoundingClientRect();
+        const isTopbar = document.body.classList.contains('layout-topbar');
+        const before = isTopbar
+          ? (e.clientX - rect.left) < rect.width / 2
+          : (e.clientY - rect.top) < rect.height / 2;
+
+        clearDropIndicators();
+        link.classList.toggle('nav-link--drop-before', before);
+        link.classList.toggle('nav-link--drop-after', !before);
       });
 
       link.addEventListener('dragleave', () => {
-        link.classList.remove('nav-link--drop-target');
+        link.classList.remove('nav-link--drop-before', 'nav-link--drop-after');
       });
 
       link.addEventListener('drop', (e) => {
         e.preventDefault();
-        link.classList.remove('nav-link--drop-target');
+        const before = link.classList.contains('nav-link--drop-before');
+        clearDropIndicators();
         const toId = link.dataset.view;
         if (!dragFromId || dragFromId === toId) return;
 
         const order = getNavOrder();
         const fromIndex = order.indexOf(dragFromId);
-        const toIndex = order.indexOf(toId);
+        let toIndex = order.indexOf(toId);
         if (fromIndex === -1 || toIndex === -1) return;
+
+        if (!before) toIndex += 1;
         order.splice(fromIndex, 1);
+        // Removing the dragged item first shifts everything after it
+        // down by one, so a target past the source needs adjusting —
+        // same fix miniplayer-ui.js's queue reorder needed.
+        if (fromIndex < toIndex) toIndex -= 1;
         order.splice(toIndex, 0, dragFromId);
+
         setNavOrder(order);
         renderNavLinks();
       });
@@ -338,6 +370,10 @@
     const maxX = window.innerWidth - rect.width - 8;
     const maxY = window.innerHeight - rect.height - 8;
     menu.style.position = 'fixed';
+    // Sidebar has its own stacking context (its own z-index) — a plain
+    // position:fixed menu with z-index:auto loses to that regardless of
+    // DOM order, which is why this was opening behind the sidebar.
+    menu.style.zIndex = '9999';
     menu.style.left = `${Math.max(8, Math.min(x, maxX))}px`;
     menu.style.top = `${Math.max(8, Math.min(y, maxY))}px`;
     openNavMenuEl = menu;

@@ -57,6 +57,9 @@ window.MusikViews.home = async function renderHome(main) {
           <div class="home-clock" id="home-clock"></div>
         </div>
         <div class="view-actions">
+          <button id="home-add-playlist-btn" class="home-add-icon-btn" title="New playlist">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path class="icon-playlist-lines" d="M4 6h16M4 12h10M4 18h6"/><path class="icon-playlist-plus" d="M18 14v6M15 17h6"/></svg>
+          </button>
           <button id="home-add-music-btn" class="home-add-icon-btn" title="Add music">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path class="icon-plus-v" d="M12 5v14"/><path class="icon-plus-h" d="M5 12h14"/></svg>
           </button>
@@ -67,6 +70,11 @@ window.MusikViews.home = async function renderHome(main) {
   `;
 
   startHomeClock();
+
+  document.getElementById('home-add-playlist-btn').addEventListener('click', (e) => {
+    spawnIconKick(e.currentTarget);
+    window.MusikPlaylistModals.openCreateModal();
+  });
 
   document.getElementById('home-add-music-btn').addEventListener('click', async (e) => {
     spawnIconKick(e.currentTarget);

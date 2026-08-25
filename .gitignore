@@ -23,3 +23,7 @@ check-sessions.js
 *.log
 .DS_Store
 Thumbs.db
+
+# Executables and distribution builds
+dist/
+**/dist/

@@ -146,6 +146,43 @@ async function readTags(filePath) {
   }
 }
 
+// Bulk-adds individual files straight to the library — deliberately NOT
+// folder-aware. Folder import goes through scanFolder(), which also
+// creates/updates a folder-backed playlist as a side effect; mixing that
+// into this path would mean "add tracks to playlist X" could silently
+// spawn an unrelated new playlist just because someone picked a folder in
+// the file dialog. Directories are skipped here on purpose — callers that
+// want folder import should use scanFolder (see: Import Folder flow).
+async function addFiles(filePaths) {
+  const added = [];
+  const knownPaths = new Set(tracks.map((t) => t.filePath));
+
+  for (const filePath of filePaths) {
+    let stat;
+    try {
+      stat = await fsp.stat(filePath);
+    } catch (err) {
+      console.warn(`[Musik] addFiles: couldn't stat ${filePath}:`, err.message);
+      continue;
+    }
+    if (stat.isDirectory()) {
+      console.warn(`[Musik] addFiles: skipping directory ${filePath} — use scanFolder/Import Folder for folders`);
+      continue;
+    }
+    if (knownPaths.has(filePath)) continue; // already in the library, nothing to do
+
+    const tags = await readTags(filePath);
+    if (!tags) continue;
+
+    tracks.push(tags);
+    knownPaths.add(filePath);
+    added.push(tags);
+  }
+
+  if (added.length) scheduleSave();
+  return added;
+}
+
 function markPlayed(filePath) {
   const track = tracks.find((t) => t.filePath === filePath);
   if (track) {
@@ -389,6 +426,7 @@ module.exports = {
   init,
   flush,
   readTags,
+  addFiles,
   scanFolder,
   rescanAll,
   pruneMissingTracks,

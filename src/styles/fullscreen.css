@@ -7,7 +7,7 @@
   position: fixed;
   inset: 0;
   z-index: 200;
-  background: var(--color-bg, #060606);
+  background: #060606;
   opacity: 0;
   pointer-events: none;
   transition: opacity var(--npf-exit-dur, 240ms) cubic-bezier(0.4, 0, 1, 1);
@@ -260,7 +260,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--color-bg-surface, #161616);
+  background: #161616;
 }
 
 #npf-art .placeholder-note-icon {
@@ -282,9 +282,7 @@
 #npf-title {
   font-size: clamp(26px, calc(4vw * var(--app-scale, 1)), 56px);
   font-weight: 700;
-  color: var(--color-text);
-  margin: 0 0 6px;
-  line-height: 1.1;
+  color: #fff;
   letter-spacing: -0.5px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -294,7 +292,7 @@
 
 #npf-artist {
   font-size: clamp(15px, calc(2vw * var(--app-scale, 1)), 24px);
-  color: var(--color-text-secondary);
+  color: rgba(255, 255, 255, 0.55);
   margin: 0;
   white-space: nowrap;
   overflow: hidden;
@@ -442,11 +440,7 @@
   background: rgba(0, 0, 0, 0.35);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 10px;
-  color: var(--color-text);
-  font-family: var(--font-mono);
-  font-size: 13px;
-  line-height: 1.6;
-  padding: 12px;
+  color: rgba(255, 255, 255, 0.92);
   outline: none;
   transition: border-color 0.15s ease;
 }
@@ -475,7 +469,7 @@
 .npf-time {
   font-family: var(--font-mono);
   font-size: 11px;
-  color: var(--color-text-dim);
+  color: rgba(255, 255, 255, 0.4);
   font-weight: 500;
   min-width: 36px;
   text-align: center;

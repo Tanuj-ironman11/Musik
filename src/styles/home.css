@@ -32,7 +32,9 @@
   border: 1px solid rgba(255, 255, 255, 0.1);
   background: rgba(255, 255, 255, 0.03);
   flex-shrink: 0;
-  transition: color 0.15s var(--ease-out), border-color 0.15s var(--ease-out), background 0.15s var(--ease-out);
+  transition: color 0.15s var(--ease-out), border-color 0.15s var(--ease-out),
+              background 0.15s var(--ease-out), transform 0.3s var(--ease-spring),
+              box-shadow 0.2s var(--ease-out);
 }
 
 .home-add-icon-btn svg { width: 16px; height: 16px; }
@@ -41,6 +43,13 @@
   color: var(--color-bg);
   background: var(--color-accent);
   border-color: transparent;
+  transform: translateY(-2px) scale(1.08);
+  box-shadow: 0 6px 20px -4px var(--color-accent-glow), 0 0 0 1px rgba(255, 255, 255, 0.06) inset;
+}
+
+.home-add-icon-btn:active {
+  transform: translateY(-1px) scale(0.92);
+  transition-duration: 0.1s;
 }
 
 .home-recent-grid {

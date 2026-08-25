@@ -6,6 +6,8 @@
 //
 // Relies on window.MusikCards (defined in home.js) for shared
 // playlist-card markup/wiring — make sure home.js loads first.
+// Relies on window.MusikPlaylistModals (playlist-modals.js) for the
+// shared "new playlist" flow — make sure that loads before this fires.
 
 window.MusikViews = window.MusikViews || {};
 
@@ -27,7 +29,7 @@ function renderPlaylistGrid(main, tracks, playlists) {
         <h1 class="view-title">Library</h1>
         <div class="view-actions">
           <button id="lib-new-playlist-btn" class="home-add-icon-btn" title="New playlist">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path class="icon-plus-v" d="M12 5v14"/><path class="icon-plus-h" d="M5 12h14"/></svg>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path class="icon-playlist-lines" d="M4 6h16M4 12h10M4 18h6"/><path class="icon-playlist-plus" d="M18 14v6M15 17h6"/></svg>
           </button>
         </div>
       </div>
@@ -35,12 +37,9 @@ function renderPlaylistGrid(main, tracks, playlists) {
     </div>
   `;
 
-  document.getElementById('lib-new-playlist-btn').addEventListener('click', async (e) => {
+  document.getElementById('lib-new-playlist-btn').addEventListener('click', (e) => {
     window.MusikIconKick?.(e.currentTarget);
-    const name = await window.MusikDialog.prompt('Playlist name:');
-    if (name === null) return; // cancelled
-    const created = await window.Musik?.library?.createPlaylist?.(name);
-    if (created) location.hash = `#/library/${encodeURIComponent(created.id)}`;
+    window.MusikPlaylistModals.openCreateModal();
   });
 
   const body = document.getElementById('library-body');
@@ -52,7 +51,7 @@ function renderPlaylistGrid(main, tracks, playlists) {
           <svg viewBox="0 0 24 24"><path d="M4 4h2v16H4zM9 4h2v16H9zM14 4h6v3h-6zM14 9h6v3h-6zM14 14h6v3h-6z"/></svg>
         </div>
         <div class="home-empty-title">No playlists yet</div>
-        <div class="home-empty-sub">Import a folder from Home, or create one with the + button above.</div>
+        <div class="home-empty-sub">Create one with the + button above.</div>
       </div>
     `;
     return;
@@ -265,7 +264,11 @@ function wireTrackReorder(main, playlist) {
 // Lists every library track NOT already in the playlist, checkbox-select,
 // bulk-adds on confirm via the existing addTrackToPlaylist IPC (one call
 // per selected track — no bulk-add channel exists, and library sizes here
-// don't warrant adding one yet).
+// don't warrant adding one yet). Also offers "Add from Computer" — picks
+// files off disk, gets them into the library via the new addFiles() call,
+// then adds them to this playlist. Files already in the library just get
+// added to the playlist directly; addFiles() itself no-ops anything it
+// already knows about.
 function openAddTracksModal(main, playlist, allTracks) {
   const inPlaylist = new Set(playlist.trackIds || []);
   const available = allTracks.filter((t) => !inPlaylist.has(t.filePath));
@@ -294,6 +297,7 @@ function openAddTracksModal(main, playlist, allTracks) {
           : `<div class="add-tracks-empty">All tracks are already in this playlist.</div>`}
       </div>
       <div class="add-tracks-footer">
+        <button class="lib-action-btn" id="add-tracks-import-btn">Add from Computer</button>
         <button class="lib-action-btn" id="add-tracks-cancel">Cancel</button>
         <button class="lib-action-btn lib-action-btn--primary" id="add-tracks-confirm">Add Selected</button>
       </div>
@@ -305,6 +309,24 @@ function openAddTracksModal(main, playlist, allTracks) {
   overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) close(); });
   document.getElementById('add-tracks-close').addEventListener('click', close);
   document.getElementById('add-tracks-cancel').addEventListener('click', close);
+
+  document.getElementById('add-tracks-import-btn').addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    const paths = await window.Musik?.dialog?.openFile?.();
+    if (!paths || !paths.length) return;
+
+    btn.disabled = true;
+    btn.textContent = 'Adding…';
+    // addFiles() skips directories on its own (folders belong to the
+    // Import Folder flow, not here) — safe to pass whatever the dialog
+    // returned straight through.
+    await window.Musik?.library?.addFiles?.(paths);
+    for (const filePath of paths) {
+      await window.Musik?.library?.addTrack?.(playlist.id, filePath);
+    }
+    close();
+    window.MusikViews.library(main, playlist.id);
+  });
 
   document.getElementById('add-tracks-confirm').addEventListener('click', async () => {
     const checked = Array.from(overlay.querySelectorAll('input[type="checkbox"]:checked'))

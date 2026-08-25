@@ -70,6 +70,9 @@ const Musik = {
     addTrack: (id, filePath) => ipcRenderer.invoke('library:add-track', id, filePath),
     removeTrack: (id, filePath) => ipcRenderer.invoke('library:remove-track', id, filePath),
     reorderTracks: (id, fromIndex, toIndex) => ipcRenderer.invoke('library:reorder-tracks', id, fromIndex, toIndex),
+    // NEW — bulk-adds files (not folders) straight to the library. Backs
+    // the "Add from Computer" option in the Add Tracks modal.
+    addFiles: (filePaths) => ipcRenderer.invoke('library:add-files', filePaths),
     rescanAll: () => ipcRenderer.invoke('library:rescan-all'),
     getRescanSettings: () => ipcRenderer.invoke('library:get-rescan-settings'),
     setRescanInterval: (minutes) => ipcRenderer.invoke('library:set-rescan-interval', minutes),

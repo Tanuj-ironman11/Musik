@@ -221,6 +221,7 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
+    icon: path.join(__dirname, 'build', 'icon.ico'),
     minWidth: 900,
     minHeight: 600,
     // transparent must stay false here — setBackgroundMaterial (acrylic/mica)
@@ -440,6 +441,10 @@ ipcMain.handle('library:delete-playlist', async (_e, id) => Library?.deletePlayl
 ipcMain.handle('library:add-track', async (_e, id, filePath) => Library?.addTrackToPlaylist?.(id, filePath) ?? null);
 ipcMain.handle('library:remove-track', async (_e, id, filePath) => Library?.removeTrackFromPlaylist?.(id, filePath) ?? null);
 ipcMain.handle('library:reorder-tracks', async (_e, id, fromIndex, toIndex) => Library?.reorderPlaylistTracks?.(id, fromIndex, toIndex) ?? null);
+// NEW CHANNEL — bulk-adds individual files straight to the library (not
+// folder-aware, see Library.addFiles doc comment). Backs the "Add from
+// Computer" option in the Add Tracks modal.
+ipcMain.handle('library:add-files', async (_e, filePaths) => Library?.addFiles?.(filePaths) ?? []);
 
 // --- Art ---
 ipcMain.handle('art:extract', async (_e, filePath) => ArtProvider?.extract?.(filePath) ?? null);
