@@ -2,7 +2,7 @@
 
 Musik is a free, open-source desktop music player. It plays everything at full quality (FLAC, WAV, MP3, AIFF, OGG, OPUS, AAC, M4A, ALAC) with no compression or quality caps, and it has a real mod/theme system built into the core instead of bolted on as an afterthought — basically what Millennium does for Steam or Spicetify does for Spotify, but native from day one.
 
-No ads, no subscriptions, no telemetry. MIT licensed, so do what you want with it.
+No ads, no subscriptions, no telemetry. GPLv3 licensed — free and open, and any fork or redistribution has to stay that way too. Mods are a different story (see below).
 
 The default look is a dark, glassmorphic UI, but that's just the starting point — mods can reskin pretty much all of it.
 
@@ -81,10 +81,12 @@ my-theme/
 
 `theme.css` gets injected into the page, `index.js` runs sandboxed after the DOM's ready. Mods talk to the app through `window.Musik`, which exposes player control, library/queue access, UI injection, theming, and events.
 
+Mods loaded through this API run in their own sandbox, are distributed separately from Musik itself, and are **not required to be GPL-licensed** — mod authors can license their own mods however they like, including keeping them closed-source or paid. See the additional-permission note at the bottom of [LICENSE](LICENSE) for the exact terms. This does not apply to forks or redistributions of Musik's own source, which stay under GPLv3.
+
 ## Contributing
 
 Still actively being built, so expect some rough edges here and there. Issues and PRs are welcome — just know the codebase moves fast between commits, so it's worth checking current file state before diving into a big change.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+GNU GPLv3 — see [LICENSE](LICENSE). TL;DR: free and open source forever, forks/redistributions must stay that way too, but mods loaded through the public API are exempt (see LICENSE for details).

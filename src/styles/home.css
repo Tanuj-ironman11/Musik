@@ -48,7 +48,7 @@
 }
 
 .home-add-icon-btn:active {
-  transform: translateY(-1px) scale(0.92);
+  transform: translateY(-1px) scale(var(--anim-press));
   transition-duration: 0.1s;
 }
 
@@ -187,7 +187,7 @@
 
 .home-playlist-card:hover .home-playlist-art .home-collage,
 .home-playlist-card:hover .home-playlist-art .home-collage-single {
-  filter: saturate(1.3) brightness(0.85);
+  filter: saturate(1.3) brightness(0.85) blur(2px);
   transform: scale(1.08);
 }
 
@@ -283,7 +283,7 @@
 }
 
 .home-playlist-hover-btn:active {
-  transform: translateY(0) scale(0.96);
+  transform: translateY(0) scale(var(--anim-press));
 }
 
 .home-add-btn {
@@ -346,4 +346,89 @@
 
 @container home (min-width: 2100px) {
   .home-playlists-row { --pl-card-min: 190px; --pl-card-max: 260px; }
+}
+
+/* ─── Icon-kick trigger rules ───
+   Moved in from animations.css — trigger/selector rules belong here per
+   the CSS role-separation rule (animations.css holds @keyframes only).
+   Keyframes referenced below (icon-plus-spin, icon-playlist-*, icon-
+   play-squash, icon-shuffle-*-dna) still live in animations.css. */
+
+.home-add-icon-btn.icon-kick svg .icon-plus-v {
+  animation: icon-plus-spin 0.38s var(--ease-bounce);
+}
+.home-add-icon-btn.icon-kick svg .icon-plus-h {
+  animation: icon-plus-spin-reverse 0.38s var(--ease-bounce);
+}
+
+.home-add-icon-btn.icon-kick svg .icon-playlist-lines {
+  animation: icon-playlist-lines-sweep 0.42s var(--ease-bounce);
+}
+.home-add-icon-btn.icon-kick svg .icon-playlist-lines:nth-of-type(1) { animation-delay: 0s; }
+
+.home-add-icon-btn.icon-kick svg .icon-playlist-plus {
+  animation: icon-playlist-plus-pop 0.46s var(--ease-bounce) 0.04s both;
+}
+
+/* ─── Add-icon buttons: hover motion ───
+   The click-kick above only plays as the modal/file-dialog is already
+   opening on top of it, so in practice it's never seen. These give the
+   icon itself a role-appropriate nudge on hover, before the click:
+   the plus "readies" itself, the playlist lines shift to make room for
+   the plus landing next to them — same idea as the shuffle/search/gear
+   icons reacting to their own function instead of just sitting there.
+   This unconditional rule (not scoped to :hover) is also what supplies
+   transform-box/transform-origin for the four click-kick blocks above —
+   it always runs regardless of hover state, so they don't repeat it. */
+
+.home-add-icon-btn svg .icon-plus-v,
+.home-add-icon-btn svg .icon-plus-h,
+.home-add-icon-btn svg .icon-playlist-plus,
+.home-add-icon-btn svg .icon-playlist-lines {
+  transform-box: fill-box;
+  transform-origin: center;
+  transition: transform 0.3s var(--ease-spring),
+              opacity 0.3s var(--ease-out);
+}
+
+.home-add-icon-btn:hover svg .icon-plus-v { transform: scale(1.15) rotate(90deg); }
+.home-add-icon-btn:hover svg .icon-plus-h { transform: scale(1.15) rotate(-90deg); }
+
+.home-add-icon-btn:hover svg .icon-playlist-lines {
+  transform: translateX(-2.5px);
+  opacity: 0.6;
+}
+.home-add-icon-btn:hover svg .icon-playlist-plus {
+  transform: scale(1.25) rotate(10deg);
+}
+
+/* Play/shuffle icon-kicks on playlist-card hover buttons — the
+   #lib-play-btn / #lib-shuffle-btn half of these same selectors lives
+   in library.css, both halves share the icon-play-squash / icon-shuffle-
+   *-dna keyframes in animations.css. */
+.home-playlist-hover-btn[data-playlist-action="play"].icon-kick svg {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: icon-play-squash 0.34s var(--ease-bounce);
+}
+
+.home-playlist-hover-btn[data-playlist-action="shuffle"].icon-kick svg .icon-shuffle-strand-a {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: icon-shuffle-strand-a-dna 0.6s var(--ease-bounce);
+}
+.home-playlist-hover-btn[data-playlist-action="shuffle"].icon-kick svg .icon-shuffle-strand-b {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: icon-shuffle-strand-b-dna 0.6s var(--ease-bounce);
+}
+.home-playlist-hover-btn[data-playlist-action="shuffle"].icon-kick svg .icon-shuffle-arrow {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: icon-shuffle-arrow-dna 0.6s var(--ease-bounce);
+}
+
+.home-add-btn:active {
+  transform: scale(var(--anim-press));
+  transition: transform 0.1s var(--ease-out);
 }

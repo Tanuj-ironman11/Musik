@@ -535,6 +535,10 @@ body[data-active-view="now-playing"] #now-playing-bar {
   background: var(--color-accent-subtle);
 }
 
+.pb-mini-kick svg {
+  animation: pb-mini-pop-out 0.4s var(--ease-bounce);
+}
+
 #np-meta {
   font-size: 11px;
   font-family: var(--font-mono);

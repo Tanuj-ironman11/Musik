@@ -370,10 +370,10 @@
     const maxX = window.innerWidth - rect.width - 8;
     const maxY = window.innerHeight - rect.height - 8;
     menu.style.position = 'fixed';
-    // Sidebar has its own stacking context (its own z-index) — a plain
-    // position:fixed menu with z-index:auto loses to that regardless of
-    // DOM order, which is why this was opening behind the sidebar.
-    menu.style.zIndex = '9999';
+    // #sidebar is z-index:10050 (navigation.css) — a plain position:fixed
+    // menu with z-index:auto loses to that regardless of DOM order,
+    // which is why this was opening behind the sidebar.
+    menu.style.zIndex = '10100';
     menu.style.left = `${Math.max(8, Math.min(x, maxX))}px`;
     menu.style.top = `${Math.max(8, Math.min(y, maxY))}px`;
     openNavMenuEl = menu;
@@ -640,21 +640,7 @@
   // Nav layout: dynamic (hover-overlay), pinned (locked expanded), or
   // topbar (sidebar flips to a horizontal bar). Source of truth:
   // 'musikLayoutMode' in localStorage, shared with settings.js.
-  //
-  // STILL NEEDED: this only toggles body.classList('layout-topbar') —
-  // the actual restyle needs matching rules in layouts.css. Starting point:
-  //
-  //   body.layout-topbar #sidebar {
-  //     flex-direction: row;
-  //     width: 100%; height: var(--topbar-height, 56px);
-  //     top: 0; left: 0; right: 0; bottom: auto;
-  //   }
-  //   body.layout-topbar #sidebar .nav-link { flex-direction: row; }
-  //   body.layout-topbar #sidebar .sidebar-resize-handle,
-  //   body.layout-topbar #sidebar .sidebar-pin-btn { display: none; }
-  //   body.layout-topbar #main, body.layout-topbar #now-playing-bar {
-  //     margin-left: 0; margin-top: var(--topbar-height, 56px);
-  //   }
+  // Full topbar restyle lives in navigation.css (body.layout-topbar rules).
   const LAYOUT_KEY = 'musikLayoutMode';
 
   function migrateLegacyPinKey() {

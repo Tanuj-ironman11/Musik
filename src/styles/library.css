@@ -204,6 +204,21 @@
 
 .lib-card:hover .lib-card-hover { opacity: 1; }
 
+/* Playlist-card art blur on hover, matching home.css's treatment.
+   Covers all three ways art can render in .lib-card-art: a plain
+   single img, a 4-up collage, or a collage rendered as one image. */
+.lib-card-art img,
+.lib-card-art .lib-collage,
+.lib-card-art .lib-collage-single {
+  transition: filter 0.35s var(--ease-out);
+}
+
+.lib-card:hover .lib-card-art img,
+.lib-card:hover .lib-card-art .lib-collage,
+.lib-card:hover .lib-card-art .lib-collage-single {
+  filter: blur(2px);
+}
+
 .lib-track-art {
   width: 44px;
   height: 44px;
@@ -869,4 +884,37 @@
   animation: lib-track-row-remove 0.24s var(--ease-out, ease) forwards;
   pointer-events: none;
   overflow: hidden;
+  transform-origin: top;
+}
+/* ─── Icon-kick trigger rules ───
+   Moved in from animations.css — trigger/selector rules belong here per
+   the CSS role-separation rule. Keyframes (icon-back-peek, icon-play-
+   squash, icon-shuffle-*-dna) still live in animations.css. The play/
+   shuffle keyframes are shared with home.css's playlist-hover-button
+   versions of the same gesture. */
+
+.lib-back-btn.icon-kick svg {
+  animation: icon-back-peek 0.32s var(--ease-bounce);
+}
+
+#lib-play-btn.icon-kick svg {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: icon-play-squash 0.34s var(--ease-bounce);
+}
+
+#lib-shuffle-btn.icon-kick svg .icon-shuffle-strand-a {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: icon-shuffle-strand-a-dna 0.6s var(--ease-bounce);
+}
+#lib-shuffle-btn.icon-kick svg .icon-shuffle-strand-b {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: icon-shuffle-strand-b-dna 0.6s var(--ease-bounce);
+}
+#lib-shuffle-btn.icon-kick svg .icon-shuffle-arrow {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: icon-shuffle-arrow-dna 0.6s var(--ease-bounce);
 }

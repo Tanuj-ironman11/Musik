@@ -230,25 +230,9 @@ img { display: block; max-width: 100%; }
   border-radius: inherit;
 }
 
-@supports not (backdrop-filter: blur(1px)) {
-  .glass-surface, .glass-surface--subtle, .glass-surface--elevated {
-    background: var(--color-bg-elevated);
-  }
-}
-
 /* component/primitives.css */
 input[type="range"] {
   outline: none;
-}
-
-input[type="range"]::-moz-range-thumb {
-  border: none;
-  border-radius: 50%;
-  cursor: pointer;
-}
-
-input[type="range"]::-moz-range-track {
-  background: transparent;
 }
 
 .i8-icon {
@@ -326,7 +310,7 @@ input[type="range"]::-moz-range-track {
 }
 
 .btn:active {
-  transform: translateY(0) scale(0.92);
+  transform: translateY(0) scale(var(--anim-press));
   background: var(--color-accent-subtle);
 }
 
@@ -372,18 +356,39 @@ input[type="range"]::-moz-range-track {
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
-  transition: background var(--anim-fast) var(--anim-ease), border-color var(--anim-fast) var(--anim-ease);
+  transition: background var(--anim-fast) var(--anim-ease),
+              border-color var(--anim-fast) var(--anim-ease),
+              box-shadow var(--anim-fast) var(--anim-ease),
+              transform var(--anim-fast) var(--anim-spring);
 }
 
 .custom-select-trigger:hover {
   background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.16);
+  border-color: color-mix(in srgb, var(--color-accent) 30%, rgba(255, 255, 255, 0.16));
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px -8px color-mix(in srgb, var(--color-accent) 35%, transparent);
+}
+
+.custom-select-trigger:active {
+  transform: translateY(-1px) scale(var(--anim-press));
+}
+
+/* Open state keeps the same lift the hover gives it, plus an accent ring
+   so it reads as "active" even after the cursor moves down to an option. */
+.custom-select.open .custom-select-trigger {
+  border-color: color-mix(in srgb, var(--color-accent) 45%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-accent) 20%, transparent),
+              0 6px 16px -8px color-mix(in srgb, var(--color-accent) 35%, transparent);
 }
 
 .custom-select-trigger .select-arrow {
   flex-shrink: 0;
   color: var(--color-text-dim, rgba(255, 255, 255, 0.4));
-  transition: transform var(--anim-fast) var(--anim-ease);
+  transition: transform var(--anim-fast) var(--anim-spring), color var(--anim-fast) var(--anim-ease);
+}
+
+.custom-select.open .select-arrow {
+  color: var(--color-accent);
 }
 
 .custom-select.open .custom-select-trigger .select-arrow {
@@ -417,23 +422,76 @@ input[type="range"]::-moz-range-track {
   pointer-events: auto;
 }
 
+/* Portal variant — used when JS moves the options panel out to <body>
+   to escape an ancestor's backdrop-filter stacking context (e.g. inside
+   .settings-section). position/top/left/width are set inline by JS off
+   the trigger's live bounding rect, so only positioning mode + stacking
+   need to change here. Open state can't rely on the ".custom-select.open"
+   ancestor combinator anymore since the panel is no longer a descendant
+   of .custom-select after the move — it gets its own .is-open class instead. */
+.custom-select-options--portal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: auto;
+  z-index: 3000;
+}
+
+.custom-select-options--portal.is-open {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
 .custom-option {
+  position: relative;
   cursor: pointer;
-  padding: 8px 14px;
+  padding: 8px 14px 8px 17px;
   font-size: 12px;
   color: var(--color-text-secondary, rgba(255, 255, 255, 0.7));
-  transition: background var(--anim-fast) var(--anim-ease), color var(--anim-fast) var(--anim-ease);
+  transition: background var(--anim-fast) var(--anim-ease),
+              color var(--anim-fast) var(--anim-ease),
+              transform var(--anim-fast) var(--anim-spring);
+}
+
+/* Accent bar, off-canvas until hover/selected — cheaper than animating
+   border-left width and doesn't nudge the text's box when it appears. */
+.custom-option::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 4px;
+  bottom: 4px;
+  width: 3px;
+  border-radius: 0 2px 2px 0;
+  background: var(--color-accent);
+  transform: scaleY(0);
+  transition: transform var(--anim-fast) var(--anim-spring);
 }
 
 .custom-option:hover {
   background: rgba(255, 255, 255, 0.06);
   color: var(--color-text, #ffffff);
+  transform: translateX(2px);
+}
+
+.custom-option:hover::before {
+  transform: scaleY(0.6);
+}
+
+.custom-option:active {
+  transform: translateX(2px) scale(var(--anim-press));
 }
 
 .custom-option.selected {
   background: rgba(var(--color-accent-rgb), 0.1);
   color: var(--color-accent);
   font-weight: 700;
+}
+
+.custom-option.selected::before {
+  transform: scaleY(1);
 }
 
 .text-input {

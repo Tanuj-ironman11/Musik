@@ -4,7 +4,7 @@
   "description": "Local-file desktop music player with native mod/theme support",
   "main": "main.js",
   "author": "Godzilla",
-  "license": "MIT",
+  "license": "GPL-3.0-or-later",
   "private": true,
   "scripts": {
     "start": "electron .",
@@ -52,7 +52,11 @@
       "target": [
         "nsis"
       ],
-      "icon": "build/icon.ico"
+      "icon": "build/icon.ico",
+      "files": [
+        "native/wasapi-loopback/index.js",
+        "native/wasapi-loopback/build/Release/wasapi_loopback.node"
+      ]
     },
     "mac": {
       "target": [

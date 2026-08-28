@@ -1,6 +1,4 @@
 /* Fullscreen Now Playing overlay.
-   Keyframes at the bottom belong in animations.css per the CSS role-
-   separation rule — move them, then delete this block.
    --app-scale is set on :root by app.js (0.82–1.18, centered on 1280px). */
 
 #now-playing-fullscreen {
@@ -572,7 +570,19 @@
   animation: npf-play-ring 2.2s ease-out infinite;
 }
 
-.npf-icon-kick { animation: npf-icon-kick 0.32s ease; }
+/* Same carousel-kick language as pb-prev/pb-next in the player bar, so
+   this doesn't feel like a different app. This used to compete with a
+   second .npf-icon-kick rule (plain scale-pop, flat `ease`) — dropped
+   that one, this is the only kick on the class now. */
+.npf-icon-kick svg { animation: npf-carousel-kick 0.34s var(--ease-spring); }
+
+/* Visualizer controls — same pop language as other icon-kicks. */
+.npf-vis-kick {
+  animation: npf-vis-btn-pop 0.34s var(--ease-bounce);
+}
+.npf-vis-thumb-kick {
+  animation: npf-vis-thumb-squash 0.32s var(--ease-bounce);
+}
 
 @media (max-width: 700px), (max-height: 500px) {
   .npf-layout {
@@ -590,37 +600,4 @@
 #now-playing-fullscreen {
   --npf-enter-dur: 460ms;
   --npf-exit-dur: 220ms;
-}
-
-/* Flagged for relocation to animations.css */
-
-@keyframes npf-icon-kick {
-  0%   { transform: scale(1); }
-  35%  { transform: scale(1.22); }
-  100% { transform: scale(1); }
-}
-
-@keyframes npf-ken-burns {
-  0%   { transform: scale(1.22) translate(0, 0); }
-  100% { transform: scale(1.32) translate(-1.5%, -1%); }
-}
-
-@keyframes npf-glow-pulse {
-  0%, 100% { transform: scale(1);   opacity: 0.85; }
-  50%      { transform: scale(1.08); opacity: 1; }
-}
-
-@keyframes npf-play-ring {
-  0%   { box-shadow: 0 0 0 0 rgba(var(--color-accent-rgb), 0.45); }
-  100% { box-shadow: 0 0 0 18px rgba(var(--color-accent-rgb), 0); }
-}
-
-@keyframes npf-drop-card-in {
-  from { opacity: 0; transform: translate(-50%, -50%) scale(0.85); }
-  to   { opacity: 1; transform: translate(-50%, -50%) scale(1); }
-}
-
-@keyframes npf-drop-card-pulse {
-  0%, 100% { transform: translate(-50%, -50%) scale(1);     box-shadow: 0 0 60px rgba(var(--color-accent-rgb), 0.22); }
-  50%      { transform: translate(-50%, -50%) scale(1.035); box-shadow: 0 0 92px rgba(var(--color-accent-rgb), 0.4); }
 }

@@ -226,7 +226,19 @@ async function refreshModsList() {
   });
 }
 
+// Settings view re-renders its whole DOM via main.innerHTML on every visit.
+// Element-scoped listeners die with their elements naturally, but anything
+// bound to document/window (custom-select outside-click, resize, the
+// musik:eq-change bus) outlives that and stacked up one extra copy per
+// visit. This controller is aborted at the top of every render so the
+// previous visit's listeners are torn down before the new ones go on.
+let settingsViewAbortController = null;
+
 window.MusikViews['settings'] = async function renderSettings(main) {
+  settingsViewAbortController?.abort();
+  settingsViewAbortController = new AbortController();
+  const { signal } = settingsViewAbortController;
+
   const duckSettings = (await window.Musik?.gameDuck?.getSettings?.()) ?? { available: false, enabled: false, sensitivity: 0.5, duckCeiling: 0.4, maxDuck: 0.6 };
   const scrobblerSettings = (await window.Musik?.scrobble?.getSettings?.()) ?? { connected: false, username: null, enabled: true, usingCustomApiKey: false, lastScrobbleAt: null };
 
@@ -565,19 +577,62 @@ window.MusikViews['settings'] = async function renderSettings(main) {
     if (!root) return null;
     const trigger = root.querySelector('.custom-select-trigger');
     const label = root.querySelector('.custom-select-trigger-label');
+    const optionsPanel = root.querySelector('.custom-select-options');
     const options = root.querySelectorAll('.custom-option');
+
+    // .settings-section has its own backdrop-filter, which creates a
+    // separate stacking context per section. An absolutely-positioned
+    // options panel is trapped inside its own section's context — no
+    // z-index can lift it above whichever section comes next in the DOM.
+    // Moving the panel to <body> and position:fixed-ing it off the
+    // trigger's live bounding rect escapes the trap entirely.
+    optionsPanel.classList.add('custom-select-options--portal');
+    document.body.appendChild(optionsPanel);
+    // It's now a body-level child, not a descendant of main — the next
+    // render's main.innerHTML wipe won't remove it. Clean it up ourselves
+    // when this render's lifetime ends.
+    signal.addEventListener('abort', () => optionsPanel.remove());
+
+    function positionPanel() {
+      const rect = trigger.getBoundingClientRect();
+      optionsPanel.style.left = `${rect.left}px`;
+      optionsPanel.style.top = `${rect.bottom + 6}px`;
+      optionsPanel.style.width = `${rect.width}px`;
+    }
+
+    function onScroll() {
+      if (root.classList.contains('open')) close();
+    }
+
+    function close() {
+      root.classList.remove('open');
+      optionsPanel.classList.remove('is-open');
+      window.removeEventListener('scroll', onScroll, true);
+    }
 
     trigger.addEventListener('click', (e) => {
       e.stopPropagation();
-      root.classList.toggle('open');
-    });
+      const opening = !root.classList.contains('open');
+      // Close any other open portaled select first — otherwise clicking
+      // straight from one trigger to another leaves both panels open,
+      // since stopPropagation() here skips the document click-close.
+      document.querySelectorAll('.custom-select-options--portal.is-open').forEach((p) => p.classList.remove('is-open'));
+      document.querySelectorAll('.custom-select.open').forEach((r) => r.classList.remove('open'));
+      if (opening) {
+        positionPanel();
+        root.classList.add('open');
+        optionsPanel.classList.add('is-open');
+        window.addEventListener('scroll', onScroll, { capture: true, signal });
+      }
+    }, { signal });
     options.forEach((opt) => {
       opt.addEventListener('click', () => {
-        root.classList.remove('open');
+        close();
         onChange(opt.dataset.value);
-      });
+      }, { signal });
     });
-    document.addEventListener('click', () => root.classList.remove('open'));
+    document.addEventListener('click', close, { signal });
+    window.addEventListener('resize', () => { if (root.classList.contains('open')) positionPanel(); }, { signal });
 
     return {
       setValue(value) {
@@ -777,7 +832,7 @@ window.MusikViews['settings'] = async function renderSettings(main) {
   // Presets/mode/band-count changes funnel through this event so the UI
   // never drifts from real state. Drag-in-progress updates don't — see
   // previewBandGain in eq.js.
-  window.addEventListener('musik:eq-change', renderEqSection);
+  window.addEventListener('musik:eq-change', renderEqSection, { signal });
   renderEqSection();
 
   const navGrid = document.getElementById('layout-nav-grid');
@@ -831,12 +886,16 @@ window.MusikViews['settings'] = async function renderSettings(main) {
     });
 
     // 'duckdebug' — main.js/game-duck.js don't emit this yet; row stays at "—" until they do.
+    // window.Musik.events is a custom bus, not a native EventTarget, so it
+    // can't take an AbortSignal directly — remove it by hand on teardown.
     const meterLevel = document.getElementById('settings-duck-meter-level');
     const meterMult = document.getElementById('settings-duck-meter-mult');
-    window.Musik?.events?.on?.('duckdebug', ({ level, smoothed }) => {
+    const onDuckDebug = ({ level, smoothed }) => {
       if (meterLevel) meterLevel.textContent = `level: ${Math.round(level * 100)}%`;
       if (meterMult) meterMult.textContent = `volume: ${Math.round(smoothed * 100)}%`;
-    });
+    };
+    window.Musik?.events?.on?.('duckdebug', onDuckDebug);
+    signal.addEventListener('abort', () => window.Musik?.events?.off?.('duckdebug', onDuckDebug));
   }
 
   await refreshModsList();

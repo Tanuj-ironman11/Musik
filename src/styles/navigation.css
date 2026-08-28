@@ -338,23 +338,31 @@ body.sidebar-resizing #now-playing-bar {
 
 /* ── Drag-to-reorder ─────────────────────────────────────────────
    Vertical rail: links stack top-to-bottom, so the insertion point is a
-   horizontal line on the link's top edge — same idiom as the playlist
-   track-row reorder in playlist-edit.css.
+   horizontal line — top edge if dropping before the hovered link,
+   bottom edge if after.
    Topbar mode: links run left-to-right, so the insertion point is
-   instead a vertical line on the link's LEFT edge — a distinct visual
-   that actually matches that layout's reorder axis, rather than reusing
-   the vertical rail's top-edge line sideways where it wouldn't read
-   correctly. */
+   instead a vertical line — left edge for before, right edge for
+   after — a distinct visual that actually matches that layout's
+   reorder axis, rather than reusing the vertical rail's line sideways
+   where it wouldn't read correctly. */
 .nav-link--dragging {
   opacity: 0.4;
 }
 
-.nav-link--drop-target {
+.nav-link--drop-before {
   box-shadow: inset 0 2px 0 var(--color-accent);
 }
 
-body.layout-topbar .nav-link--drop-target {
+.nav-link--drop-after {
+  box-shadow: inset 0 -2px 0 var(--color-accent);
+}
+
+body.layout-topbar .nav-link--drop-before {
   box-shadow: inset 2px 0 0 var(--color-accent);
+}
+
+body.layout-topbar .nav-link--drop-after {
+  box-shadow: inset -2px 0 0 var(--color-accent);
 }
 
 /* ── Hidden-sections pill ────────────────────────────────────────
@@ -874,4 +882,50 @@ body.sidebar-pinned #sidebar #app-name {
   padding-left: 8px;
   padding-right: 6px;
   gap: 10px;
+}
+/* ─── Sidebar/topbar nav icons: click-kick ───
+   Moved in from animations.css — trigger/selector rules belong here per
+   the CSS role-separation rule. JS adds .icon-kick to the clicked
+   .nav-link, removes it on animationend. Keyframes still live in
+   animations.css. */
+
+.nav-link[data-view="home"].icon-kick .sidebar-icon {
+  transform-box: fill-box;
+  transform-origin: bottom center;
+  animation: icon-home-hop 0.42s var(--ease-bounce);
+}
+
+.nav-link[data-view="settings"].icon-kick .sidebar-icon {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: icon-gear-tick 0.45s var(--ease-bounce);
+}
+
+/* Library icon = 2x2 tile grid. Each tile pops, staggered diagonally
+   so it reads as a cascade instead of moving all at once. */
+.nav-link[data-view="library"].icon-kick .lib-bar {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: icon-lib-tile-pop 0.42s var(--ease-bounce);
+}
+.nav-link[data-view="library"].icon-kick .lib-bar:nth-child(1) { animation-delay: 0s; }
+.nav-link[data-view="library"].icon-kick .lib-bar:nth-child(2) { animation-delay: 0.05s; }
+.nav-link[data-view="library"].icon-kick .lib-bar:nth-child(3) { animation-delay: 0.05s; }
+.nav-link[data-view="library"].icon-kick .lib-bar:nth-child(4) { animation-delay: 0.1s; }
+
+.nav-link[data-view="search"].icon-kick .sidebar-icon {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: icon-search-ping 0.4s var(--ease-bounce);
+}
+
+.nav-link[data-view="profile"].icon-kick .sidebar-icon {
+  transform-box: fill-box;
+  transform-origin: bottom center;
+  animation: icon-profile-nod 0.4s var(--ease-bounce);
+}
+
+/* ─── Wordmark click easter egg ─── */
+.logo-text-wrap.egg-pop {
+  animation: wordmark-egg-pop 0.55s var(--ease-bounce);
 }
