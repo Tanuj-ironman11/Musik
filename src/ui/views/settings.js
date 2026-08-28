@@ -610,6 +610,22 @@ window.MusikViews['settings'] = async function renderSettings(main) {
       window.removeEventListener('scroll', onScroll, true);
     }
 
+    // Shared by setValue() (external/initial sync) and the option click
+    // handler below (user-driven selection) — previously only setValue()
+    // did this, so clicking an option fired onChange() and closed the
+    // panel, but the trigger label and .selected state never updated to
+    // reflect the click. The setting was actually being applied
+    // underneath; it just looked like clicking did nothing.
+    function applySelection(value) {
+      let match = null;
+      options.forEach((o) => {
+        const isMatch = o.dataset.value === String(value);
+        o.classList.toggle('selected', isMatch);
+        if (isMatch) match = o;
+      });
+      if (label && match) label.textContent = match.textContent;
+    }
+
     trigger.addEventListener('click', (e) => {
       e.stopPropagation();
       const opening = !root.classList.contains('open');
@@ -628,6 +644,7 @@ window.MusikViews['settings'] = async function renderSettings(main) {
     options.forEach((opt) => {
       opt.addEventListener('click', () => {
         close();
+        applySelection(opt.dataset.value);
         onChange(opt.dataset.value);
       }, { signal });
     });
@@ -635,15 +652,7 @@ window.MusikViews['settings'] = async function renderSettings(main) {
     window.addEventListener('resize', () => { if (root.classList.contains('open')) positionPanel(); }, { signal });
 
     return {
-      setValue(value) {
-        let match = null;
-        options.forEach((o) => {
-          const isMatch = o.dataset.value === String(value);
-          o.classList.toggle('selected', isMatch);
-          if (isMatch) match = o;
-        });
-        if (label && match) label.textContent = match.textContent;
-      },
+      setValue: applySelection,
     };
   }
 

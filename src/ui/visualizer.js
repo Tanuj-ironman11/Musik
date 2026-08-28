@@ -778,6 +778,7 @@
     el.id = 'npf-visualizer-3d';
     el.style.display = 'block';
     el.style.margin = '0 auto';
+    el.style.width = '100%';
     el.style.aspectRatio = '1 / 1';
     el.style.maxWidth = '65vh';
     el.style.maxHeight = '65vh';
