@@ -130,7 +130,17 @@
   <script src="src/ui/player-ui.js" defer></script>
   <script src="src/ui/eq.js" defer></script>
   <script src="src/ui/media-session.js" defer></script>
-  <script src="node_modules/three/build/three.min.js" defer></script>
+  <!-- three.js loaded via the importmap above (ES module), not the deprecated
+       UMD build/three.min.js — that build is gone as of r160+ and was
+       throwing a console warning. This external module shim (must be
+       external, not inline — the CSP's script-src has no 'unsafe-inline')
+       re-exposes THREE as a global so the classic (non-module) scripts
+       below that expect window.THREE keep working unchanged. Module
+       scripts execute in the same document-order queue as classic defer
+       scripts, so this still runs before fullscreen.js/visualizer.js/
+       accent-extractor.js as before. New file: src/ui/three-loader.js
+       (two lines — see below). -->
+  <script type="module" src="src/ui/three-loader.js"></script>
   <script src="src/ui/fullscreen.js" defer></script>
   <script src="src/ui/visualizer.js" defer></script>
   <script src="src/ui/accent-extractor.js" defer></script>

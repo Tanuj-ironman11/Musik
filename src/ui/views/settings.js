@@ -31,6 +31,16 @@ function broadcastVisualizerChange(detail) {
   window.dispatchEvent(new CustomEvent('musik:visualizer-settings-change', { detail }));
 }
 
+// 3D blob reactivity. visualizer.js reads this straight out of localStorage
+// every frame (draw3d), so writing it here is enough — no broadcast event
+// needed for it to take effect live.
+const VIS_SENSITIVITY_KEY = 'musik_vis_sensitivity';
+
+function getVisSensitivityPercent() {
+  const raw = parseFloat(localStorage.getItem(VIS_SENSITIVITY_KEY));
+  return Number.isFinite(raw) ? Math.round(raw * 100) : 100;
+}
+
 // "Always on top" needs window.Musik.miniplayer.setAlwaysOnTop() —
 // preload.js/main.js don't expose it yet. Saves the pref, no visible
 // effect until that IPC surface exists.
@@ -364,6 +374,17 @@ window.MusikViews['settings'] = async function renderSettings(main) {
             </div>
           </div>
         </div>
+        <div class="settings-row">
+          <div class="settings-row-label">
+            <span class="settings-row-name">Reactivity</span>
+            <span class="settings-row-desc">How much the 3D blob deforms in response to audio. Lower this if it feels too jumpy.</span>
+          </div>
+          <div class="settings-row-control">
+            <input type="range" id="settings-vis-sensitivity" class="range-fill" min="25" max="200"
+              value="${getVisSensitivityPercent()}" />
+            <span id="settings-vis-sensitivity-value" class="settings-row-value"></span>
+          </div>
+        </div>
       </section>
 
       <section class="settings-section" id="settings-library">
@@ -557,6 +578,18 @@ window.MusikViews['settings'] = async function renderSettings(main) {
     broadcastVisualizerChange({ quality: value });
   });
   visQualityCustomSelect?.setValue(window.MusikVisualizer?.getQuality?.() ?? getVisQuality());
+
+  const sensSlider2 = document.getElementById('settings-vis-sensitivity');
+  const sensValue2 = document.getElementById('settings-vis-sensitivity-value');
+  const paintVisSensitivity = () => {
+    sensValue2.textContent = `${sensSlider2.value}%`;
+    sensSlider2.style.setProperty('--fill', `${(sensSlider2.value - sensSlider2.min) / (sensSlider2.max - sensSlider2.min) * 100}%`);
+  };
+  paintVisSensitivity();
+  sensSlider2.addEventListener('input', () => {
+    paintVisSensitivity();
+    localStorage.setItem(VIS_SENSITIVITY_KEY, String(Number(sensSlider2.value) / 100));
+  });
 
   // ── Equalizer ─────────────────────────────────────────────────────────
   // window.MusikEQ (eq.js) owns state/persistence/live-node wiring; this

@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "Local-file desktop music player with native mod/theme support",
   "main": "main.js",
-  "author": "Godzilla",
+  "author": "Tanuj-ironman11",
   "license": "GPL-3.0-or-later",
   "private": true,
   "scripts": {
@@ -18,10 +18,10 @@
     "music-metadata": "11.15.0",
     "node-id3": "^0.2.9",
     "node-taglib-sharp": "^6.0.3",
-    "three": "0.160.0"
+    "three": "0.185.1"
   },
   "devDependencies": {
-    "electron": "43.4.1",
+    "electron": "44.0.0",
     "electron-builder": "^26.15.3"
   },
   "build": {
@@ -72,7 +72,7 @@
     }
   },
   "allowScripts": {
-    "electron@43.4.1": true,
+    "electron@44.0.0": true,
     "electron-winstaller@5.4.0": true
   }
 }

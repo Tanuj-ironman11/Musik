@@ -1,28 +1,15 @@
 // src/ui/visualizer.js
-// Renderer-side Now Playing visualizer.
+// Renderer-side Now Playing visualizer. rAF loop runs only while
+// `npf-open` is on <body>. 2D/3D both fall back to a synthetic idle
+// animation when there's no analyser.
 //
-// Single rAF loop, only scheduled while `npf-open` is on <body> (see
-// MutationObserver in initLifecycle). 2D mode falls back to a synthetic
-// idle animation when there's no analyser; 3D mode does the same (gentle
-// sine-driven bass/treble) so the blob keeps breathing when nothing's
-// playing instead of freezing.
+// 3D: noise-displaced icosahedron wireframe + solid core, bloom, optional
+// FXAA, cursor-follow camera. THREE comes from three-loader.js (sets
+// window.THREE). Postprocessing is hand-rolled against that global since
+// the JSM addons need import(), which this app's CSP blocks.
 //
-// 3D mode: the ORIGINAL blob engine, ported back in from the pre-rewrite
-// fullscreen.js (noise-displaced icosahedron wireframe + solid core mesh,
-// UnrealBloomPass glow, optional FXAA, temporal accumulation pass,
-// cursor-follow camera). Three.js itself is NOT loaded by this file —
-// index.html already loads node_modules/three/build/three.min.js as a
-// plain global <script> before visualizer.js, so window.THREE is present
-// by the time this runs. A hand-rolled EffectComposer/Pass/UnrealBloomPass/
-// FXAA/TemporalPass bundle (the postprocessing addons, which only ship as
-// JSM and can't be `import()`-ed under this app's CSP) is built against
-// that global THREE the first time 3D mode is used, then reused.
-//
-// window.MusikVisualizer exposes { setMode, getMode, setSmoothing,
-// getSmoothing, setQuality, getQuality }.
-// window.MusikVisualizer3D exposes { isAvailable } (legacy surface —
-// "available" is optimistic here since we can't know until the script
-// load resolves; setMode('3d') silently falls back to 2D if it fails).
+// window.MusikVisualizer: { setMode, getMode, setSmoothing, getSmoothing,
+// setQuality, getQuality }. window.MusikVisualizer3D: { isAvailable }.
 
 (function () {
   const BAR_COUNT = 64;
@@ -36,9 +23,7 @@
   const LERP_CRISP = 0.65;
   const LERP_SMOOTH = 0.18;
 
-  // low/medium/high map to pixel ratio cap + which postprocessing passes
-  // run. FXAA/temporal-accumulation are extra composer passes on top of
-  // bloom, so they're the first things dropped on low-end GPUs.
+  // low/med/high: pixel ratio cap + which passes run. fxaa dropped first on low-end GPUs.
   const QUALITY_TIERS = {
     low:    { pixelRatio: 1,                                          fxaa: false, temporal: false },
     medium: { pixelRatio: Math.min(window.devicePixelRatio || 1, 1.5), fxaa: false, temporal: true },
@@ -46,6 +31,14 @@
   };
 
   const DEFAULT_ACCENT_RGB = '61, 184, 245';
+
+  // Shared by 2D bar coloring + 3D shader zones. Hz -> bin fraction via real AnalyserNode sampleRate.
+  const BAND_HZ = {
+    bass:   [20, 250],
+    mid:    [250, 2000],
+    treble: [2000, 16000],
+  };
+  const BAND_KEYS = ['bass', 'mid', 'treble'];
 
   let smoothingOn = localStorage.getItem(SMOOTHING_STORAGE_KEY) !== 'off';
   let mode = localStorage.getItem(MODE_STORAGE_KEY) || '2d';
@@ -57,10 +50,19 @@
   let controlsRoot = null;
 
   let accentRgbStr = DEFAULT_ACCENT_RGB;
+  let bandRgbCache = { bass: DEFAULT_ACCENT_RGB, mid: DEFAULT_ACCENT_RGB, treble: DEFAULT_ACCENT_RGB };
 
   function refreshAccentCache() {
     const rgb = getComputedStyle(document.documentElement).getPropertyValue('--color-accent-rgb').trim();
     accentRgbStr = rgb || DEFAULT_ACCENT_RGB;
+    const [ar, ag, ab] = accentRgbStr.split(',').map((n) => parseInt(n.trim(), 10) || 0);
+    const [brr, brg, brb] = hueShiftRgb(ar, ag, ab, -25);
+    const [trr, trg, trb] = hueShiftRgb(ar, ag, ab, 25);
+    bandRgbCache = {
+      bass: `${brr}, ${brg}, ${brb}`,
+      mid: accentRgbStr,
+      treble: `${trr}, ${trg}, ${trb}`,
+    };
   }
 
   // ── 2D bar-ring mode ────────────────────────────────────────────────────
@@ -70,6 +72,26 @@
   let ro2d = null;
   let dataArray2d = null;
   let barValues = null;
+  let barBandMap = null;
+  let barBandMapKey = null;
+
+  // bin -> Hz is `bin * nyquist / frequencyBinCount` (nyquist = sampleRate/2).
+  // Cached by (frequencyBinCount, sampleRate) since neither changes often.
+  function ensureBarBandMap(frequencyBinCount, sampleRate) {
+    const key = frequencyBinCount + ':' + sampleRate;
+    if (barBandMap && barBandMapKey === key) return barBandMap;
+    barBandMapKey = key;
+    barBandMap = new Uint8Array(BAR_COUNT);
+    const usableBins = Math.floor(frequencyBinCount * 0.5);
+    const step = usableBins / BAR_COUNT;
+    const nyquist = sampleRate / 2;
+    for (let i = 0; i < BAR_COUNT; i++) {
+      const bin = Math.floor(i * step);
+      const hz = (bin * nyquist) / frequencyBinCount;
+      barBandMap[i] = hz < BAND_HZ.mid[0] ? 0 : (hz < BAND_HZ.treble[0] ? 1 : 2);
+    }
+    return barBandMap;
+  }
 
   function ensureCanvas() {
     const mediaArea = document.getElementById('npf-media-area');
@@ -130,6 +152,8 @@
 
     const usableBins = Math.floor(dataArray2d.length * 0.5);
     const step = usableBins / BAR_COUNT;
+    const sampleRate = analyser.context.sampleRate;
+    const bandMap = ensureBarBandMap(dataArray2d.length, sampleRate);
 
     ctx.lineCap = 'round';
     ctx.lineWidth = Math.max(2, (2 * Math.PI * baseRadius) / BAR_COUNT * 0.4);
@@ -148,7 +172,8 @@
       const x2 = cx + Math.cos(angle) * (baseRadius + barLen);
       const y2 = cy + Math.sin(angle) * (baseRadius + barLen);
 
-      ctx.strokeStyle = `rgba(${accentRgbStr}, ${0.25 + value * 0.6})`;
+      const bandColor = bandRgbCache[BAND_KEYS[bandMap[i]]];
+      ctx.strokeStyle = `rgba(${bandColor}, ${0.25 + value * 0.6})`;
       ctx.beginPath();
       ctx.moveTo(x1, y1);
       ctx.lineTo(x2, y2);
@@ -172,13 +197,30 @@
     return sum / ((b - a) * 255);
   }
 
-  function hueShiftRgb(r, g, b, degrees) {
+  function hzToFraction(hz, sampleRate) {
+    return Math.max(0, Math.min(1, hz / (sampleRate / 2)));
+  }
+
+  function bandEnergyHz(freqData, sampleRate, loHz, hiHz) {
+    return bandEnergy(freqData, hzToFraction(loHz, sampleRate), hzToFraction(hiHz, sampleRate));
+  }
+
+  function computeBands(freqData, sampleRate) {
+    return {
+      bass:   bandEnergyHz(freqData, sampleRate, BAND_HZ.bass[0], BAND_HZ.bass[1]),
+      mid:    bandEnergyHz(freqData, sampleRate, BAND_HZ.mid[0], BAND_HZ.mid[1]),
+      treble: bandEnergyHz(freqData, sampleRate, BAND_HZ.treble[0], Math.min(BAND_HZ.treble[1], sampleRate / 2)),
+    };
+  }
+
+  function hueShiftRgb(r, g, b, degrees, lightDelta) {
     r /= 255; g /= 255; b /= 255;
     const max = Math.max(r, g, b), min = Math.min(r, g, b);
     const d = max - min;
     let h = 0;
-    const l = (max + min) / 2;
+    let l = (max + min) / 2;
     const s = d === 0 ? 0 : (l > 0.5 ? d / (2 - max - min) : d / (max + min));
+    if (lightDelta) l = Math.max(0.08, Math.min(0.92, l + lightDelta));
 
     if (d !== 0) {
       switch (max) {
@@ -217,25 +259,16 @@
     return [61, 184, 245];
   }
 
-  function accentColorsToVec3(THREE) {
+  function accentColorThree(THREE) {
     const [ar, ag, ab] = getAccentRgbArray();
-    const [br, bg, bb] = hueShiftRgb(ar, ag, ab, 20);
-    return [
-      new THREE.Color(ar / 255, ag / 255, ab / 255),
-      new THREE.Color(br / 255, bg / 255, bb / 255),
-    ];
+    return new THREE.Color(ar / 255, ag / 255, ab / 255);
   }
 
   let threeModulePromise = null;
   let threeLoadFailed = false;
 
-  // Waits for window.THREE to exist. In practice this resolves on the
-  // very first check: index.html loads node_modules/three/build/three.min.js
-  // as a plain deferred <script> BEFORE visualizer.js's own <script> tag,
-  // and deferred scripts execute strictly in document order — so THREE is
-  // already attached to window by the time this file's top-level code
-  // runs. The poll loop below is just a defensive fallback in case that
-  // load order ever changes; it is not the expected path.
+  // Waits for window.THREE (set by three-loader.js). Poll loop is a
+  // defensive fallback only — not the expected path.
   function waitForGlobalThree(timeoutMs = 8000) {
     return new Promise((resolve, reject) => {
       if (window.THREE) { resolve(window.THREE); return; }
@@ -252,12 +285,8 @@
     });
   }
 
-  // Hand-implements the postprocessing pass classes (Pass/EffectComposer/
-  // RenderPass/ShaderPass/UnrealBloomPass/FXAAShader/TemporalPass) against
-  // the already-loaded global window.THREE. This is the exact bundle from
-  // the original implementation — kept as-is rather than swapped for real
-  // JSM addon imports, since those require `import()` of ES modules and
-  // three.min.js here is the classic global (non-module) build.
+  // Hand-rolled Pass/EffectComposer/RenderPass/UnrealBloomPass/FXAA/
+  // TemporalPass against global THREE — JSM addons need import(), blocked by CSP.
   function loadThree() {
     if (!threeModulePromise) {
       threeModulePromise = waitForGlobalThree()
@@ -340,7 +369,7 @@
                   this.renderTarget1 = renderTarget; this.renderTarget2 = renderTarget.clone();
                   this.writeBuffer = this.renderTarget1; this.readBuffer = this.renderTarget2;
                   this.renderToScreen = true; this.passes = [];
-                  this.copyPass = new ShaderPass( CopyShader ); this.clock = new THREE.Clock();
+                  this.copyPass = new ShaderPass( CopyShader ); this.clock = new THREE.Timer();
               }
               swapBuffers() {
                   const tmp = this.readBuffer; this.readBuffer = this.writeBuffer; this.writeBuffer = tmp;
@@ -354,7 +383,7 @@
                   return true;
               }
               render( deltaTime ) {
-                  if ( deltaTime === undefined ) deltaTime = this.clock.getDelta();
+                  if ( deltaTime === undefined ) { this.clock.update(); deltaTime = this.clock.getDelta(); }
                   const currentRenderTarget = this.renderer.getRenderTarget();
                   for ( let i = 0, il = this.passes.length; i < il; i ++ ) {
                       const pass = this.passes[ i ];
@@ -591,11 +620,12 @@
                   const pars = { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, format: THREE.RGBAFormat };
                   this.accumTarget1 = new THREE.WebGLRenderTarget(size.width * this.pixelRatio, size.height * this.pixelRatio, pars);
                   this.accumTarget2 = new THREE.WebGLRenderTarget(size.width * this.pixelRatio, size.height * this.pixelRatio, pars);
+                  this._seeded = false;
                   this.material = new THREE.ShaderMaterial({
                       uniforms: {
                           'tCurrent': { value: null },
                           'tPrev': { value: null },
-                          'blend': { value: 0.35 }
+                          'blend': { value: 0.18 }
                       },
                       vertexShader: `
                           varying vec2 vUv;
@@ -629,6 +659,13 @@
                   this.accumTarget2.setSize(width, height);
               }
               render(renderer, writeBuffer, readBuffer, deltaTime, maskActive) {
+                  if (!this._seeded) {
+                      this._seeded = true;
+                      this.copyMaterial.uniforms['tDiffuse'].value = readBuffer.texture;
+                      renderer.setRenderTarget(this.accumTarget1);
+                      renderer.clear();
+                      this.copyQuad.render(renderer);
+                  }
                   this.material.uniforms['tCurrent'].value = readBuffer.texture;
                   this.material.uniforms['tPrev'].value = this.accumTarget1.texture;
                   renderer.setRenderTarget(this.accumTarget2);
@@ -729,14 +766,34 @@
 
   const BLOB_VERTEX = `
     uniform float uTime;
-    uniform float uAmp;
+    uniform float uAmpBass;
+    uniform float uAmpMid;
+    uniform float uAmpTreble;
     uniform float uFreq;
     varying float vDisplacement;
     ${NOISE_GLSL}
 
     void main() {
+      // Vertical bands: treble on top, bass on bottom, mid in the middle.
+      // A small static noise wobble on the boundary keeps the seam from
+      // looking like a hard sticker edge, but the zones stay legible —
+      // this is what makes different parts of the blob move for different
+      // bands. Purely a displacement-amplitude blend now, no color tied
+      // to it — the color-coded zones read as a flag, not audio.
+      vec3 zonePos = normalize(position);
+      float wobble = pnoise(zonePos * 2.0 + vec3(12.3, 4.5, 8.1)) * 0.15;
+      float y = zonePos.y + wobble;
+
+      float bassWeight   = 1.0 - smoothstep(-0.55, -0.15, y);
+      float trebleWeight = smoothstep(0.15, 0.55, y);
+      float midWeight    = clamp(1.0 - bassWeight - trebleWeight, 0.0, 1.0);
+
+      float zoneSum = bassWeight + midWeight + trebleWeight;
+      vec3 zoneWeights = vec3(bassWeight, midWeight, trebleWeight) / max(zoneSum, 0.0001);
+
+      float amp = uAmpBass * zoneWeights.x + uAmpMid * zoneWeights.y + uAmpTreble * zoneWeights.z;
       vec3 noisePos = position * uFreq + vec3(uTime * 0.25);
-      float displacement = pnoise(noisePos) * uAmp;
+      float displacement = pnoise(noisePos) * amp;
       vDisplacement = displacement;
       vec3 newPosition = position + normal * displacement;
       gl_Position = projectionMatrix * modelViewMatrix * vec4(newPosition, 1.0);
@@ -744,13 +801,12 @@
   `;
 
   const BLOB_FRAGMENT = `
-    uniform vec3 uColorA;
-    uniform vec3 uColorB;
+    uniform vec3 uColor;
     varying float vDisplacement;
 
     void main() {
-      float t = clamp(vDisplacement * 0.5 + 0.5, 0.0, 1.0);
-      gl_FragColor = vec4(mix(uColorA, uColorB, t), 1.0);
+      float shimmer = 0.85 + 0.3 * clamp(vDisplacement * 0.5 + 0.5, 0.0, 1.0);
+      gl_FragColor = vec4(uColor * shimmer, 1.0);
     }
   `;
 
@@ -825,18 +881,19 @@
     blobRenderer.setSize(W, H, false);
 
     const geometry = new THREE.IcosahedronGeometry(1.8, 16);
-    const [colorA, colorB] = accentColorsToVec3(THREE);
+    const accentColor = accentColorThree(THREE);
 
     blobMaterial = new THREE.ShaderMaterial({
       vertexShader: BLOB_VERTEX,
       fragmentShader: BLOB_FRAGMENT,
       wireframe: true,
       uniforms: {
-        uTime:   { value: 0 },
-        uAmp:    { value: 0.15 },
-        uFreq:   { value: 1.4 },
-        uColorA: { value: colorA },
-        uColorB: { value: colorB },
+        uTime:      { value: 0 },
+        uAmpBass:   { value: 0.15 },
+        uAmpMid:    { value: 0.15 },
+        uAmpTreble: { value: 0.15 },
+        uFreq:      { value: 1.4 },
+        uColor:     { value: accentColor },
       },
     });
 
@@ -870,12 +927,8 @@
       fxaaPass = null;
     }
 
-    if (tier.temporal) {
-      temporalPass = new TemporalPass(blobRenderer);
-      blobComposer.addPass(temporalPass);
-    } else {
-      temporalPass = null;
-    }
+    // Wireframe + temporal blend = flicker, not smoothing. Disabled for good.
+    temporalPass = null;
 
     blobMouseMove = (e) => {
       blobMouseActive = true;
@@ -900,7 +953,7 @@
     };
     window.addEventListener('resize', blobResize);
 
-    blobClock = new THREE.Clock();
+    blobClock = new THREE.Timer();
   }
 
   function draw3d(analyser, mount) {
@@ -909,38 +962,47 @@
       return;
     }
 
-    let bass, treble;
+    let bass, mid, treble;
     if (analyser) {
       if (!draw3d._freqData || draw3d._freqData.length !== analyser.frequencyBinCount) {
         draw3d._freqData = new Uint8Array(analyser.frequencyBinCount);
       }
       analyser.getByteFrequencyData(draw3d._freqData);
-      bass = bandEnergy(draw3d._freqData, 0, 0.15);
-      treble = bandEnergy(draw3d._freqData, 0.35, 0.8);
+      const bands = computeBands(draw3d._freqData, analyser.context.sampleRate);
+      bass = bands.bass; mid = bands.mid; treble = bands.treble;
     } else {
       const t = performance.now() / 1000;
-      bass = 0.16 + Math.sin(t * 0.15) * 0.05;
+      bass   = 0.16 + Math.sin(t * 0.15) * 0.05;
+      mid    = 0.14 + Math.sin(t * 0.13 + 0.9) * 0.05;
       treble = 0.12 + Math.sin(t * 0.11 + 1.7) * 0.04;
     }
 
-    draw3d._smoothedBass = draw3d._smoothedBass || 0;
-    draw3d._smoothedBass = bass > draw3d._smoothedBass
-      ? draw3d._smoothedBass * 0.4 + bass * 0.6
-      : draw3d._smoothedBass * 0.88 + bass * 0.12;
-    const smoothedBass = draw3d._smoothedBass;
+    const smoothBand = (key, target) => {
+      const prev = draw3d[key] || 0;
+      draw3d[key] = target > prev ? prev * 0.4 + target * 0.6 : prev * 0.88 + target * 0.12;
+      return draw3d[key];
+    };
+    const smoothedBass   = smoothBand('_smoothedBass', bass);
+    const smoothedMid    = smoothBand('_smoothedMid', mid);
+    const smoothedTreble = smoothBand('_smoothedTreble', treble);
 
     const [ar, ag, ab] = getAccentRgb().split(',').map((n) => parseInt(n.trim(), 10) || 0);
-    const [br, bg, bb] = hueShiftRgb(ar, ag, ab, 20);
-    blobMaterial.uniforms.uColorA.value.setRGB(ar / 255, ag / 255, ab / 255);
-    blobMaterial.uniforms.uColorB.value.setRGB(br / 255, bg / 255, bb / 255);
+    blobMaterial.uniforms.uColor.value.setRGB(ar / 255, ag / 255, ab / 255);
 
     const sensitivity = parseFloat(localStorage.getItem('musik_vis_sensitivity') || '1.0');
+    blobClock.update();
     const delta = Math.min(blobClock.getDelta(), 0.1);
-    const time = blobClock.getElapsedTime();
+    const time = blobClock.getElapsed();
 
     blobMaterial.uniforms.uTime.value = time;
-    blobMaterial.uniforms.uAmp.value = (0.1 + smoothedBass * 0.9) * 0.18 * sensitivity;
-    blobMaterial.uniforms.uFreq.value = 1.2 + treble * 1.5;
+    // Power curve (not linear) so quiet bands settle near-still instead of
+    // idling at a shared floor, and loud bands pop clearly above it — this
+    // is what makes "that part is moving because of the kick" readable.
+    const ampCurve = (v) => Math.pow(Math.max(0, v), 1.6);
+    blobMaterial.uniforms.uAmpBass.value   = (0.015 + ampCurve(smoothedBass) * 0.22) * sensitivity;
+    blobMaterial.uniforms.uAmpMid.value    = (0.015 + ampCurve(smoothedMid) * 0.22) * sensitivity;
+    blobMaterial.uniforms.uAmpTreble.value = (0.015 + ampCurve(smoothedTreble) * 0.22) * sensitivity;
+    blobMaterial.uniforms.uFreq.value = 1.2 + smoothedTreble * 1.5;
 
     blobMesh.rotation.y += (0.09 + smoothedBass * 0.6) * delta;
     coreMesh.rotation.y = blobMesh.rotation.y;

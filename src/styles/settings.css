@@ -93,6 +93,22 @@
 }
 .settings-row-control input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.15); }
 
+/* Fill-track variant — opt-in via .range-fill, doesn't affect existing plain sliders */
+.settings-row-control input[type="range"].range-fill {
+  --fill: 50%;
+  background: linear-gradient(
+    to right,
+    var(--color-accent) 0%,
+    var(--color-accent) var(--fill),
+    var(--color-border) var(--fill),
+    var(--color-border) 100%
+  );
+}
+.settings-row-control input[type="range"].range-fill::-webkit-slider-thumb {
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-accent) 20%, transparent),
+              0 0 12px 1px color-mix(in srgb, var(--color-accent) 55%, transparent);
+}
+
 .settings-row-control input[type="checkbox"] {
   appearance: none;
   width: 38px;
