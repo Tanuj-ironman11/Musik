@@ -8,14 +8,19 @@
   background: #060606;
   opacity: 0;
   pointer-events: none;
-  transition: opacity var(--npf-exit-dur, 240ms) cubic-bezier(0.4, 0, 1, 1);
+  transition: opacity var(--npf-exit-dur, 220ms) cubic-bezier(0.4, 0, 1, 1);
 }
 
 #now-playing-fullscreen::before {
   content: '';
   position: absolute;
   inset: 0;
-  background: radial-gradient(circle at center, rgba(0, 0, 0, 0.12) 0%, rgba(0, 0, 0, 0.72) 100%);
+  background-image:
+    radial-gradient(circle at center, rgba(0, 0, 0, 0.12) 0%, rgba(0, 0, 0, 0.72) 100%),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='npfGrain'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='matrix' values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.05 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23npfGrain)'/%3E%3C/svg%3E");
+  background-repeat: no-repeat, repeat;
+  background-size: cover, 180px 180px;
+  background-blend-mode: normal, overlay;
   z-index: 1;
   pointer-events: none;
 }
@@ -37,13 +42,14 @@
   transform: scale(1.22);
   pointer-events: none;
   z-index: 0;
-  transition: opacity var(--npf-exit-dur, 240ms) ease;
+  transition: opacity var(--npf-exit-dur, 220ms) ease;
 }
 
 #now-playing-fullscreen.is-open #npf-bg-art {
   opacity: 0.45;
   transition: opacity var(--npf-enter-dur, 460ms) ease;
   animation: npf-ken-burns 18s ease-in-out infinite alternate;
+  will-change: transform, opacity;
 }
 
 .npf-topbar,
@@ -52,8 +58,8 @@
 #npf-transport {
   opacity: 0;
   transform: translateY(16px);
-  transition: opacity var(--npf-exit-dur, 240ms) ease,
-              transform var(--npf-exit-dur, 240ms) ease;
+  transition: opacity var(--npf-exit-dur, 220ms) ease,
+              transform var(--npf-exit-dur, 220ms) ease;
 }
 
 #now-playing-fullscreen.is-open .npf-topbar,
@@ -74,8 +80,8 @@
 #npf-art {
   transform: scale(0.86);
   filter: blur(6px);
-  transition: transform var(--npf-exit-dur, 240ms) ease,
-              filter var(--npf-exit-dur, 240ms) ease;
+  transition: transform var(--npf-exit-dur, 220ms) ease,
+              filter var(--npf-exit-dur, 220ms) ease;
 }
 #now-playing-fullscreen.is-open #npf-art {
   transform: scale(1);
@@ -92,7 +98,7 @@
 #now-playing-fullscreen.is-closing #npf-transport,
 #now-playing-fullscreen.is-closing #npf-art {
   transition-delay: 0s !important;
-  transition-duration: var(--npf-exit-dur, 240ms) !important;
+  transition-duration: var(--npf-exit-dur, 220ms) !important;
   transition-timing-function: cubic-bezier(0.4, 0, 1, 1) !important;
 }
 #now-playing-fullscreen.is-closing #npf-media-area {
@@ -133,6 +139,14 @@
   flex-shrink: 0;
 }
 .npf-topbar-btn:hover { color: #fff; background: rgba(255, 255, 255, 0.07); }
+
+.npf-topbar-btn:focus-visible,
+.npf-btn:focus-visible,
+.npf-play-btn:focus-visible,
+.npf-lyrics-chip:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
 
 /* Drag-and-drop lyric file import feedback — see fullscreen.js.
    Two layers, deliberately separated:
@@ -246,6 +260,26 @@
   animation: npf-glow-pulse 4.5s ease-in-out infinite;
 }
 
+/* Contact shadow — grounds the art instead of letting it float. Kept as
+   a flat blurred ellipse, no color, so it reads as depth rather than
+   another glow (the accent glow above already owns that job). */
+#npf-art-wrap::after {
+  content: '';
+  position: absolute;
+  left: 10%;
+  right: 10%;
+  bottom: -16px;
+  height: 22px;
+  border-radius: 50%;
+  background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0.55) 0%, rgba(0, 0, 0, 0) 72%);
+  z-index: -1;
+  opacity: 0;
+  transition: opacity var(--npf-enter-dur, 460ms) ease 0.12s;
+}
+#now-playing-fullscreen.is-open #npf-art-wrap::after {
+  opacity: 0.6;
+}
+
 #npf-art {
   width: clamp(220px, calc(36vmin * var(--app-scale, 1)), 480px);
   height: clamp(220px, calc(36vmin * var(--app-scale, 1)), 480px);
@@ -277,14 +311,26 @@
   padding: clamp(16px, 3vh, 32px) 0;
 }
 
+/* This is the flex item that was actually causing the marquee to never
+   fire — .npf-info uses align-items: center/flex-start (not the default
+   stretch), so without an explicit width #npf-meta shrink-wraps to its
+   own content instead of filling .npf-info. That meant #npf-title never
+   had a container narrower than its own text to overflow against, so
+   marquee.js's overflow check always read "fits" and left it static. */
+#npf-meta {
+  width: 100%;
+  min-width: 0;
+}
+
 #npf-title {
   font-size: clamp(26px, calc(4vw * var(--app-scale, 1)), 56px);
   font-weight: 700;
   color: #fff;
   letter-spacing: -0.5px;
   overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
+  width: 100%;
+  min-width: 0;
   max-width: 100%;
 }
 
@@ -294,7 +340,8 @@
   margin: 0;
   white-space: nowrap;
   overflow: hidden;
-  text-overflow: ellipsis;
+  width: 100%;
+  min-width: 0;
   max-width: 100%;
 }
 
@@ -320,7 +367,6 @@
   gap: 8px;
   margin-bottom: 10px;
 }
-.npf-info .npf-info--lyrics-open #npf-lyrics-toolbar,
 .npf-info--lyrics-open #npf-lyrics-toolbar { justify-content: flex-start; }
 
 .npf-lyrics-chip {
@@ -541,13 +587,17 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 12px 40px var(--color-accent-glow);
+  box-shadow: 0 12px 40px var(--color-accent-glow),
+              inset 0 1px 0 rgba(255, 255, 255, 0.35),
+              inset 0 -6px 10px rgba(0, 0, 0, 0.12);
   transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
   flex-shrink: 0;
 }
 .npf-play-btn:hover {
   transform: scale(1.07);
-  box-shadow: 0 16px 56px rgba(var(--color-accent-rgb), 0.45);
+  box-shadow: 0 16px 56px rgba(var(--color-accent-rgb), 0.45),
+              inset 0 1px 0 rgba(255, 255, 255, 0.4),
+              inset 0 -6px 10px rgba(0, 0, 0, 0.14);
   background: color-mix(in srgb, var(--color-accent) 85%, #fff);
 }
 .npf-play-btn:active { transform: scale(0.95); }
@@ -584,7 +634,7 @@
   animation: npf-vis-thumb-squash 0.32s var(--ease-bounce);
 }
 
-@media (max-width: 700px), (max-height: 500px) {
+@media (max-width: 699.98px), (max-height: 499.98px) {
   .npf-layout {
     grid-template-columns: 1fr !important;
     grid-template-rows: auto auto auto !important;
@@ -600,4 +650,18 @@
 #now-playing-fullscreen {
   --npf-enter-dur: 460ms;
   --npf-exit-dur: 220ms;
+}
+
+/* Respect OS-level reduced-motion: kill the looping decorative
+   animations (ken-burns pan, glow pulse, play ring) outright rather
+   than just shortening them, and make state-change transitions near-
+   instant instead of staggered. Marquee scrolling is driven by the
+   Web Animations API in marquee.js, not CSS, so it isn't covered here —
+   a separate check belongs there if that's wanted too. */
+@media (prefers-reduced-motion: reduce) {
+  #now-playing-fullscreen,
+  #now-playing-fullscreen * {
+    animation: none !important;
+    transition-duration: 0.01ms !important;
+  }
 }

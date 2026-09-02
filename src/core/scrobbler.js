@@ -29,17 +29,34 @@
 //   scrobble(track)         — call once playback crosses the threshold
 //                              (caller owns the timing; see player-ui.js)
 //
-// Baked-in shared API key/secret so scrobbling works out of the box without
-// every user registering their own Last.fm API app — same approach as the
-// old codebase per project notes. Replace these with real registered
-// values before shipping; ws.audioscrobbler.com will reject calls signed
-// with placeholder credentials.
-const DEFAULT_API_KEY = '';
-const DEFAULT_API_SECRET = '';
-
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+
+// Baked-in shared API key/secret so scrobbling works out of the box without
+// every user registering their own Last.fm API app — same approach as the
+// old codebase per project notes.
+//
+// The actual values live in lastfm-secrets.json, a sibling file that's
+// gitignored (never committed, never in GitHub history) but listed in
+// package.json's build.files so electron-builder still bundles it into
+// every packaged .exe — same pattern already used for the wasapi-loopback
+// native addon. If that file's missing (e.g. a fresh clone that hasn't
+// been given one yet), we fall back to empty strings and scrobbling just
+// stays disabled until it exists, same as before.
+function loadDefaultCredentials() {
+  try {
+    const p = path.join(__dirname, 'lastfm-secrets.json');
+    if (fs.existsSync(p)) {
+      const parsed = JSON.parse(fs.readFileSync(p, 'utf-8'));
+      return { apiKey: parsed.apiKey || '', apiSecret: parsed.apiSecret || '' };
+    }
+  } catch (err) {
+    console.warn('[Musik] scrobbler: failed to read lastfm-secrets.json:', err.message);
+  }
+  return { apiKey: '', apiSecret: '' };
+}
+const { apiKey: DEFAULT_API_KEY, apiSecret: DEFAULT_API_SECRET } = loadDefaultCredentials();
 
 const API_ROOT = 'https://ws.audioscrobbler.com/2.0/';
 

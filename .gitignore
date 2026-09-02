@@ -13,7 +13,7 @@ build/
 # Mods & local asset folders
 mods/
 
-# Test & scratch scripts (including wasapi-loopback)
+# Test & scratch scripts
 native/wasapi-loopback/check-sessions.js
 test.json
 test.js
@@ -24,6 +24,9 @@ check-sessions.js
 .DS_Store
 Thumbs.db
 
-# Executables and distribution builds
+# Secrets
+src/core/lastfm-secrets.json
+
+# Executables and builds
 dist/
 **/dist/

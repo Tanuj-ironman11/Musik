@@ -73,7 +73,7 @@
           </svg>
         </button>
         <span class="pb-volume-label">VOL</span>
-        <input id="pb-volume-slider" class="pb-progress pb-volume-slider" type="range" min="0" max="1" step="0.01" value="1" />
+        <input id="pb-volume-slider" class="pb-volume-slider" type="range" min="0" max="1" step="0.01" value="1" />
       </div>
       </div>
     `;
@@ -207,6 +207,7 @@
     }
 
     els.seek.addEventListener('mousedown', (e) => {
+      els.seek.classList.add('pb-seeking');
       const rect = els.seek.getBoundingClientRect();
       const clickX = e.clientX - rect.left;
       const pct = Math.max(0, Math.min(1, clickX / rect.width));
@@ -226,6 +227,7 @@
     els.seek.addEventListener('change', () => {
       window.MusikPlayerUI?.seek(Number(els.seek.value));
       userIsSeeking = false;
+      els.seek.classList.remove('pb-seeking');
     });
 
     els.volume.addEventListener('input', () => {
@@ -316,12 +318,24 @@
       setArt(track);
     });
 
+    let lastProgressSecond = -1;
+
     window.Musik.events.on('progress', ({ currentTime, duration }) => {
       if (userIsSeeking) return;
+      // Only act once the whole second actually changes — the seek bar's
+      // fill now animates on its own via CSS (see .pb-progress transition
+      // in player-bar.css), so JS doesn't need to push updates faster than
+      // the thing on screen that actually changes (the mm:ss counter).
+      const wholeSecond = Math.floor(currentTime);
+      if (wholeSecond === lastProgressSecond) return;
+      lastProgressSecond = wholeSecond;
+
       els.seek.max = duration || els.seek.max;
       els.seek.value = currentTime;
-      els.currentTime.textContent = fmtTime(currentTime);
-      els.duration.textContent = fmtTime(duration);
+      const curStr = fmtTime(currentTime);
+      if (els.currentTime.textContent !== curStr) els.currentTime.textContent = curStr;
+      const durStr = fmtTime(duration);
+      if (els.duration.textContent !== durStr) els.duration.textContent = durStr;
       updateSeekFill();
     });
 

@@ -250,6 +250,18 @@ function createWindow() {
 
   mainWindow.on('enter-full-screen', () => emitToRenderer('fullscreenchange', { fullscreen: true }));
   mainWindow.on('leave-full-screen', () => emitToRenderer('fullscreenchange', { fullscreen: false }));
+
+  // TEMP DEBUG — diagnosing the backdrop-filter flicker on #now-playing-bar.
+  // F9 opens chrome://gpu in a plain window using THIS app's own bundled
+  // Chromium/GPU process, not your regular browser, so we can see actual
+  // "Problems Detected" for the process that's really rendering the bug.
+  // Strip this whole block out once we're done diagnosing.
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (input.type === 'keyDown' && input.key === 'F9') {
+      const gpuWin = new BrowserWindow({ width: 900, height: 700 });
+      gpuWin.loadURL('chrome://gpu');
+    }
+  });
 }
 
 let rescanTimer = null;
@@ -338,7 +350,12 @@ ipcMain.handle('get-mod-file', async (_e, modName, fileName) => {
 });
 
 ipcMain.handle('set-mod-enabled', async (_e, modId, enabled) => {
-  return ModLoader?.setModEnabled ? ModLoader.setModEnabled(modId, enabled) : false;
+  const ok = ModLoader?.setModEnabled ? ModLoader.setModEnabled(modId, enabled) : false;
+  // No live hot-injection/removal path for mod CSS/JS exists yet — reload
+  // is the simplest correct fix (confirmed equivalent to the manual ctrl+r
+  // workaround). Only reload on an actual successful toggle, not a no-op.
+  if (ok && mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.reload();
+  return ok;
 });
 
 ipcMain.handle('mods:open-folder', async () => {

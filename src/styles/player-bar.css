@@ -20,9 +20,28 @@
     0 0 0 1px rgba(255, 255, 255, 0.03) inset,
     0 0 60px -20px var(--color-accent-glow);
   overflow: hidden;
+  contain: paint;
   opacity: 1;
+  /* .pb-progress-row got its own compositor layer (see that rule) to stop
+     its every-tick text/gradient updates from touching this element's
+     backdrop-filter. That isolated the noisy child, but left this blur
+     itself un-promoted — Chromium doesn't reliably cache a backdrop-filter
+     result across frames unless the filtered element is its own stable
+     layer, so partial re-tiling could still slip through as the same
+     flickering diagonal seam. Promoting the actual blurred element closes
+     that gap. Harmless alongside the existing transform transition below
+     (fullscreen slide) — this just makes the layer persistent instead of
+     created/destroyed on demand. */
+  will-change: transform;
+  /* box-shadow deliberately NOT in this transition list. It was only here
+     for the hover glow-intensify, but this shadow also references
+     --color-accent-glow, which accent-extractor updates on every track
+     skip — CSS transitions any change to a listed property regardless of
+     cause, so each skip was triggering a real ~0.4s animated ramp of the
+     shadow directly on this backdrop-filtered element: a slower-paced but
+     still real repaint storm on the blur. Trade-off: hover's glow now
+     snaps instead of smoothly growing. */
   transition:
-    box-shadow 0.4s var(--ease-out),
     transform 0.4s var(--ease-spring),
     border-color 0.4s var(--ease-out),
     left 0.32s var(--ease-spring),
@@ -43,14 +62,12 @@ body.npf-open #now-playing-bar {
     opacity 0.22s var(--ease-out) 0.06s;
 }
 
-/* Player bar no longer shifts on hover-expand — see pinned-state rules
-   below for the opt-in push behavior. */
 #now-playing-bar::before {
   content: "";
   position: absolute;
-  top: 0; left: 8%; right: 8%;
+  top: 0; left: 12%; right: 12%;
   height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.35), transparent);
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.25), transparent);
   pointer-events: none;
 }
 
@@ -70,6 +87,12 @@ body[data-active-view="now-playing"] #now-playing-bar {
 }
 
 /* ─── 3. Cards & Covers ─── */
+/* Corner ring used to be two separately-rasterized rounded rects: this
+   box-shadow plus a same-radius ::after with its own inset shadow. At
+   fractional (150%) Windows scaling the two independently anti-aliased
+   corners could round to slightly different sub-pixel positions, showing
+   up as a bright seam at whichever corner drifted worst. One combined
+   box-shadow list fixes it — same visual ring, single rasterization pass. */
 .pb-art-wrap {
   position: relative;
   width: 52px;
@@ -77,17 +100,19 @@ body[data-active-view="now-playing"] #now-playing-bar {
   border-radius: var(--radius-md);
   overflow: hidden;
   flex-shrink: 0;
+  /* setArt() in player-bar.js does a full innerHTML replace here on every
+     track skip — a much bigger paint event than .pb-progress-row's text/
+     gradient ticks. That was enough to reach #now-playing-bar's blur even
+     with the parent promoted to its own layer (see will-change: transform
+     above): promoting the parent doesn't contain a child's own repaint.
+     Same fix as the progress row — give this its own layer too. */
+  transform: translateZ(0);
+  will-change: contents;
   background: var(--color-bg-surface);
-  box-shadow: 0 0 0 1px rgba(255,255,255,0.06), 0 4px 16px -6px var(--color-accent-glow);
-}
-
-.pb-art-wrap::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: var(--radius-md);
-  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.07);
-  pointer-events: none;
+  box-shadow:
+    0 0 0 1px rgba(255,255,255,0.06),
+    0 4px 16px -6px var(--color-accent-glow),
+    inset 0 0 0 1px rgba(255,255,255,0.07);
 }
 
 .pb-art { width: 100%; height: 100%; object-fit: cover; }
@@ -347,6 +372,18 @@ body[data-active-view="now-playing"] #now-playing-bar {
   gap: 10px;
   width: 100%;
   max-width: 520px;
+  /* Promotes this row to its own compositor layer. The seek bar's
+     --progress custom property and the time labels' text both
+     rewrite dozens of times a second during playback; without this,
+     those repaints were forcing #now-playing-bar's backdrop-filter to
+     recompute every tick, which showed up as a flickering diagonal
+     compositing seam across the art next door. Isolating the layer
+     here means those updates stay local instead of touching the
+     blur. (Tried moving the blur itself onto a separate pseudo-
+     element instead — made the glass render flat/grey and didn't fix
+     the seam, so reverted that; this is the other direction.) */
+  transform: translateZ(0);
+  will-change: contents;
 }
 
 .pb-time {
@@ -357,6 +394,21 @@ body[data-active-view="now-playing"] #now-playing-bar {
   color: var(--color-text-dim);
   text-align: center;
   font-variant-numeric: tabular-nums;
+}
+
+/* --progress drives the seek bar's fill gradient. Plain custom properties
+   don't animate — that's *why* JS has been forced to push a new value
+   many times a second just to fake smooth motion, and that churn is what's
+   been reaching #now-playing-bar's blur. Registering the real type makes
+   it animatable, so the fill can tween on its own between sparse JS
+   updates (once a second, matching the time counter) instead of JS
+   simulating smoothness by brute force. Global registration, not scoped
+   to a selector — ideally lives in tokens.css alongside the rest of the
+   token system; left here for now since that file isn't in front of me. */
+@property --progress {
+  syntax: '<percentage>';
+  inherits: true;
+  initial-value: 0%;
 }
 
 .pb-progress {
@@ -374,6 +426,14 @@ body[data-active-view="now-playing"] #now-playing-bar {
   );
   cursor: pointer;
   outline: none;
+  transition: --progress 0.95s linear;
+}
+
+/* While the user is actually dragging, the fill must track the thumb
+   exactly — a 0.95s tween here would make it visibly lag behind the
+   cursor. Toggled by player-bar.js on mousedown/change. */
+.pb-progress.pb-seeking {
+  transition: none;
 }
 
 .pb-progress::-webkit-slider-thumb {
@@ -505,6 +565,12 @@ body[data-active-view="now-playing"] #now-playing-bar {
   align-items: center;
   padding: 0 24px;
   gap: 20px;
+  background: transparent;
+}
+
+#player-bar > div {
+  background: transparent;
+  box-shadow: none;
 }
 
 /* Queue toggle: previously shared pb-btn's generic hover/active with no
@@ -573,6 +639,8 @@ body[data-window="miniplayer"] {
   width: 100%;
   height: 100%;
   background: transparent;
+  border-radius: 18px;
+  overflow: hidden;
 }
 
 #mp-root {
@@ -636,15 +704,11 @@ body[data-window="miniplayer"] {
   background: transparent;
 }
 
-/* The wrap's hover ring (box-shadow + ::after inset shadow) is sized for
-   the tiny 52px player-bar art. At miniplayer scale it read as a stray
-   gray border sitting outside the image's rounded corners — drop it here. */
+/* The wrap's corner ring (box-shadow) is sized for the tiny 52px
+   player-bar art. At miniplayer scale it read as a stray gray border
+   sitting outside the image's rounded corners — drop it here. */
 #mp-root .pb-art-wrap {
   box-shadow: none;
-}
-
-#mp-root .pb-art-wrap::after {
-  content: none;
 }
 
 #mp-root .pb-text,

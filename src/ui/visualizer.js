@@ -20,14 +20,29 @@
   const MODE_STORAGE_KEY = 'musik:visualizer-mode';
   const QUALITY_STORAGE_KEY = 'musik:visualizer-quality';
 
+  // "Custom effects" — the mood-altering, might-hate-it bucket (Fresnel rim
+  // lighting, dither), kept separate from the always-on quality tiers so it's
+  // opt-in and A/B-able against a clean baseline. Master gates both subs;
+  // each sub is independently toggleable once the master's on.
+  const CUSTOM_FX_STORAGE_KEY = 'musik:visualizer-customfx';
+  const FRESNEL_STORAGE_KEY = 'musik:visualizer-fresnel';
+  const DITHER_STORAGE_KEY = 'musik:visualizer-dither';
+  const DITHER_AMOUNT = 0.02;
+
   const LERP_CRISP = 0.65;
   const LERP_SMOOTH = 0.18;
 
-  // low/med/high: pixel ratio cap + which passes run. fxaa dropped first on low-end GPUs.
+  // low/med/high/ultra: pixel ratio cap + which passes run. fxaa dropped first on low-end GPUs.
+  // msaaSamples: MSAA sample count (0 = off). geometryDetail: IcosahedronGeometry detail param
+  // (vertex count ~= 10*detail^2+2). bloomResScale: fraction of canvas res the bloom blur chain
+  // renders at (UnrealBloomPass halves whatever it's given, so we pre-double to hit this target).
+  // ssaaScale: extra supersample multiplier stacked on top of pixelRatio — renders more physical
+  // pixels than the canvas displays at; the browser's own canvas-to-screen downscale does the AA.
   const QUALITY_TIERS = {
-    low:    { pixelRatio: 1,                                          fxaa: false, temporal: false },
-    medium: { pixelRatio: Math.min(window.devicePixelRatio || 1, 1.5), fxaa: false, temporal: true },
-    high:   { pixelRatio: Math.min(window.devicePixelRatio || 1, 2),   fxaa: true,  temporal: true },
+    low:    { pixelRatio: 1,                                          msaaSamples: 2, fxaa: false, geometryDetail: 16, bloomResScale: 0.5,  bloomMips: 5, ssaaScale: 1,   temporal: false, preserveThinLines: false },
+    medium: { pixelRatio: Math.min(window.devicePixelRatio || 1, 1.5), msaaSamples: 4, fxaa: false, geometryDetail: 18, bloomResScale: 0.5,  bloomMips: 5, ssaaScale: 1,   temporal: true,  preserveThinLines: false },
+    high:   { pixelRatio: Math.min(window.devicePixelRatio || 1, 2),   msaaSamples: 4, fxaa: true,  geometryDetail: 24, bloomResScale: 0.75, bloomMips: 6, ssaaScale: 1,   temporal: true,  preserveThinLines: true },
+    ultra:  { pixelRatio: Math.min(window.devicePixelRatio || 1, 2),   msaaSamples: 8, fxaa: true,  geometryDetail: 32, bloomResScale: 1.0,  bloomMips: 8, ssaaScale: 1.5, temporal: true,  preserveThinLines: true },
   };
 
   const DEFAULT_ACCENT_RGB = '61, 184, 245';
@@ -43,6 +58,10 @@
   let smoothingOn = localStorage.getItem(SMOOTHING_STORAGE_KEY) !== 'off';
   let mode = localStorage.getItem(MODE_STORAGE_KEY) || '2d';
   let quality = localStorage.getItem(QUALITY_STORAGE_KEY) || 'medium';
+
+  let customFxOn = localStorage.getItem(CUSTOM_FX_STORAGE_KEY) === 'on';
+  let fresnelPref = localStorage.getItem(FRESNEL_STORAGE_KEY) !== 'off';
+  let ditherPref = localStorage.getItem(DITHER_STORAGE_KEY) !== 'off';
 
   let running = false;
   let rafId = null;
@@ -353,7 +372,7 @@
           }
 
           class EffectComposer {
-              constructor( renderer, renderTarget ) {
+              constructor( renderer, renderTarget, msaaSamples ) {
                   this.renderer = renderer;
                   if ( renderTarget === undefined ) {
                       const size = renderer.getSize( new THREE.Vector2() );
@@ -361,9 +380,8 @@
                       this._width = size.width; this._height = size.height;
 
                       renderTarget = new THREE.WebGLRenderTarget( this._width * this._pixelRatio, this._height * this._pixelRatio );
-                      const aaType = localStorage.getItem('musik_aa_type') || 'msaa';
-                      if (aaType === 'msaa' && renderer.capabilities.isWebGL2) {
-                          renderTarget.samples = 4;
+                      if ( msaaSamples > 0 && renderer.capabilities.isWebGL2 ) {
+                          renderTarget.samples = Math.min( msaaSamples, renderer.capabilities.maxSamples || msaaSamples );
                       }
                   }
                   this.renderTarget1 = renderTarget; this.renderTarget2 = renderTarget.clone();
@@ -438,17 +456,29 @@
           };
 
           class UnrealBloomPass extends Pass {
-              constructor( resolution, strength, radius, threshold ) {
+              constructor( resolution, strength, radius, threshold, mips, preserveThinLines ) {
                   super();
                   this.strength = ( strength !== undefined ) ? strength : 1;
                   this.radius = radius; this.threshold = threshold;
                   this.resolution = ( resolution !== undefined ) ? new THREE.Vector2( resolution.x, resolution.y ) : new THREE.Vector2( 256, 256 );
                   this.clearColor = new THREE.Color( 0, 0, 0 ); this.needsSwap = false;
                   const pars = { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, format: THREE.RGBAFormat, type: THREE.HalfFloatType };
-                  this.renderTargetsHorizontal = []; this.renderTargetsVertical = []; this.nMips = 5;
+                  this.renderTargetsHorizontal = []; this.renderTargetsVertical = []; this.nMips = ( mips !== undefined ) ? mips : 5;
                   let resx = Math.round( this.resolution.x / 2 ), resy = Math.round( this.resolution.y / 2 );
                   this.renderTargetBright = new THREE.WebGLRenderTarget( resx, resy, pars );
                   this.renderTargetBright.texture.generateMipmaps = false;
+
+                  // High/Ultra only (gated by preserveThinLines): thin single-pixel wireframe
+                  // lines can fall between sample points when the bright-pass threshold runs
+                  // directly on a pre-shrunk buffer — a plain bilinear tap can miss a 1px line
+                  // entirely depending on subpixel alignment, which flickers as the blob moves.
+                  // Fix: run the threshold at native resolution into this full-res buffer first,
+                  // then box-downsample (below) so every source texel actually contributes.
+                  this.preserveThinLines = !!preserveThinLines;
+                  this._fullResX = resx * 2; this._fullResY = resy * 2;
+                  this.renderTargetBrightFull = new THREE.WebGLRenderTarget( 1, 1, pars );
+                  this.renderTargetBrightFull.texture.generateMipmaps = false;
+                  this.boxDownsampleMaterial = this.getBoxDownsampleMaterial();
 
                   for ( let i = 0; i < this.nMips; i ++ ) {
                       const rtH = new THREE.WebGLRenderTarget( resx, resy, pars ); rtH.texture.generateMipmaps = false; this.renderTargetsHorizontal.push( rtH );
@@ -458,13 +488,21 @@
 
                   this.highPassUniforms = THREE.UniformsUtils.clone( LuminosityHighPassShader.uniforms );
                   this.highPassUniforms[ 'luminosityThreshold' ].value = threshold;
-                  this.highPassUniforms[ 'smoothWidth' ].value = 0.01;
+                  // Was 0.01 — a near-hard on/off cutoff. The blob's per-vertex shimmer
+                  // (fragment shader brightness driven by a continuously time-evolving noise
+                  // field) constantly drifts across a threshold that thin, individual edges
+                  // strobe in and out of bloom as their shimmer crosses it. Widening the ramp
+                  // turns that pop on/off into a smooth fade instead.
+                  this.highPassUniforms[ 'smoothWidth' ].value = 0.12;
                   this.materialHighPassFilter = new THREE.ShaderMaterial( {
                       uniforms: this.highPassUniforms, vertexShader: LuminosityHighPassShader.vertexShader, fragmentShader: LuminosityHighPassShader.fragmentShader
                   } );
 
+                  // Kernel radius grows with mip depth (3,5,7,9,11,...) — matches the original
+                  // 5-mip array exactly for i<5, extends the same odd-step pattern beyond that.
                   this.separableBlurMaterials = [];
-                  const kernelSizeArray = [ 3, 5, 7, 9, 11 ];
+                  const kernelSizeArray = [];
+                  for ( let i = 0; i < this.nMips; i ++ ) kernelSizeArray.push( 2 * i + 3 );
                   resx = Math.round( this.resolution.x / 2 ); resy = Math.round( this.resolution.y / 2 );
                   for ( let i = 0; i < this.nMips; i ++ ) {
                       this.separableBlurMaterials.push( this.getSeperableBlurMaterial( kernelSizeArray[ i ] ) );
@@ -473,15 +511,18 @@
                   }
 
                   this.compositeMaterial = this.getCompositeMaterial( this.nMips );
-                  this.compositeMaterial.uniforms[ 'blurTexture1' ].value = this.renderTargetsVertical[ 0 ].texture;
-                  this.compositeMaterial.uniforms[ 'blurTexture2' ].value = this.renderTargetsVertical[ 1 ].texture;
-                  this.compositeMaterial.uniforms[ 'blurTexture3' ].value = this.renderTargetsVertical[ 2 ].texture;
-                  this.compositeMaterial.uniforms[ 'blurTexture4' ].value = this.renderTargetsVertical[ 3 ].texture;
-                  this.compositeMaterial.uniforms[ 'blurTexture5' ].value = this.renderTargetsVertical[ 4 ].texture;
+                  for ( let i = 0; i < this.nMips; i ++ ) {
+                      this.compositeMaterial.uniforms[ `blurTexture${ i + 1 }` ].value = this.renderTargetsVertical[ i ].texture;
+                  }
                   this.compositeMaterial.uniforms[ 'bloomStrength' ].value = strength;
                   this.compositeMaterial.uniforms[ 'bloomRadius' ].value = 0.1;
-                  this.compositeMaterial.uniforms[ 'bloomFactors' ].value = [ 1.0, 0.8, 0.6, 0.4, 0.2 ];
-                  this.bloomTintColors = [ new THREE.Vector3( 1, 1, 1 ), new THREE.Vector3( 1, 1, 1 ), new THREE.Vector3( 1, 1, 1 ), new THREE.Vector3( 1, 1, 1 ), new THREE.Vector3( 1, 1, 1 ) ];
+                  // Linear falloff 1.0 -> ~0, same shape as the original hardcoded
+                  // [1.0, 0.8, 0.6, 0.4, 0.2] for nMips=5, generalized to any mip count.
+                  const bloomFactors = [];
+                  for ( let i = 0; i < this.nMips; i ++ ) bloomFactors.push( 1.0 - i * ( 1.0 / this.nMips ) );
+                  this.compositeMaterial.uniforms[ 'bloomFactors' ].value = bloomFactors;
+                  this.bloomTintColors = [];
+                  for ( let i = 0; i < this.nMips; i ++ ) this.bloomTintColors.push( new THREE.Vector3( 1, 1, 1 ) );
                   this.compositeMaterial.uniforms[ 'bloomTintColors' ].value = this.bloomTintColors;
 
                   this.copyUniforms = THREE.UniformsUtils.clone( CopyShader.uniforms );
@@ -495,6 +536,10 @@
               setSize( width, height ) {
                   let resx = Math.round( width / 2 ), resy = Math.round( height / 2 );
                   this.renderTargetBright.setSize( resx, resy );
+                  if ( this.preserveThinLines ) {
+                      this._fullResX = width; this._fullResY = height;
+                      this.renderTargetBrightFull.setSize( width, height );
+                  }
                   for ( let i = 0; i < this.nMips; i ++ ) {
                       this.renderTargetsHorizontal[ i ].setSize( resx, resy ); this.renderTargetsVertical[ i ].setSize( resx, resy );
                       this.separableBlurMaterials[ i ].uniforms[ 'texSize' ].value = new THREE.Vector2( resx, resy );
@@ -513,7 +558,17 @@
 
                   this.highPassUniforms[ 'tDiffuse' ].value = readBuffer.texture; this.highPassUniforms[ 'luminosityThreshold' ].value = this.threshold;
                   this.fsQuad.material = this.materialHighPassFilter;
-                  renderer.setRenderTarget( this.renderTargetBright ); renderer.clear(); this.fsQuad.render( renderer );
+                  if ( this.preserveThinLines ) {
+                      renderer.setRenderTarget( this.renderTargetBrightFull ); renderer.clear(); this.fsQuad.render( renderer );
+
+                      this.boxDownsampleMaterial.uniforms[ 'tDiffuse' ].value = this.renderTargetBrightFull.texture;
+                      this.boxDownsampleMaterial.uniforms[ 'texelSize' ].value.set( 1 / this._fullResX, 1 / this._fullResY );
+                      this.boxDownsampleMaterial.uniforms[ 'radius' ].value = Math.max( 1, this._fullResX / this.renderTargetBright.width );
+                      this.fsQuad.material = this.boxDownsampleMaterial;
+                      renderer.setRenderTarget( this.renderTargetBright ); renderer.clear(); this.fsQuad.render( renderer );
+                  } else {
+                      renderer.setRenderTarget( this.renderTargetBright ); renderer.clear(); this.fsQuad.render( renderer );
+                  }
 
                   let inputRenderTarget = this.renderTargetBright;
                   for ( let i = 0; i < this.nMips; i ++ ) {
@@ -539,6 +594,32 @@
 
                   renderer.setClearColor( this.clearColor, oldClearAlpha ); renderer.autoClear = oldAutoClear;
               }
+              getBoxDownsampleMaterial() {
+                  return new THREE.ShaderMaterial( {
+                      uniforms: { tDiffuse: { value: null }, texelSize: { value: new THREE.Vector2( 1, 1 ) }, radius: { value: 1.0 } },
+                      vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 ); }`,
+                      // 4x4 grid spanning the full downsample footprint (scaled by `radius`, the
+                      // full-res-to-target size ratio) — a proper area average instead of one
+                      // bilinear sample, so a source line thinner than the footprint still gets
+                      // picked up instead of landing in a gap between samples.
+                      fragmentShader: `
+                          varying vec2 vUv;
+                          uniform sampler2D tDiffuse;
+                          uniform vec2 texelSize;
+                          uniform float radius;
+                          void main() {
+                              vec3 sum = vec3( 0.0 );
+                              for ( int y = 0; y < 4; y++ ) {
+                                  for ( int x = 0; x < 4; x++ ) {
+                                      vec2 offset = ( vec2( float( x ), float( y ) ) - 1.5 ) * ( radius / 2.0 ) * texelSize;
+                                      sum += texture2D( tDiffuse, vUv + offset ).rgb;
+                                  }
+                              }
+                              gl_FragColor = vec4( sum / 16.0, 1.0 );
+                          }
+                      `,
+                  } );
+              }
               getSeperableBlurMaterial( kernelRadius ) {
                   return new THREE.ShaderMaterial( {
                       defines: { 'KERNEL_RADIUS': kernelRadius, 'SIGMA': kernelRadius },
@@ -548,11 +629,23 @@
                   } );
               }
               getCompositeMaterial( nMips ) {
+                  let uniformDecls = '';
+                  let sumTerms = '';
+                  const uniforms = {
+                      bloomStrength: { value: 1.0 }, bloomFactors: { value: null },
+                      bloomTintColors: { value: null }, bloomRadius: { value: 0.0 },
+                  };
+                  for ( let i = 0; i < nMips; i ++ ) {
+                      const n = i + 1;
+                      uniformDecls += `uniform sampler2D blurTexture${n};\n`;
+                      sumTerms += `${ i > 0 ? ' + ' : '' }lerpBloomFactor(bloomFactors[${i}]) * vec4(bloomTintColors[${i}], 1.0) * texture2D(blurTexture${n}, vUv)`;
+                      uniforms[ `blurTexture${n}` ] = { value: null };
+                  }
                   return new THREE.ShaderMaterial( {
                       defines: { 'NUM_MIPS': nMips },
-                      uniforms: { 'blurTexture1': { value: null }, 'blurTexture2': { value: null }, 'blurTexture3': { value: null }, 'blurTexture4': { value: null }, 'blurTexture5': { value: null }, 'bloomStrength': { value: 1.0 }, 'bloomFactors': { value: null }, 'bloomTintColors': { value: null }, 'bloomRadius': { value: 0.0 } },
+                      uniforms,
                       vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 ); }`,
-                      fragmentShader: `varying vec2 vUv; uniform sampler2D blurTexture1; uniform sampler2D blurTexture2; uniform sampler2D blurTexture3; uniform sampler2D blurTexture4; uniform sampler2D blurTexture5; uniform float bloomStrength; uniform float bloomRadius; uniform float bloomFactors[NUM_MIPS]; uniform vec3 bloomTintColors[NUM_MIPS]; float lerpBloomFactor(const in float factor) { float mirrorFactor = 1.2 - factor; return mix(factor, mirrorFactor, bloomRadius); } void main() { gl_FragColor = bloomStrength * ( lerpBloomFactor(bloomFactors[0]) * vec4(bloomTintColors[0], 1.0) * texture2D(blurTexture1, vUv) + lerpBloomFactor(bloomFactors[1]) * vec4(bloomTintColors[1], 1.0) * texture2D(blurTexture2, vUv) + lerpBloomFactor(bloomFactors[2]) * vec4(bloomTintColors[2], 1.0) * texture2D(blurTexture3, vUv) + lerpBloomFactor(bloomFactors[3]) * vec4(bloomTintColors[3], 1.0) * texture2D(blurTexture4, vUv) + lerpBloomFactor(bloomFactors[4]) * vec4(bloomTintColors[4], 1.0) * texture2D(blurTexture5, vUv) ); }`
+                      fragmentShader: `varying vec2 vUv; ${uniformDecls} uniform float bloomStrength; uniform float bloomRadius; uniform float bloomFactors[NUM_MIPS]; uniform vec3 bloomTintColors[NUM_MIPS]; float lerpBloomFactor(const in float factor) { float mirrorFactor = 1.2 - factor; return mix(factor, mirrorFactor, bloomRadius); } void main() { gl_FragColor = bloomStrength * ( ${sumTerms} ); }`
                   } );
               }
           }
@@ -686,7 +779,38 @@
               }
           }
 
-          return { THREE, EffectComposer, RenderPass, UnrealBloomPass, ShaderPass, FXAAShader, TemporalPass };
+          // Ordered (Bayer 4x4) dither — breaks up 8-bit banding in smooth bloom
+          // gradients. `amount` is a live uniform (not a #define) so the
+          // Custom effects toggle can flip it instantly without a scene rebuild;
+          // amount = 0.0 reproduces the exact pre-dither output.
+          const DitherShader = {
+              uniforms: { 'tDiffuse': { value: null }, 'amount': { value: 0.0 } },
+              vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 ); }`,
+              fragmentShader: `
+                  uniform sampler2D tDiffuse;
+                  uniform float amount;
+                  varying vec2 vUv;
+                  float bayerDither(vec2 fragCoord) {
+                      float bayer[16];
+                      bayer[0]=0.0;  bayer[1]=8.0;  bayer[2]=2.0;  bayer[3]=10.0;
+                      bayer[4]=12.0; bayer[5]=4.0;  bayer[6]=14.0; bayer[7]=6.0;
+                      bayer[8]=3.0;  bayer[9]=11.0; bayer[10]=1.0; bayer[11]=9.0;
+                      bayer[12]=15.0;bayer[13]=7.0; bayer[14]=13.0;bayer[15]=5.0;
+                      int x = int(mod(fragCoord.x, 4.0));
+                      int y = int(mod(fragCoord.y, 4.0));
+                      int idx = y * 4 + x;
+                      for (int i = 0; i < 16; i++) { if (i == idx) return bayer[i] / 16.0; }
+                      return 0.0;
+                  }
+                  void main() {
+                      vec4 texel = texture2D(tDiffuse, vUv);
+                      float d = (bayerDither(gl_FragCoord.xy) - 0.5) * amount;
+                      gl_FragColor = vec4(texel.rgb + vec3(d), texel.a);
+                  }
+              `
+          };
+
+          return { THREE, EffectComposer, RenderPass, UnrealBloomPass, ShaderPass, FXAAShader, DitherShader, TemporalPass };
         })
         .catch(err => { threeModulePromise = null; threeLoadFailed = true; throw err; });
     }
@@ -771,6 +895,8 @@
     uniform float uAmpTreble;
     uniform float uFreq;
     varying float vDisplacement;
+    varying vec3 vNormalView;
+    varying vec3 vViewDir;
     ${NOISE_GLSL}
 
     void main() {
@@ -796,7 +922,11 @@
       float displacement = pnoise(noisePos) * amp;
       vDisplacement = displacement;
       vec3 newPosition = position + normal * displacement;
-      gl_Position = projectionMatrix * modelViewMatrix * vec4(newPosition, 1.0);
+
+      vec4 mvPosition = modelViewMatrix * vec4(newPosition, 1.0);
+      vNormalView = normalize(normalMatrix * normal);
+      vViewDir = normalize(-mvPosition.xyz);
+      gl_Position = projectionMatrix * mvPosition;
     }
   `;
 
@@ -810,6 +940,28 @@
     }
   `;
 
+  // Core mesh sits just inside the wireframe (see coreMesh.scale below) and was
+  // flat black before — this lights up its silhouette edge with the accent
+  // color, "energy shield" style. uFresnelEnabled is a 0/1 uniform rather than
+  // a shader recompile so toggling the setting is instant and never forces a
+  // scene rebuild. Fully off (0.0) reproduces the exact old flat-black output.
+  const CORE_FRAGMENT = `
+    uniform vec3 uColor;
+    uniform float uFresnelEnabled;
+    uniform float uFresnelPower;
+    uniform float uFresnelIntensity;
+    varying vec3 vNormalView;
+    varying vec3 vViewDir;
+
+    void main() {
+      float facing = clamp(dot(normalize(vNormalView), normalize(vViewDir)), 0.0, 1.0);
+      float fresnel = pow(1.0 - facing, uFresnelPower);
+      vec3 rim = uColor * fresnel * uFresnelIntensity * uFresnelEnabled;
+      gl_FragColor = vec4(rim, 1.0);
+    }
+  `;
+
+
   let blobRenderer  = null;
   let blobComposer  = null;
   let blobScene     = null;
@@ -818,6 +970,7 @@
   let coreMesh      = null;
   let blobMaterial  = null;
   let fxaaPass      = null;
+  let ditherPass    = null;
   let temporalPass  = null;
   let blobCanvasEl  = null;
   let blobResize    = null;
@@ -861,7 +1014,7 @@
     blobSceneLoading = false;
     if (mode !== '3d') return;
 
-    const { THREE, EffectComposer, RenderPass, UnrealBloomPass, ShaderPass, FXAAShader, TemporalPass } = mod;
+    const { THREE, EffectComposer, RenderPass, UnrealBloomPass, ShaderPass, FXAAShader, DitherShader, TemporalPass } = mod;
     const tier = QUALITY_TIERS[quality] || QUALITY_TIERS.medium;
 
     const canvas = makeBlobCanvas(mount);
@@ -876,11 +1029,13 @@
 
     blobRenderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: true });
     blobRenderer.setClearColor(0x000000, 0);
-    const pr = tier.pixelRatio;
+    // SSAA: render at pixelRatio * ssaaScale physical pixels; canvas CSS size stays put,
+    // so the browser's own downscale-on-paint does the supersample averaging. Ultra-only.
+    const pr = tier.pixelRatio * (tier.ssaaScale || 1);
     blobRenderer.setPixelRatio(pr);
     blobRenderer.setSize(W, H, false);
 
-    const geometry = new THREE.IcosahedronGeometry(1.8, 16);
+    const geometry = new THREE.IcosahedronGeometry(1.8, tier.geometryDetail);
     const accentColor = accentColorThree(THREE);
 
     blobMaterial = new THREE.ShaderMaterial({
@@ -894,6 +1049,9 @@
         uAmpTreble: { value: 0.15 },
         uFreq:      { value: 1.4 },
         uColor:     { value: accentColor },
+        uFresnelEnabled:   { value: (customFxOn && fresnelPref) ? 1.0 : 0.0 },
+        uFresnelPower:     { value: 6.0 },
+        uFresnelIntensity: { value: 0.2 },
       },
     });
 
@@ -902,7 +1060,7 @@
 
     const coreMaterial = new THREE.ShaderMaterial({
       vertexShader: BLOB_VERTEX,
-      fragmentShader: `void main() { gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0); }`,
+      fragmentShader: CORE_FRAGMENT,
       uniforms: blobMaterial.uniforms,
       polygonOffset: true,
       polygonOffsetFactor: 1,
@@ -912,20 +1070,29 @@
     coreMesh.scale.set(0.97, 0.97, 0.97);
     blobScene.add(coreMesh);
 
-    blobComposer = new EffectComposer(blobRenderer);
+    blobComposer = new EffectComposer(blobRenderer, undefined, tier.msaaSamples);
     blobComposer.addPass(new RenderPass(blobScene, blobCamera));
 
-    const bloomPass = new UnrealBloomPass(new THREE.Vector2(W, H), 0.85, 0.4, 0.1);
+    // UnrealBloomPass halves whatever resolution it's given for its blur chain, so pre-double
+    // to land the internal bloom res at tier.bloomResScale * canvas size.
+    const bloomRes = new THREE.Vector2(W * tier.bloomResScale * 2, H * tier.bloomResScale * 2);
+    const bloomPass = new UnrealBloomPass(bloomRes, 0.85, 0.25, 0.22, tier.bloomMips, tier.preserveThinLines);
     blobComposer.addPass(bloomPass);
 
-    const aaType = localStorage.getItem('musik_aa_type') || 'msaa';
-    if (tier.fxaa && aaType === 'fxaa') {
+    if (tier.fxaa) {
       fxaaPass = new ShaderPass(FXAAShader);
       fxaaPass.uniforms['resolution'].value.set(1 / (W * pr), 1 / (H * pr));
       blobComposer.addPass(fxaaPass);
     } else {
       fxaaPass = null;
     }
+
+    // Always added (cheap single-tap-per-pixel pass), gated live via the
+    // `amount` uniform so the Custom effects toggle doesn't need to rebuild
+    // the composer chain. amount = 0.0 reproduces the exact pre-dither frame.
+    ditherPass = new ShaderPass(DitherShader);
+    ditherPass.uniforms['amount'].value = (customFxOn && ditherPref) ? DITHER_AMOUNT : 0.0;
+    blobComposer.addPass(ditherPass);
 
     // Wireframe + temporal blend = flicker, not smoothing. Disabled for good.
     temporalPass = null;
@@ -1037,6 +1204,7 @@
       coreMesh = null;
     }
     if (fxaaPass) { fxaaPass.dispose(); fxaaPass = null; }
+    if (ditherPass) { ditherPass.dispose(); ditherPass = null; }
     if (temporalPass) {
       temporalPass.accumTarget1?.dispose();
       temporalPass.accumTarget2?.dispose();
@@ -1152,6 +1320,35 @@
     if (blobRenderer) teardown3d();
   }
 
+  // Fresnel and dither are both uniform-gated (see BLOB_VERTEX/CORE_FRAGMENT/
+  // DitherShader) rather than baked into the shader source, so flipping any
+  // of these three applies live to an already-running scene — no teardown,
+  // no rebuild, no flicker.
+  function applyCustomFxUniforms() {
+    const fresnelActive = customFxOn && fresnelPref;
+    const ditherActive = customFxOn && ditherPref;
+    if (blobMaterial) blobMaterial.uniforms.uFresnelEnabled.value = fresnelActive ? 1.0 : 0.0;
+    if (ditherPass) ditherPass.uniforms['amount'].value = ditherActive ? DITHER_AMOUNT : 0.0;
+  }
+
+  function setCustomFx(on) {
+    customFxOn = !!on;
+    localStorage.setItem(CUSTOM_FX_STORAGE_KEY, customFxOn ? 'on' : 'off');
+    applyCustomFxUniforms();
+  }
+
+  function setFresnel(on) {
+    fresnelPref = !!on;
+    localStorage.setItem(FRESNEL_STORAGE_KEY, fresnelPref ? 'on' : 'off');
+    applyCustomFxUniforms();
+  }
+
+  function setDither(on) {
+    ditherPref = !!on;
+    localStorage.setItem(DITHER_STORAGE_KEY, ditherPref ? 'on' : 'off');
+    applyCustomFxUniforms();
+  }
+
   function setMode(next) {
     if (next !== '2d' && next !== '3d') return;
     mode = next;
@@ -1210,6 +1407,9 @@
 
     window.addEventListener('musik:visualizer-settings-change', (e) => {
       if (e.detail?.quality) setQuality(e.detail.quality);
+      if (typeof e.detail?.customFx === 'boolean') setCustomFx(e.detail.customFx);
+      if (typeof e.detail?.fresnel === 'boolean') setFresnel(e.detail.fresnel);
+      if (typeof e.detail?.dither === 'boolean') setDither(e.detail.dither);
     });
   }
 
@@ -1226,6 +1426,12 @@
     getSmoothing: () => smoothingOn,
     setQuality,
     getQuality: () => quality,
+    setCustomFx,
+    getCustomFx: () => customFxOn,
+    setFresnel,
+    getFresnel: () => fresnelPref,
+    setDither,
+    getDither: () => ditherPref,
   };
 
   window.MusikVisualizer3D = { isAvailable: () => !threeLoadFailed };

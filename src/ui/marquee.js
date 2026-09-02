@@ -1,21 +1,7 @@
 // src/ui/marquee.js
-// Lost in the earlier deletion — rebuilt from scratch, not recovered.
 // Generic scrolling-text utility: any element with class "marquee" that
 // overflows its own width gets its text wrapped into a duplicated,
 // seamlessly-looping track and animated. Elements that fit do nothing.
-//
-// This does NOT know about specific app elements (pb-title, npf-title,
-// sidebar nav labels, etc). Those need class="marquee" added in their own
-// markup/render code to opt in — flag that separately, don't guess it here.
-//
-// Usage:
-//   <span class="marquee"><span class="marquee-inner">Some Long Title</span></span>
-//   or plain: <span class="marquee">Some Long Title</span> — auto-wrapped on first scan.
-//
-// window.MusikMarquee.scanAll()      — re-scan whole document (call after bulk DOM changes)
-// window.MusikMarquee.attach(el)     — evaluate/wire a single element
-// window.MusikMarquee.detach(el)     — remove marquee wrapping, restore plain text
-// window.MusikMarquee.refresh(el)    — re-measure a single element (call after its text changes)
 
 (function () {
   const PX_PER_SECOND = 34;      // scroll speed

@@ -41,6 +41,24 @@ function getVisSensitivityPercent() {
   return Number.isFinite(raw) ? Math.round(raw * 100) : 100;
 }
 
+// "Custom effects" — Fresnel rim lighting + dither, both uniform-gated in
+// visualizer.js so toggling applies live with no rebuild. Master gates both
+// subs; each sub defaults to on so flipping the master shows both, then
+// either can be switched off individually to A/B against a clean baseline.
+const CUSTOM_FX_KEY = 'musik:visualizer-customfx';
+const FRESNEL_KEY = 'musik:visualizer-fresnel';
+const DITHER_KEY = 'musik:visualizer-dither';
+
+function getCustomFxOn() {
+  return localStorage.getItem(CUSTOM_FX_KEY) === 'on';
+}
+function getFresnelOn() {
+  return localStorage.getItem(FRESNEL_KEY) !== 'off';
+}
+function getDitherOn() {
+  return localStorage.getItem(DITHER_KEY) !== 'off';
+}
+
 // "Always on top" needs window.Musik.miniplayer.setAlwaysOnTop() —
 // preload.js/main.js don't expose it yet. Saves the pref, no visible
 // effect until that IPC surface exists.
@@ -358,7 +376,7 @@ window.MusikViews['settings'] = async function renderSettings(main) {
         <div class="settings-row">
           <div class="settings-row-label">
             <span class="settings-row-name">Quality</span>
-            <span class="settings-row-desc">Low disables extra fill/glow rendering and thins point density for weaker hardware. High turns it all up.</span>
+            <span class="settings-row-desc">Low disables extra fill/glow rendering and thins point density for weaker hardware. High turns it all up. Ultra adds supersampling on top of that.</span>
           </div>
           <div class="settings-row-control">
             <div class="custom-select" id="settings-vis-quality">
@@ -370,6 +388,7 @@ window.MusikViews['settings'] = async function renderSettings(main) {
                 <div class="custom-option" data-value="low">Low</div>
                 <div class="custom-option" data-value="medium">Medium</div>
                 <div class="custom-option" data-value="high">High</div>
+                <div class="custom-option" data-value="ultra">Ultra</div>
               </div>
             </div>
           </div>
@@ -383,6 +402,33 @@ window.MusikViews['settings'] = async function renderSettings(main) {
             <input type="range" id="settings-vis-sensitivity" class="range-fill" min="25" max="200"
               value="${getVisSensitivityPercent()}" />
             <span id="settings-vis-sensitivity-value" class="settings-row-value"></span>
+          </div>
+        </div>
+        <div class="settings-row">
+          <div class="settings-row-label">
+            <span class="settings-row-name">Custom effects</span>
+            <span class="settings-row-desc">Fresnel rim lighting and dither — bigger visual changes than the quality tiers above. Off by default so you can compare against the clean look first.</span>
+          </div>
+          <div class="settings-row-control">
+            <input type="checkbox" id="settings-vis-customfx" ${getCustomFxOn() ? 'checked' : ''} />
+          </div>
+        </div>
+        <div class="settings-row settings-row--sub" id="settings-vis-fresnel-row">
+          <div class="settings-row-label">
+            <span class="settings-row-name">Fresnel rim lighting</span>
+            <span class="settings-row-desc">Glowing edge along the blob's silhouette, brightest at grazing angles.</span>
+          </div>
+          <div class="settings-row-control">
+            <input type="checkbox" id="settings-vis-fresnel" ${getFresnelOn() ? 'checked' : ''} ${getCustomFxOn() ? '' : 'disabled'} />
+          </div>
+        </div>
+        <div class="settings-row settings-row--sub" id="settings-vis-dither-row">
+          <div class="settings-row-label">
+            <span class="settings-row-name">Dither</span>
+            <span class="settings-row-desc">Adds a faint texture to smooth out banding in the bloom glow.</span>
+          </div>
+          <div class="settings-row-control">
+            <input type="checkbox" id="settings-vis-dither" ${getDitherOn() ? 'checked' : ''} ${getCustomFxOn() ? '' : 'disabled'} />
           </div>
         </div>
       </section>
@@ -589,6 +635,40 @@ window.MusikViews['settings'] = async function renderSettings(main) {
   sensSlider2.addEventListener('input', () => {
     paintVisSensitivity();
     localStorage.setItem(VIS_SENSITIVITY_KEY, String(Number(sensSlider2.value) / 100));
+  });
+
+  const customFxCheckbox = document.getElementById('settings-vis-customfx');
+  const fresnelCheckbox = document.getElementById('settings-vis-fresnel');
+  const ditherCheckbox = document.getElementById('settings-vis-dither');
+  const fresnelRow = document.getElementById('settings-vis-fresnel-row');
+  const ditherRow = document.getElementById('settings-vis-dither-row');
+
+  const paintSubFxState = (on) => {
+    [fresnelCheckbox, ditherCheckbox].forEach((cb) => { if (cb) cb.disabled = !on; });
+    [fresnelRow, ditherRow].forEach((row) => row?.classList.toggle('settings-row--sub-disabled', !on));
+  };
+  paintSubFxState(getCustomFxOn());
+
+  customFxCheckbox?.addEventListener('change', (e) => {
+    const on = e.target.checked;
+    localStorage.setItem(CUSTOM_FX_KEY, on ? 'on' : 'off');
+    paintSubFxState(on);
+    window.MusikVisualizer?.setCustomFx?.(on);
+    broadcastVisualizerChange({ customFx: on });
+  });
+
+  fresnelCheckbox?.addEventListener('change', (e) => {
+    const on = e.target.checked;
+    localStorage.setItem(FRESNEL_KEY, on ? 'on' : 'off');
+    window.MusikVisualizer?.setFresnel?.(on);
+    broadcastVisualizerChange({ fresnel: on });
+  });
+
+  ditherCheckbox?.addEventListener('change', (e) => {
+    const on = e.target.checked;
+    localStorage.setItem(DITHER_KEY, on ? 'on' : 'off');
+    window.MusikVisualizer?.setDither?.(on);
+    broadcastVisualizerChange({ dither: on });
   });
 
   // ── Equalizer ─────────────────────────────────────────────────────────

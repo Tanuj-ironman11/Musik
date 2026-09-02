@@ -50,6 +50,17 @@
   border-top: 1px solid var(--color-border);
 }
 
+/* Sub-rows nested under a master toggle (e.g. Fresnel/Dither under Custom
+   effects) — indented so the hierarchy reads at a glance, dimmed while
+   their master is off since the checkbox itself is also disabled then. */
+.settings-row--sub .settings-row-label {
+  padding-left: 20px;
+  border-left: 2px solid var(--color-border);
+}
+.settings-row--sub-disabled {
+  opacity: 0.45;
+}
+
 .settings-row-label {
   display: flex;
   flex-direction: column;

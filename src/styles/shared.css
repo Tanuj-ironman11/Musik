@@ -1,11 +1,7 @@
 /* src/styles/shared.css
  *
- * Formerly marquee.css — renamed and expanded to hold small, reusable
- * pieces of UI that don't have an obvious single-view home, rather than
- * spinning up a new one-off file per widget. Currently: the scrolling
- * text marquee (pairs with src/ui/marquee.js) and the shared create-
- * playlist modal (pairs with window.MusikPlaylistModals in
- * src/ui/context-menu.js). Uses tokens from tokens.css so both stay
+ * A collection of small, reusable UI components that don't have an obvious
+ * single-view home. Uses tokens from tokens.css so both stay
  * visually consistent with the rest of the glass system.
  */
 
@@ -30,6 +26,15 @@
     #000 calc(100% - 12px),
     transparent 100%
   );
+  /* This mask, combined with sitting inside an ancestor that has
+     backdrop-filter (the player bar), is a known rough combo in
+     Chromium — .marquee-track below already isolates itself onto its
+     own layer, but the mask lives one level up, on this element, and
+     was never given the same isolation. Without it, an actively-
+     scrolling long title/artist can keep disturbing the blur for as
+     long as it's on screen, not just on the track-change moment. */
+  transform: translateZ(0);
+  will-change: contents;
 }
 
 /* Static (non-overflowing) state — no mask needed, avoids clipping short text */

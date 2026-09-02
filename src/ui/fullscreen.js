@@ -160,8 +160,12 @@
     if (!root) return;
     root.querySelector('#npf-title').textContent = track?.title ?? 'Unknown Title';
     root.querySelector('#npf-artist').textContent = track?.artist ?? 'Unknown Artist';
-    window.MusikMarquee?.refresh(root.querySelector('#npf-title'));
-    window.MusikMarquee?.refresh(root.querySelector('#npf-artist'));
+    // attach(), not refresh() — refresh() alone won't re-register the
+    // ResizeObserver if these were detach()'d while the overlay was
+    // closed (see close() below). attach() is a safe superset: it just
+    // calls refresh() if already bound, or does full setup if not.
+    window.MusikMarquee?.attach(root.querySelector('#npf-title'));
+    window.MusikMarquee?.attach(root.querySelector('#npf-artist'));
     loadLyrics(track);
   }
 
@@ -518,6 +522,14 @@
     clearTimeout(closeTimer);
     closeTimer = setTimeout(() => {
       root?.classList.remove('is-closing');
+      // The overlay stays in the DOM (just opacity:0) after closing, so
+      // without this the title/artist marquee — driven by the Web
+      // Animations API in marquee.js, not CSS — just keeps scrolling
+      // invisibly in the background forever. Wait until the exit fade
+      // is actually done (not on click) so nothing snaps mid-fade.
+      // updateMeta() re-attach()es on the next open().
+      window.MusikMarquee?.detach(root?.querySelector('#npf-title'));
+      window.MusikMarquee?.detach(root?.querySelector('#npf-artist'));
     }, root ? getExitDurationMs() : getAnimMediumMs());
   }
 

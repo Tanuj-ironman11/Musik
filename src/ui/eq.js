@@ -38,23 +38,18 @@
 
   // Gain-only curves (dB) across the 10 ISO bands. Applying a preset also
   // resets freq/Q to ISO defaults.
-  //
-  // Real WinAmp 5.1.1.1 default EQ presets, re-sampled from WinAmp's band
-  // layout (60/170/310/600/1k/3k/6k/12k/14k/16k) onto ours (ISO 31/62/
-  // 125/250/500/1k/2k/4k/8k/16k) via log-frequency interpolation, not
-  // nearest-neighbor snapping. Treble Boost's top 3 bands got clamped to
-  // our ±12dB ceiling — WinAmp's real curve peaks past +16dB there. No
-  // 1:1 "Vocal"/"Acoustic" preset exists in WinAmp's defaults; relabeled
-  // from the closest real matches ("Live" and "Soft").
-  const PRESETS = {
-    flat:        { label: 'Default',        gains: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0] },
-    bassBoost:   { label: 'Bass Boost',     gains: [9.6, 9.6, 9.6, 9.6, 6.7, 1.6, -1.9, -5.7, -9, -11.2] },
-    trebleBoost: { label: 'Treble Boost',   gains: [-9.6, -9.6, -9.6, -9.6, -5.5, 2.4, 8, 12, 12, 12] },
-    vocal:       { label: 'Vocal',          gains: [-4.8, -4.6, -1.4, 2.6, 5.2, 5.6, 5.6, 4.9, 3.3, 2.4] },
-    rock:        { label: 'Rock',           gains: [8, 7.9, 5.7, -1.9, -7.3, -3.2, 1.3, 6, 9.8, 11.2] },
-    pop:         { label: 'Pop',            gains: [-1.6, -1.4, 2.9, 6.3, 7.8, 5.6, 2.1, -1, -2.4, -1.6] },
-    electronic:  { label: 'Electronic',     gains: [8, 7.9, 6.3, 2, -4.1, -4.8, -1.8, 3.3, 8.7, 8.8] },
-    acoustic:    { label: 'Acoustic',       gains: [4.8, 4.7, 2.5, 0.6, -1.7, 0, 2.5, 5.7, 8.7, 12] },
+
+const PRESETS = {
+    flat:          { label: 'Flat',              gains: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0] },
+    bassBooster:   { label: 'Bass Booster',      gains: [3.5, 3.0, 2.0, 0.5, 0, 0, 0, 0, -0.5, -1.0] },
+    trebleBooster: { label: 'Treble Booster',    gains: [-1.5, -1.0, 0, 0, 0, 1.0, 2.0, 3.0, 3.5, 4.0] },
+    vocalBooster:  { label: 'Vocal Booster',     gains: [-2.0, -1.0, 0, 1.5, 2.5, 3.0, 2.0, 1.0, 0, -1.0] },
+    rock:          { label: 'Rock',              gains: [3.0, 2.0, 1.0, -0.5, -1.5, 0, 1.5, 2.5, 3.0, 3.5] },
+    pop:           { label: 'Pop',               gains: [-1.0, 1.0, 2.0, 2.5, 1.5, 0, -1.0, 1.0, 2.0, 1.5] },
+    electronic:    { label: 'Electronic',        gains: [4.0, 3.0, 1.5, 0, -1.5, 0, 1.5, 2.5, 3.5, 4.0] },
+    hipHop:        { label: 'Hip-Hop',           gains: [4.0, 3.5, 1.5, 0.5, -1.0, 0, 1.0, 1.5, 2.5, 2.0] },
+    acoustic:      { label: 'Acoustic',         gains: [1.5, 1.0, 0.5, 0, 1.0, 1.5, 1.5, 2.0, 2.5, 1.5] },
+    spokenWord:    { label: 'Spoken Word',       gains: [-3.0, -1.5, 0, 1.0, 2.0, 2.5, 1.5, 0, -1.5, -2.5] },
   };
 
 
