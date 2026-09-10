@@ -426,7 +426,17 @@ body[data-active-view="now-playing"] #now-playing-bar {
   );
   cursor: pointer;
   outline: none;
-  transition: --progress 0.95s linear;
+  transition: --progress 0.95s linear, height 0.15s var(--ease-out);
+}
+
+/* The bar itself thickens on hover/drag — the position indicator isn't a
+   shape sitting on top of the track, it's the track responding. */
+.pb-progress-row:hover .pb-progress,
+.pb-progress:focus-visible {
+  height: 7px;
+}
+.pb-progress.pb-seeking {
+  height: 8px;
 }
 
 /* While the user is actually dragging, the fill must track the thumb
@@ -436,27 +446,44 @@ body[data-active-view="now-playing"] #now-playing-bar {
   transition: none;
 }
 
+/* Position indicator — a slim accent capsule, not a dot. Reads as the
+   fill's own leading edge lit up, not a separate shape dropped on the
+   bar. Squashed flat at rest (scaleY(0.3), invisible via opacity) and
+   pops upright on hover — same family color as the fill, just brighter,
+   so it blends instead of standing out as foreign. */
 .pb-progress::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: var(--color-text);
-  box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.3);
+  width: 4px;
+  height: 16px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--color-accent) 65%, white);
+  box-shadow: 0 0 8px -1px var(--color-accent-glow);
   opacity: 0;
-  transition: opacity var(--anim-fast, 0.15s) var(--anim-ease, ease);
+  transform: scaleY(0.3);
+  transition:
+    opacity var(--anim-fast, 0.15s) var(--anim-ease, ease),
+    transform var(--anim-fast, 0.15s) var(--ease-spring, ease),
+    height 0.15s var(--ease-out),
+    box-shadow var(--anim-fast, 0.15s) var(--anim-ease, ease),
+    background var(--anim-fast, 0.15s) var(--anim-ease, ease);
   cursor: pointer;
 }
 
 .pb-progress::-moz-range-thumb {
-  width: 12px;
-  height: 12px;
+  width: 4px;
+  height: 16px;
   border: none;
-  border-radius: 50%;
-  background: var(--color-text);
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--color-accent) 65%, white);
+  box-shadow: 0 0 8px -1px var(--color-accent-glow);
   opacity: 0;
-  transition: opacity var(--anim-fast, 0.15s) var(--anim-ease, ease);
+  transition:
+    opacity var(--anim-fast, 0.15s) var(--anim-ease, ease),
+    transform var(--anim-fast, 0.15s) var(--ease-spring, ease),
+    height 0.15s var(--ease-out),
+    box-shadow var(--anim-fast, 0.15s) var(--anim-ease, ease),
+    background var(--anim-fast, 0.15s) var(--anim-ease, ease);
   cursor: pointer;
 }
 
@@ -467,10 +494,40 @@ body[data-active-view="now-playing"] #now-playing-bar {
 }
 
 .pb-progress-row:hover .pb-progress::-webkit-slider-thumb,
-.pb-progress:focus-visible::-webkit-slider-thumb { opacity: 1; }
+.pb-progress:focus-visible::-webkit-slider-thumb {
+  opacity: 1;
+  transform: scaleY(1);
+}
 
 .pb-progress-row:hover .pb-progress::-moz-range-thumb,
-.pb-progress:focus-visible::-moz-range-thumb { opacity: 1; }
+.pb-progress:focus-visible::-moz-range-thumb {
+  opacity: 1;
+  transform: scaleY(1);
+}
+
+/* Dragging state — taller, brighter, stronger glow. .pb-seeking is set
+   by player-bar.js on mousedown; :active covers native press feedback. */
+.pb-progress:active::-webkit-slider-thumb,
+.pb-progress.pb-seeking::-webkit-slider-thumb {
+  opacity: 1;
+  transform: scaleY(1);
+  height: 20px;
+  background: color-mix(in srgb, var(--color-accent) 80%, white);
+  box-shadow:
+    0 0 14px -1px var(--color-accent-glow),
+    0 0 0 3px color-mix(in srgb, var(--color-accent) 20%, transparent);
+}
+
+.pb-progress:active::-moz-range-thumb,
+.pb-progress.pb-seeking::-moz-range-thumb {
+  opacity: 1;
+  transform: scaleY(1);
+  height: 20px;
+  background: color-mix(in srgb, var(--color-accent) 80%, white);
+  box-shadow:
+    0 0 14px -1px var(--color-accent-glow),
+    0 0 0 3px color-mix(in srgb, var(--color-accent) 20%, transparent);
+}
 
 /* ── Right: queue toggle + volume ── */
 .pb-right {
@@ -521,24 +578,24 @@ body[data-active-view="now-playing"] #now-playing-bar {
 .pb-volume-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 11px;
-  height: 11px;
-  border-radius: 50%;
-  background: var(--color-text);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  width: 4px;
+  height: 12px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--color-accent) 65%, white);
+  box-shadow: 0 0 6px -1px var(--color-accent-glow);
   cursor: pointer;
-  transition: transform 0.15s var(--ease-out);
+  transition: height 0.15s var(--ease-out), background 0.15s var(--ease-out), box-shadow 0.15s var(--ease-out);
 }
 
 .pb-volume-slider::-moz-range-thumb {
-  width: 11px;
-  height: 11px;
+  width: 4px;
+  height: 12px;
   border: none;
-  border-radius: 50%;
-  background: var(--color-text);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--color-accent) 65%, white);
+  box-shadow: 0 0 6px -1px var(--color-accent-glow);
   cursor: pointer;
-  transition: transform 0.15s var(--ease-out);
+  transition: height 0.15s var(--ease-out), background 0.15s var(--ease-out), box-shadow 0.15s var(--ease-out);
 }
 
 .pb-volume-slider::-moz-range-track {
@@ -552,10 +609,27 @@ body[data-active-view="now-playing"] #now-playing-bar {
 }
 
 .pb-volume-slider:hover::-webkit-slider-thumb,
-.pb-volume-slider:focus-visible::-webkit-slider-thumb { transform: scale(1.15); }
+.pb-volume-slider:focus-visible::-webkit-slider-thumb { height: 16px; }
 
 .pb-volume-slider:hover::-moz-range-thumb,
-.pb-volume-slider:focus-visible::-moz-range-thumb { transform: scale(1.15); }
+.pb-volume-slider:focus-visible::-moz-range-thumb { height: 16px; }
+
+/* Dragging state — taller and brighter, same language as the seek bar. */
+.pb-volume-slider:active::-webkit-slider-thumb {
+  height: 20px;
+  background: color-mix(in srgb, var(--color-accent) 80%, white);
+  box-shadow:
+    0 0 14px -1px var(--color-accent-glow),
+    0 0 0 3px color-mix(in srgb, var(--color-accent) 20%, transparent);
+}
+
+.pb-volume-slider:active::-moz-range-thumb {
+  height: 20px;
+  background: color-mix(in srgb, var(--color-accent) 80%, white);
+  box-shadow:
+    0 0 14px -1px var(--color-accent-glow),
+    0 0 0 3px color-mix(in srgb, var(--color-accent) 20%, transparent);
+}
 
 #player-bar {
   width: 100%;

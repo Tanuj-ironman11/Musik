@@ -147,37 +147,6 @@
   background: var(--color-bg);
 }
 
-.settings-row-control select {
-  appearance: none;
-  -webkit-appearance: none;
-  background: color-mix(in srgb, var(--color-bg-surface) 70%, transparent);
-  background-image: linear-gradient(45deg, transparent 50%, var(--color-text-dim) 50%),
-                     linear-gradient(135deg, var(--color-text-dim) 50%, transparent 50%);
-  background-position: calc(100% - 16px) center, calc(100% - 11px) center;
-  background-size: 5px 5px, 5px 5px;
-  background-repeat: no-repeat;
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  color: var(--color-text);
-  font-family: var(--font-mono);
-  font-size: 12px;
-  padding: 7px 30px 7px 12px;
-  min-width: 140px;
-  cursor: pointer;
-  outline: none;
-  transition: border-color var(--anim-fast) var(--anim-ease);
-}
-.settings-row-control select:hover {
-  border-color: color-mix(in srgb, var(--color-accent) 40%, var(--color-border));
-}
-.settings-row-control select:focus {
-  border-color: color-mix(in srgb, var(--color-accent) 55%, var(--color-border));
-}
-.settings-row-control select option {
-  background: var(--color-bg-surface);
-  color: var(--color-text);
-}
-
 .settings-row-control--inline {
   flex-wrap: wrap;
 }
@@ -288,7 +257,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   padding: 8px 0;
   background: color-mix(in srgb, var(--color-bg) 55%, transparent);
   border-right: 1px solid var(--color-border);
@@ -296,29 +265,65 @@
   transition: width var(--anim-fast) var(--anim-ease);
 }
 .layout-mock-rail--collapsed { width: 16px; }
-.layout-mock-rail--dynamic   { width: 12px; opacity: 0.75; border-right-style: dashed; }
-.layout-mock-rail--expanded  { width: 40px; align-items: flex-start; padding-left: 6px; }
+.layout-mock-rail--dynamic   { width: 16px; opacity: 0.85; border-right-style: dashed; }
+.layout-mock-rail--expanded  { width: 46px; align-items: flex-start; padding-left: 6px; }
 
+.layout-mock-navitem {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.layout-mock-rail--dynamic .layout-mock-navitem,
+.layout-mock-rail--collapsed .layout-mock-navitem {
+  justify-content: center;
+  width: 100%;
+}
+
+/* Rounded-square icon slot — matches the real sidebar's icon buttons,
+   not a plain dot. Inactive items get a faint fill so they read as
+   buttons rather than decoration. */
 .layout-mock-dot {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
+  position: relative;
+  width: 8px;
+  height: 8px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--color-text) 16%, transparent);
+  flex-shrink: 0;
+  transition: background var(--anim-fast) var(--anim-ease), box-shadow var(--anim-fast) var(--anim-ease);
+}
+.layout-mock-rail--dynamic .layout-mock-dot { background: color-mix(in srgb, var(--color-text) 9%, transparent); }
+
+/* Active item — accent fill + glow + the small indicator dot the real
+   sidebar shows under the current view's icon. Declared after the
+   dynamic-rail dim rule above so it wins regardless of rail mode. */
+.layout-mock-navitem--active .layout-mock-dot {
   background: var(--color-accent);
   box-shadow: 0 0 6px color-mix(in srgb, var(--color-accent) 70%, transparent);
-  flex-shrink: 0;
 }
-.layout-mock-rail--dynamic .layout-mock-dot { background: var(--color-text-dim); box-shadow: none; }
+.layout-mock-navitem--active:not(.layout-mock-navitem--inline) .layout-mock-dot::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -5px;
+  transform: translateX(-50%);
+  width: 2px;
+  height: 2px;
+  border-radius: 50%;
+  background: var(--color-accent);
+  box-shadow: 0 0 4px color-mix(in srgb, var(--color-accent) 80%, transparent);
+}
 
 .layout-mock-line {
   width: 20px;
   height: 3px;
   border-radius: 2px;
   background: color-mix(in srgb, var(--color-text) 25%, transparent);
+  flex-shrink: 0;
 }
 
 .layout-mock-hover-hint {
   position: absolute;
-  left: 12px;
+  left: 18px;
   top: 50%;
   transform: translateY(-50%);
   width: 3px;
@@ -365,19 +370,14 @@
 .layout-mock-bar {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
-  height: 16px;
-  padding: 0 8px;
-  background: color-mix(in srgb, var(--color-bg) 55%, transparent);
-  border-bottom: 1px solid var(--color-border);
-  backdrop-filter: blur(6px);
-}
-.layout-mock-bar-spacer { flex: 1; }
-.layout-mock-pill {
-  width: 22px;
-  height: 6px;
+  height: 18px;
+  margin: 8px 8px 0;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--color-accent) 55%, transparent);
+  background: color-mix(in srgb, var(--color-bg) 55%, transparent);
+  border: 1px solid var(--color-border);
+  backdrop-filter: blur(6px);
 }
 .layout-mock-content--full {
   flex-direction: row;

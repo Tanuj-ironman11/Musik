@@ -348,25 +348,46 @@ input[type="range"] {
   justify-content: space-between;
   gap: 10px;
   width: 100%;
-  padding: 8px 14px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: var(--radius-sm, 6px);
+  padding: 9px 14px;
+  position: relative;
+  overflow: hidden;
+  background: var(--glass-bg-subtle);
+  backdrop-filter: blur(var(--glass-blur-subtle)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur-subtle)) saturate(var(--glass-saturate));
+  border: 1px solid var(--glass-border-color);
+  border-radius: var(--radius-md, 8px);
   color: var(--color-text, #f2f2f2);
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
+  /* Ambient lift at rest, not just on hover — a resting flat trigger next
+     to a floating glass panel read as mismatched depth. */
+  box-shadow: var(--glass-edge-highlight), 0 2px 10px -4px rgba(0, 0, 0, 0.5);
   transition: background var(--anim-fast) var(--anim-ease),
               border-color var(--anim-fast) var(--anim-ease),
               box-shadow var(--anim-fast) var(--anim-ease),
               transform var(--anim-fast) var(--anim-spring);
 }
 
+/* Same acrylic noise grain as the rest of the glass system — the trigger
+   had none before, which is a big part of why it read as a plain flat
+   button rather than glass. */
+.custom-select-trigger::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: var(--glass-noise);
+  mix-blend-mode: overlay;
+  opacity: 0.4;
+  pointer-events: none;
+  border-radius: inherit;
+}
+
 .custom-select-trigger:hover {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: color-mix(in srgb, var(--color-accent) 30%, rgba(255, 255, 255, 0.16));
+  background: var(--glass-bg-standard);
+  border-color: color-mix(in srgb, var(--color-accent) 30%, var(--glass-border-color));
   transform: translateY(-1px);
-  box-shadow: 0 6px 16px -8px color-mix(in srgb, var(--color-accent) 35%, transparent);
+  box-shadow: var(--glass-edge-highlight), 0 6px 16px -8px color-mix(in srgb, var(--color-accent) 35%, transparent);
 }
 
 .custom-select-trigger:active {
@@ -376,12 +397,21 @@ input[type="range"] {
 /* Open state keeps the same lift the hover gives it, plus an accent ring
    so it reads as "active" even after the cursor moves down to an option. */
 .custom-select.open .custom-select-trigger {
+  background: var(--glass-bg-standard);
   border-color: color-mix(in srgb, var(--color-accent) 45%, transparent);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-accent) 20%, transparent),
+  box-shadow: var(--glass-edge-highlight),
+              0 0 0 1px color-mix(in srgb, var(--color-accent) 20%, transparent),
               0 6px 16px -8px color-mix(in srgb, var(--color-accent) 35%, transparent);
 }
 
+.custom-select-trigger-label {
+  position: relative;
+  z-index: 1;
+}
+
 .custom-select-trigger .select-arrow {
+  position: relative;
+  z-index: 1;
   flex-shrink: 0;
   color: var(--color-text-dim, rgba(255, 255, 255, 0.4));
   transition: transform var(--anim-fast) var(--anim-spring), color var(--anim-fast) var(--anim-ease);
@@ -403,16 +433,39 @@ input[type="range"] {
   z-index: 30;
   max-height: 240px;
   overflow-y: auto;
-  background: rgba(14, 14, 14, 0.96);
-  backdrop-filter: blur(var(--glass-blur-elevated));
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: var(--radius-sm, 6px);
-  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.6);
+  overflow-x: hidden;
+  background: var(--glass-bg-elevated);
+  backdrop-filter: blur(var(--glass-blur-elevated)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur-elevated)) saturate(var(--glass-saturate));
+  border: 1px solid var(--glass-border-color);
+  border-radius: var(--radius-md, 8px);
+  /* Wider spread + a second, tighter shadow than before — against a page
+     this dark, the old single soft shadow barely read as "elevated" at
+     all. The two-layer shadow gives a crisp near edge and a diffuse far
+     edge, which separates from the background much more clearly. */
+  box-shadow:
+    0 4px 12px -4px rgba(0, 0, 0, 0.7),
+    0 24px 48px -16px rgba(0, 0, 0, 0.65),
+    var(--glass-edge-highlight);
   opacity: 0;
   visibility: hidden;
   transform: translateY(-4px);
   pointer-events: none;
-  transition: opacity var(--anim-fast) var(--anim-ease), transform var(--anim-fast) var(--anim-spring), visibility var(--anim-fast) var(--anim-ease);
+  transition: opacity var(--anim-fast) var(--anim-ease), transform var(--anim-fast) var(--anim-spring), visibility var(--anim-fast) var(--anim-ease), border-color var(--anim-fast) var(--anim-ease), box-shadow var(--anim-fast) var(--anim-ease);
+}
+
+/* Same acrylic noise grain as .glass-surface--elevated, so this panel
+   actually reads as part of the same glass system instead of a plain
+   flat box that happens to share a color. */
+.custom-select-options::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: var(--glass-noise);
+  mix-blend-mode: overlay;
+  opacity: 0.5;
+  pointer-events: none;
+  border-radius: inherit;
 }
 
 .custom-select.open .custom-select-options {
@@ -420,6 +473,14 @@ input[type="range"] {
   visibility: visible;
   transform: translateY(0);
   pointer-events: auto;
+  /* Matches the trigger's open-state ring above — same accent language
+     on both pieces so they read as one paired control, not two
+     unrelated boxes that happen to be near each other. */
+  border-color: color-mix(in srgb, var(--color-accent) 45%, transparent);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--color-accent) 20%, transparent),
+    0 4px 12px -4px rgba(0, 0, 0, 0.7),
+    0 24px 48px -16px rgba(0, 0, 0, 0.65);
 }
 
 /* Portal variant — used when JS moves the options panel out to <body>
@@ -442,17 +503,28 @@ input[type="range"] {
   visibility: visible;
   transform: translateY(0);
   pointer-events: auto;
+  border-color: color-mix(in srgb, var(--color-accent) 45%, transparent);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--color-accent) 20%, transparent),
+    0 4px 12px -4px rgba(0, 0, 0, 0.7),
+    0 24px 48px -16px rgba(0, 0, 0, 0.65);
 }
 
 .custom-option {
   position: relative;
+  z-index: 1;
   cursor: pointer;
-  padding: 8px 14px 8px 17px;
+  padding: 9px 14px 9px 17px;
   font-size: 12px;
   color: var(--color-text-secondary, rgba(255, 255, 255, 0.7));
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
   transition: background var(--anim-fast) var(--anim-ease),
               color var(--anim-fast) var(--anim-ease),
               transform var(--anim-fast) var(--anim-spring);
+}
+
+.custom-option:last-child {
+  border-bottom: none;
 }
 
 /* Accent bar, off-canvas until hover/selected — cheaper than animating

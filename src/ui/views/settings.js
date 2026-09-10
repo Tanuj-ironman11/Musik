@@ -100,17 +100,25 @@ async function syncLastfmCredsToMain() {
 // misleading "API key missing" error despite the key being saved fine.
 window.MusikViews.syncLastfmCredsToMain = syncLastfmCredsToMain;
 
+function layoutNavItemHTML(mode, active, inline) {
+  const label = mode === 'pinned' ? '<span class="layout-mock-line"></span>' : '';
+  const classes = [
+    'layout-mock-navitem',
+    active ? 'layout-mock-navitem--active' : '',
+    inline ? 'layout-mock-navitem--inline' : '',
+  ].filter(Boolean).join(' ');
+  return `<span class="${classes}"><span class="layout-mock-dot"></span>${label}</span>`;
+}
+
 function layoutCardHTML(mode, title, desc) {
   if (mode === 'topbar') {
     return `
       <button type="button" class="layout-card" data-nav-mode="${mode}">
         <div class="layout-mock layout-mock--topbar">
           <div class="layout-mock-bar">
-            <span class="layout-mock-dot"></span>
-            <span class="layout-mock-dot"></span>
-            <span class="layout-mock-dot"></span>
-            <span class="layout-mock-bar-spacer"></span>
-            <span class="layout-mock-pill"></span>
+            ${layoutNavItemHTML(mode, true, true)}
+            ${layoutNavItemHTML(mode, false, true)}
+            ${layoutNavItemHTML(mode, false, true)}
           </div>
           <div class="layout-mock-content layout-mock-content--full">
             <span class="layout-mock-block"></span>
@@ -131,10 +139,9 @@ function layoutCardHTML(mode, title, desc) {
     <button type="button" class="layout-card" data-nav-mode="${mode}">
       <div class="layout-mock">
         <div class="${railClass}">
-          <span class="layout-mock-dot"></span>
-          <span class="layout-mock-dot"></span>
-          <span class="layout-mock-dot"></span>
-          ${mode === 'pinned' ? '<span class="layout-mock-line"></span><span class="layout-mock-line"></span><span class="layout-mock-line"></span>' : ''}
+          ${layoutNavItemHTML(mode, true, false)}
+          ${layoutNavItemHTML(mode, false, false)}
+          ${layoutNavItemHTML(mode, false, false)}
         </div>
         ${mode === 'dynamic' ? '<div class="layout-mock-hover-hint"></div>' : ''}
         <div class="layout-mock-content">
@@ -146,6 +153,23 @@ function layoutCardHTML(mode, title, desc) {
       <span class="layout-card-desc">${desc}</span>
     </button>
   `;
+}
+
+// Shared by every "range slider + live %/unit label next to it" row in this
+// file (default volume, duck sensitivity/ceiling/max, visualizer
+// sensitivity) — previously five separate copy-pasted paint functions,
+// including one (sensSlider2/sensValue2) whose own variable names gave
+// away the copy-paste. formatFn defaults to a plain percentage; pass a
+// custom one where a row needs different formatting.
+function bindRangeValueDisplay(slider, valueEl, onInput, formatFn) {
+  const format = formatFn || ((v) => `${v}%`);
+  const paint = () => { valueEl.textContent = format(slider.value); };
+  paint();
+  slider.addEventListener('input', () => {
+    paint();
+    onInput?.(slider.value);
+  });
+  return paint;
 }
 
 function formatRelativeTime(ms) {
@@ -569,15 +593,8 @@ window.MusikViews['settings'] = async function renderSettings(main) {
 
   const volumeSlider = document.getElementById('settings-default-volume');
   const volumeValue = document.getElementById('settings-default-volume-value');
-
-  function paintVolumeValue() {
-    volumeValue.textContent = `${volumeSlider.value}%`;
-  }
-  paintVolumeValue();
-
-  volumeSlider.addEventListener('input', () => {
-    paintVolumeValue();
-    window.MusikPlayerUI?.setVolume?.(Number(volumeSlider.value) / 100);
+  bindRangeValueDisplay(volumeSlider, volumeValue, (value) => {
+    window.MusikPlayerUI?.setVolume?.(Number(value) / 100);
   });
 
   document.getElementById('settings-open-system-check').addEventListener('click', () => {
@@ -627,14 +644,13 @@ window.MusikViews['settings'] = async function renderSettings(main) {
 
   const sensSlider2 = document.getElementById('settings-vis-sensitivity');
   const sensValue2 = document.getElementById('settings-vis-sensitivity-value');
-  const paintVisSensitivity = () => {
-    sensValue2.textContent = `${sensSlider2.value}%`;
+  const paintVisFill = () => {
     sensSlider2.style.setProperty('--fill', `${(sensSlider2.value - sensSlider2.min) / (sensSlider2.max - sensSlider2.min) * 100}%`);
   };
-  paintVisSensitivity();
-  sensSlider2.addEventListener('input', () => {
-    paintVisSensitivity();
-    localStorage.setItem(VIS_SENSITIVITY_KEY, String(Number(sensSlider2.value) / 100));
+  paintVisFill();
+  bindRangeValueDisplay(sensSlider2, sensValue2, (value) => {
+    paintVisFill();
+    localStorage.setItem(VIS_SENSITIVITY_KEY, String(Number(value) / 100));
   });
 
   const customFxCheckbox = document.getElementById('settings-vis-customfx');
@@ -982,29 +998,20 @@ window.MusikViews['settings'] = async function renderSettings(main) {
 
     const sensSlider = document.getElementById('settings-duck-sensitivity');
     const sensValue = document.getElementById('settings-duck-sensitivity-value');
-    const paintSens = () => { sensValue.textContent = `${sensSlider.value}%`; };
-    paintSens();
-    sensSlider.addEventListener('input', () => {
-      paintSens();
-      window.Musik?.gameDuck?.setSensitivity?.(Number(sensSlider.value) / 100);
+    bindRangeValueDisplay(sensSlider, sensValue, (value) => {
+      window.Musik?.gameDuck?.setSensitivity?.(Number(value) / 100);
     });
 
     const ceilingSlider = document.getElementById('settings-duck-ceiling');
     const ceilingValue = document.getElementById('settings-duck-ceiling-value');
-    const paintCeiling = () => { ceilingValue.textContent = `${ceilingSlider.value}%`; };
-    paintCeiling();
-    ceilingSlider.addEventListener('input', () => {
-      paintCeiling();
-      window.Musik?.gameDuck?.setDuckCeiling?.(Number(ceilingSlider.value) / 100);
+    bindRangeValueDisplay(ceilingSlider, ceilingValue, (value) => {
+      window.Musik?.gameDuck?.setDuckCeiling?.(Number(value) / 100);
     });
 
     const maxSlider = document.getElementById('settings-duck-max');
     const maxValue = document.getElementById('settings-duck-max-value');
-    const paintMax = () => { maxValue.textContent = `${maxSlider.value}%`; };
-    paintMax();
-    maxSlider.addEventListener('input', () => {
-      paintMax();
-      window.Musik?.gameDuck?.setMaxDuck?.(Number(maxSlider.value) / 100);
+    bindRangeValueDisplay(maxSlider, maxValue, (value) => {
+      window.Musik?.gameDuck?.setMaxDuck?.(Number(value) / 100);
     });
 
     // 'duckdebug' — main.js/game-duck.js don't emit this yet; row stays at "—" until they do.

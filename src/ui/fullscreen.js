@@ -157,7 +157,7 @@
   }
 
   function updateMeta(track) {
-    if (!root) return;
+    if (!root || !isOpen) return;
     root.querySelector('#npf-title').textContent = track?.title ?? 'Unknown Title';
     root.querySelector('#npf-artist').textContent = track?.artist ?? 'Unknown Artist';
     // attach(), not refresh() — refresh() alone won't re-register the
