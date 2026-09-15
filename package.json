@@ -15,6 +15,9 @@
     "dist:mac": "electron-builder --mac"
   },
   "dependencies": {
+    "@fontsource/nunito": "^5.1.0",
+    "@fontsource/space-mono": "^5.1.0",
+    "dompurify": "^3.4.15",
     "music-metadata": "11.15.0",
     "node-id3": "^0.2.9",
     "node-taglib-sharp": "^6.0.3",

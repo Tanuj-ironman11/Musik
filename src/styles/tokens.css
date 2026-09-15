@@ -1,4 +1,8 @@
 /* component/tokens.css */
+@import "../../node_modules/@fontsource/space-mono/400.css";
+@import "../../node_modules/@fontsource/space-mono/700.css";
+@import "../../node_modules/@fontsource/nunito/400.css";
+@import "../../node_modules/@fontsource/nunito/700.css";
 
 :root {
   --sidebar-width-collapsed: calc(var(--sidebar-width) * 1.15);
@@ -23,15 +27,6 @@ body[data-active-view="now-playing"] #main {
 
 .metadata-modal-body, .meta-fix-body { flex: 1; overflow-y: auto; padding: 20px 24px; }
 
-/* Self-hosted font — CSP blocks Google Fonts, so this must be a local file */
-@font-face {
-  font-family: "Nunito";
-  font-style: normal;
-  font-weight: 800;
-  font-display: swap;
-  src: url("../assets/fonts/Nunito-ExtraBold.woff2") format("woff2");
-}
-
 :root {
   --color-bg:             #080808;
   --color-bg-elevated:    #0e0e0e;
@@ -54,10 +49,10 @@ body[data-active-view="now-playing"] #main {
   --color-accent-subtle:  rgba(61, 184, 245, 0.10);
   --color-accent-dim:     rgba(61, 184, 245, 0.06);
 
-  --font-ui:      -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --font-display: "Space Mono", monospace;
-  --font-mono:    "Space Mono", "JetBrains Mono", monospace;
-  --font-wordmark: "Nunito", -apple-system, sans-serif;
+  --font-ui: "Nunito", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-display:  "Space Mono", Consolas, Monaco, monospace;
+  --font-mono:     "Space Mono", Consolas, Monaco, monospace;
+  --font-wordmark: "Nunito", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-size-base: 13px;
   --font-size-xs:   10px;
   --font-size-sm:   11px;

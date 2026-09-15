@@ -1,8 +1,15 @@
 // src/ui/visualizer.js
-// Postprocessing is hand-rolled against window.THREE (set by three-loader.js)
-// since JSM addons need import(), which this app's CSP blocks.
-// window.MusikVisualizer: { setMode, getMode, setSmoothing, getSmoothing, setQuality, getQuality }
-// window.MusikVisualizer3D: { isAvailable }
+// Renderer-side Now Playing visualizer. rAF loop runs only while
+// `npf-open` is on <body>. 2D/3D both fall back to a synthetic idle
+// animation when there's no analyser.
+//
+// 3D: noise-displaced icosahedron wireframe + solid core, bloom, optional
+// FXAA, cursor-follow camera. THREE comes from three-loader.js (sets
+// window.THREE). Postprocessing is hand-rolled against that global since
+// the JSM addons need import(), which this app's CSP blocks.
+//
+// window.MusikVisualizer: { setMode, getMode, setSmoothing, getSmoothing,
+// setQuality, getQuality }. window.MusikVisualizer3D: { isAvailable }.
 
 (function () {
   const BAR_COUNT = 64;
@@ -13,8 +20,10 @@
   const MODE_STORAGE_KEY = 'musik:visualizer-mode';
   const QUALITY_STORAGE_KEY = 'musik:visualizer-quality';
 
-  // Custom effects (Fresnel, dither) are opt-in, separate from the always-on quality tiers.
-  // Master gates both subs; each sub is independently toggleable once the master's on.
+  // "Custom effects" — the mood-altering, might-hate-it bucket (Fresnel rim
+  // lighting, dither), kept separate from the always-on quality tiers so it's
+  // opt-in and A/B-able against a clean baseline. Master gates both subs;
+  // each sub is independently toggleable once the master's on.
   const CUSTOM_FX_STORAGE_KEY = 'musik:visualizer-customfx';
   const FRESNEL_STORAGE_KEY = 'musik:visualizer-fresnel';
   const DITHER_STORAGE_KEY = 'musik:visualizer-dither';
@@ -30,8 +39,15 @@
   // ssaaScale: extra supersample multiplier stacked on top of pixelRatio — renders more physical
   // pixels than the canvas displays at; the browser's own canvas-to-screen downscale does the AA.
   const QUALITY_TIERS = {
-    // preserveThinLines is on for every tier, not just High/Ultra — the flicker it fixes
-    // is per-line (subpixel alignment), not tied to triangle count, so lower tiers need it too.
+    // preserveThinLines used to be High/Ultra-only, but the effect it gates (full-res
+    // bloom bright-pass + box-downsample, see UnrealBloomPass render()) is the actual
+    // fix for thin wireframe lines strobing in/out of bloom as they move — a plain
+    // half-res bilinear tap can miss a 1px line depending on subpixel alignment, which
+    // reads as random polygons flickering brightness. That's WORSE at low tessellation
+    // (fewer, thicker apparent lines don't save you — the underlying bug is per-line,
+    // not per-triangle-count), so it needs to be on everywhere, not just the top tiers.
+    // Extra cost is one full-res shader pass + a cheap 4x4 box filter — negligible next
+    // to the multi-mip blur chain that's already running.
     low:    { pixelRatio: 1,                                          msaaSamples: 2, fxaa: false, geometryDetail: 16, bloomResScale: 0.5,  bloomMips: 5, ssaaScale: 1,   preserveThinLines: true },
     medium: { pixelRatio: Math.min(window.devicePixelRatio || 1, 1.5), msaaSamples: 4, fxaa: false, geometryDetail: 18, bloomResScale: 0.5,  bloomMips: 5, ssaaScale: 1,   preserveThinLines: true },
     high:   { pixelRatio: Math.min(window.devicePixelRatio || 1, 2),   msaaSamples: 4, fxaa: true,  geometryDetail: 24, bloomResScale: 0.75, bloomMips: 6, ssaaScale: 1,   preserveThinLines: true },
@@ -296,6 +312,8 @@
     });
   }
 
+  // Hand-rolled Pass/EffectComposer/RenderPass/UnrealBloomPass/FXAA against
+  // global THREE — JSM addons need import(), blocked by CSP.
   function loadThree() {
     if (!threeModulePromise) {
       threeModulePromise = waitForGlobalThree()
@@ -448,8 +466,13 @@
           class UnrealBloomPass extends Pass {
               constructor( resolution, strength, radius, threshold, mips, preserveThinLines, resScale ) {
                   super();
-                  // Must be reused on every setSize() call — otherwise the hardcoded `/2`
-                  // below overwrites it and caps every tier at Low/Medium's resolution.
+                  // The fraction of physical canvas resolution the bright-pass/blur chain
+                  // should run at (tier.bloomResScale). Must be stored and reused on every
+                  // setSize() call (resize, and the initial call addPass() fires immediately
+                  // after construction) — otherwise setSize()'s old hardcoded `/2` silently
+                  // overwrites it, capping every tier at the same relative resolution as
+                  // Low/Medium (0.5) and starving High/Ultra of the higher-fidelity bloom
+                  // buffer their tier is supposed to get.
                   this.resScale = ( resScale !== undefined ) ? resScale : 0.5;
                   this.strength = ( strength !== undefined ) ? strength : 1;
                   this.radius = radius; this.threshold = threshold;
@@ -461,8 +484,12 @@
                   this.renderTargetBright = new THREE.WebGLRenderTarget( resx, resy, pars );
                   this.renderTargetBright.texture.generateMipmaps = false;
 
-                  // Runs the bright-pass threshold at native res (then box-downsamples below)
-                  // instead of on a pre-shrunk buffer, so thin 1px lines don't get missed.
+                  // High/Ultra only (gated by preserveThinLines): thin single-pixel wireframe
+                  // lines can fall between sample points when the bright-pass threshold runs
+                  // directly on a pre-shrunk buffer — a plain bilinear tap can miss a 1px line
+                  // entirely depending on subpixel alignment, which flickers as the blob moves.
+                  // Fix: run the threshold at native resolution into this full-res buffer first,
+                  // then box-downsample (below) so every source texel actually contributes.
                   this.preserveThinLines = !!preserveThinLines;
                   this._fullResX = resx * 2; this._fullResY = resy * 2;
                   this.renderTargetBrightFull = new THREE.WebGLRenderTarget( 1, 1, pars );
@@ -477,7 +504,11 @@
 
                   this.highPassUniforms = THREE.UniformsUtils.clone( LuminosityHighPassShader.uniforms );
                   this.highPassUniforms[ 'luminosityThreshold' ].value = threshold;
-                  // Wider ramp so shimmer crossing the threshold fades instead of popping on/off.
+                  // Was 0.01 — a near-hard on/off cutoff. The blob's per-vertex shimmer
+                  // (fragment shader brightness driven by a continuously time-evolving noise
+                  // field) constantly drifts across a threshold that thin, individual edges
+                  // strobe in and out of bloom as their shimmer crosses it. Widening the ramp
+                  // turns that pop on/off into a smooth fade instead.
                   this.highPassUniforms[ 'smoothWidth' ].value = 0.12;
                   this.materialHighPassFilter = new THREE.ShaderMaterial( {
                       uniforms: this.highPassUniforms, vertexShader: LuminosityHighPassShader.vertexShader, fragmentShader: LuminosityHighPassShader.fragmentShader
@@ -810,8 +841,12 @@
     ${NOISE_GLSL}
 
     void main() {
-      // Vertical bands: treble top, bass bottom, mid middle. Displacement-amplitude
-      // blend only (no color tied to it) — a small noise wobble softens the seam.
+      // Vertical bands: treble on top, bass on bottom, mid in the middle.
+      // A small static noise wobble on the boundary keeps the seam from
+      // looking like a hard sticker edge, but the zones stay legible —
+      // this is what makes different parts of the blob move for different
+      // bands. Purely a displacement-amplitude blend now, no color tied
+      // to it — the color-coded zones read as a flag, not audio.
       vec3 zonePos = normalize(position);
       float wobble = pnoise(zonePos * 2.0 + vec3(12.3, 4.5, 8.1)) * 0.15;
       float y = zonePos.y + wobble;
@@ -846,7 +881,11 @@
     }
   `;
 
-  // uFresnelEnabled is a 0/1 uniform, not a shader recompile — toggling is instant.
+  // Core mesh sits just inside the wireframe (see coreMesh.scale below) and was
+  // flat black before — this lights up its silhouette edge with the accent
+  // color, "energy shield" style. uFresnelEnabled is a 0/1 uniform rather than
+  // a shader recompile so toggling the setting is instant and never forces a
+  // scene rebuild. Fully off (0.0) reproduces the exact old flat-black output.
   const CORE_FRAGMENT = `
     uniform vec3 uColor;
     uniform float uFresnelEnabled;
@@ -925,15 +964,23 @@
     const H = canvas.clientHeight || mount.clientHeight || window.innerHeight;
 
     blobScene = new THREE.Scene();
-    // Don't widen this back to 0.1-100 — it starves z-buffer precision at the actual
-    // content range and causes coreMesh/blobMesh to z-fight (flickering triangles).
+    // near/far tightened to bracket the actual content range (surface sits
+    // ~5.5-9.3 from camera given radius ~1.8-2 + displacement, camera at z=7.5).
+    // The old 0.1-100 range wasted almost all z-buffer precision on empty space,
+    // starving the 5.5-9.3 band and causing coreMesh/blobMesh to z-fight —
+    // random triangles flipping front/back depth-test winner frame to frame,
+    // seen as random polygons flickering brightness. Bigger triangles (lower
+    // quality tiers) make each flip cover more screen area, so it's WORSE at
+    // low/medium than Ultra, even though the bug is identical at every tier.
     blobCamera = new THREE.PerspectiveCamera(45, W / H, 3, 14);
     blobCamera.position.z = 7.5;
 
+    // powerPreference: 'high-performance' asks the driver for the discrete
+    // GPU instead of leaving it to default behavior (which on hybrid-
+    // graphics laptops often means the iGPU). Paired with the
+    // force_high_performance_gpu Chromium switch in main.js — this is the
+    // WebGL-level half of that same request.
     blobRenderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: true, powerPreference: 'high-performance' });
-    // If this fires, that's a GPU context loss/restore (iGPU/dGPU switch), not the shader/bloom pipeline.
-    canvas.addEventListener('webglcontextlost', (e) => console.warn('[Musik] visualizer: WebGL context LOST', e));
-    canvas.addEventListener('webglcontextrestored', () => console.warn('[Musik] visualizer: WebGL context RESTORED'));
     blobRenderer.setClearColor(0x000000, 0);
     // SSAA: render at pixelRatio * ssaaScale physical pixels; canvas CSS size stays put,
     // so the browser's own downscale-on-paint does the supersample averaging. Ultra-only.
@@ -982,11 +1029,7 @@
     // UnrealBloomPass halves whatever resolution it's given for its blur chain, so pre-double
     // to land the internal bloom res at tier.bloomResScale * canvas size.
     const bloomRes = new THREE.Vector2(W * tier.bloomResScale * 2, H * tier.bloomResScale * 2);
-    // Bloom strength dropped ~25% from the original 0.85 — the silhouette rim was
-    // reading too hot (wireframe line density piling up at grazing angles, not
-    // Fresnel — Fresnel only touches coreMesh and is comparatively subtle). This
-    // is a blunt, whole-scene knob: it dims bloom everywhere, not just the rim.
-    const bloomPass = new UnrealBloomPass(bloomRes, 0.6375, 0.25, 0.22, tier.bloomMips, tier.preserveThinLines, tier.bloomResScale);
+    const bloomPass = new UnrealBloomPass(bloomRes, 0.85, 0.25, 0.22, tier.bloomMips, tier.preserveThinLines, tier.bloomResScale);
     blobComposer.addPass(bloomPass);
 
     if (tier.fxaa) {
@@ -1220,7 +1263,10 @@
     if (blobRenderer) teardown3d();
   }
 
-  // Fresnel/dither are uniform-gated, not baked into shader source — toggling applies live, no rebuild.
+  // Fresnel and dither are both uniform-gated (see BLOB_VERTEX/CORE_FRAGMENT/
+  // DitherShader) rather than baked into the shader source, so flipping any
+  // of these three applies live to an already-running scene — no teardown,
+  // no rebuild, no flicker.
   function applyCustomFxUniforms() {
     const fresnelActive = customFxOn && fresnelPref;
     const ditherActive = customFxOn && ditherPref;

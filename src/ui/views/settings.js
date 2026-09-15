@@ -60,8 +60,20 @@ function getDitherOn() {
 }
 
 // "Always on top" needs window.Musik.miniplayer.setAlwaysOnTop() —
-// preload.js/main.js don't expose it yet. Saves the pref, no visible
-// effect until that IPC surface exists.
+// not exposed by preload.js/main.js yet. Pref saves, no effect until then.
+// Default volume applied at next launch, before the player-bar slider is
+// touched. NOTE: playback boot doesn't read this key yet — still needs
+// wiring in player-ui.js (or wherever initial volume gets set).
+const DEFAULT_VOLUME_KEY = 'musikDefaultVolume';
+
+function getStoredDefaultVolumePercent() {
+  const raw = parseFloat(localStorage.getItem(DEFAULT_VOLUME_KEY));
+  if (Number.isFinite(raw)) return Math.round(raw * 100);
+  // No saved default yet — fall back to whatever's currently playing so the
+  // slider doesn't jump to some arbitrary unrelated number on first render.
+  return Math.round((window.MusikPlayerUI?.getVolume?.() ?? 1) * 100);
+}
+
 const MINI_ALWAYS_ON_TOP_KEY = 'musikMiniAlwaysOnTop';
 
 function getMiniAlwaysOnTop() {
@@ -157,13 +169,16 @@ function layoutCardHTML(mode, title, desc) {
 
 // Shared by every "range slider + live %/unit label next to it" row in this
 // file (default volume, duck sensitivity/ceiling/max, visualizer
-// sensitivity) — previously five separate copy-pasted paint functions,
-// including one (sensSlider2/sensValue2) whose own variable names gave
-// away the copy-paste. formatFn defaults to a plain percentage; pass a
+// sensitivity) — also paints the accent fill (--fill), since every slider
+// in Settings uses it now. formatFn defaults to a plain percentage; pass a
 // custom one where a row needs different formatting.
 function bindRangeValueDisplay(slider, valueEl, onInput, formatFn) {
   const format = formatFn || ((v) => `${v}%`);
-  const paint = () => { valueEl.textContent = format(slider.value); };
+  const paint = () => {
+    valueEl.textContent = format(slider.value);
+    const pct = (slider.value - slider.min) / (slider.max - slider.min) * 100;
+    slider.style.setProperty('--fill', `${pct}%`);
+  };
   paint();
   slider.addEventListener('input', () => {
     paint();
@@ -307,7 +322,7 @@ window.MusikViews['settings'] = async function renderSettings(main) {
           </div>
           <div class="settings-row-control">
             <input type="range" id="settings-default-volume" min="0" max="100"
-              value="${Math.round((window.MusikPlayerUI?.getVolume?.() ?? 1) * 100)}" />
+              value="${getStoredDefaultVolumePercent()}" />
             <span id="settings-default-volume-value" class="settings-row-value"></span>
           </div>
         </div>
@@ -423,7 +438,7 @@ window.MusikViews['settings'] = async function renderSettings(main) {
             <span class="settings-row-desc">How much the 3D blob deforms in response to audio. Lower this if it feels too jumpy.</span>
           </div>
           <div class="settings-row-control">
-            <input type="range" id="settings-vis-sensitivity" class="range-fill" min="25" max="200"
+            <input type="range" id="settings-vis-sensitivity" min="25" max="200"
               value="${getVisSensitivityPercent()}" />
             <span id="settings-vis-sensitivity-value" class="settings-row-value"></span>
           </div>
@@ -594,6 +609,7 @@ window.MusikViews['settings'] = async function renderSettings(main) {
   const volumeSlider = document.getElementById('settings-default-volume');
   const volumeValue = document.getElementById('settings-default-volume-value');
   bindRangeValueDisplay(volumeSlider, volumeValue, (value) => {
+    localStorage.setItem(DEFAULT_VOLUME_KEY, String(Number(value) / 100));
     window.MusikPlayerUI?.setVolume?.(Number(value) / 100);
   });
 
@@ -644,12 +660,7 @@ window.MusikViews['settings'] = async function renderSettings(main) {
 
   const sensSlider2 = document.getElementById('settings-vis-sensitivity');
   const sensValue2 = document.getElementById('settings-vis-sensitivity-value');
-  const paintVisFill = () => {
-    sensSlider2.style.setProperty('--fill', `${(sensSlider2.value - sensSlider2.min) / (sensSlider2.max - sensSlider2.min) * 100}%`);
-  };
-  paintVisFill();
   bindRangeValueDisplay(sensSlider2, sensValue2, (value) => {
-    paintVisFill();
     localStorage.setItem(VIS_SENSITIVITY_KEY, String(Number(value) / 100));
   });
 

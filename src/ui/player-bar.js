@@ -1,6 +1,4 @@
-// src/ui/player-bar.js
-// Now-playing bar: click-to-seek, keyboard hotkeys. Markup is unstyled;
-// visual treatment lives in CSS.
+
 
 (function () {
   function fmtTime(seconds) {
@@ -322,10 +320,7 @@
 
     window.Musik.events.on('progress', ({ currentTime, duration }) => {
       if (userIsSeeking) return;
-      // Only act once the whole second actually changes — the seek bar's
-      // fill now animates on its own via CSS (see .pb-progress transition
-      // in player-bar.css), so JS doesn't need to push updates faster than
-      // the thing on screen that actually changes (the mm:ss counter).
+
       const wholeSecond = Math.floor(currentTime);
       if (wholeSecond === lastProgressSecond) return;
       lastProgressSecond = wholeSecond;

@@ -9,18 +9,19 @@
 
 .settings-title {
   font-family: var(--font-display);
+  font-weight: 700;
   font-size: var(--font-size-xl);
-  letter-spacing: -0.5px;
+  letter-spacing: 0.01em;
   margin-bottom: 28px;
 }
 
 .settings-section {
   position: relative;
+  padding: 22px 26px;
   background: color-mix(in srgb, var(--color-bg-surface) 82%, transparent);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  padding: 20px 22px;
-  margin-bottom: 20px;
+  border-radius: calc(var(--radius-md) + 6px);
+  margin-bottom: 28px;
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
   box-shadow: 0 8px 24px -12px rgba(0, 0, 0, 0.4);
@@ -68,7 +69,7 @@
   min-width: 0;
 }
 .settings-row-name { font-size: 13px; font-weight: 600; color: var(--color-text); }
-.settings-row-desc { font-size: 11px; color: var(--color-text-dim); line-height: 1.4; }
+.settings-row-desc { font-size: 11px; color: color-mix(in srgb, var(--color-text-dim) 55%, var(--color-text) 45%); line-height: 1.4; }
 
 .settings-row-control {
   display: flex;
@@ -86,38 +87,102 @@
 
 .settings-row-control input[type="range"] {
   -webkit-appearance: none;
+  appearance: none;
   width: 140px;
   height: 4px;
   border-radius: 2px;
-  background: var(--color-border);
-  outline: none;
-}
-.settings-row-control input[type="range"]::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: var(--color-accent);
-  cursor: pointer;
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-accent) 20%, transparent);
-  transition: transform var(--anim-fast) var(--anim-spring);
-}
-.settings-row-control input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.15); }
-
-/* Fill-track variant — opt-in via .range-fill, doesn't affect existing plain sliders */
-.settings-row-control input[type="range"].range-fill {
-  --fill: 50%;
+  --fill: 0%;
   background: linear-gradient(
     to right,
     var(--color-accent) 0%,
-    var(--color-accent) var(--fill),
-    var(--color-border) var(--fill),
-    var(--color-border) 100%
+    var(--color-accent) var(--fill, var(--progress, 0%)),
+    color-mix(in srgb, var(--color-text) 12%, transparent) var(--fill, var(--progress, 0%)),
+    color-mix(in srgb, var(--color-text) 12%, transparent) 100%
   );
+  cursor: pointer;
+  outline: none;
+  box-shadow: none;
+  transition: height 0.15s var(--ease-out);
 }
-.settings-row-control input[type="range"].range-fill::-webkit-slider-thumb {
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-accent) 20%, transparent),
-              0 0 12px 1px color-mix(in srgb, var(--color-accent) 55%, transparent);
+
+.settings-row-control:hover input[type="range"],
+.settings-row-control input[type="range"]:focus-visible {
+  height: 7px;
+}
+
+.settings-row-control input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 4px;
+  height: 16px;
+  border-radius: 2px;
+  border: none;
+  background: color-mix(in srgb, var(--color-accent) 65%, white);
+  box-shadow: 0 0 8px -1px var(--color-accent-glow);
+  opacity: 0;
+  transform: scaleY(0.3);
+  transition:
+    opacity var(--anim-fast, 0.15s) var(--anim-ease, ease),
+    transform var(--anim-fast, 0.15s) var(--ease-spring, ease),
+    height 0.15s var(--ease-out),
+    box-shadow var(--anim-fast, 0.15s) var(--anim-ease, ease),
+    background var(--anim-fast, 0.15s) var(--anim-ease, ease);
+  cursor: pointer;
+}
+
+.settings-row-control input[type="range"]::-moz-range-thumb {
+  width: 4px;
+  height: 16px;
+  border: none;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--color-accent) 65%, white);
+  box-shadow: 0 0 8px -1px var(--color-accent-glow);
+  opacity: 0;
+  transition:
+    opacity var(--anim-fast, 0.15s) var(--anim-ease, ease),
+    transform var(--anim-fast, 0.15s) var(--ease-spring, ease),
+    height 0.15s var(--ease-out),
+    box-shadow var(--anim-fast, 0.15s) var(--anim-ease, ease),
+    background var(--anim-fast, 0.15s) var(--anim-ease, ease);
+  cursor: pointer;
+}
+
+.settings-row-control input[type="range"]::-moz-range-track {
+  height: 4px;
+  border-radius: 2px;
+  background: transparent;
+}
+
+.settings-row-control:hover input[type="range"]::-webkit-slider-thumb,
+.settings-row-control input[type="range"]:focus-visible::-webkit-slider-thumb {
+  opacity: 1;
+  transform: scaleY(1);
+}
+
+.settings-row-control:hover input[type="range"]::-moz-range-thumb,
+.settings-row-control input[type="range"]:focus-visible::-moz-range-thumb {
+  opacity: 1;
+  transform: scaleY(1);
+}
+
+.settings-row-control input[type="range"]:active::-webkit-slider-thumb {
+  opacity: 1;
+  transform: scaleY(1);
+  height: 20px;
+  background: color-mix(in srgb, var(--color-accent) 80%, white);
+  box-shadow:
+    0 0 14px -1px var(--color-accent-glow),
+    0 0 0 3px color-mix(in srgb, var(--color-accent) 20%, transparent);
+}
+
+.settings-row-control input[type="range"]:active::-moz-range-thumb {
+  opacity: 1;
+  transform: scaleY(1);
+  height: 20px;
+  background: color-mix(in srgb, var(--color-accent) 80%, white);
+  box-shadow:
+    0 0 14px -1px var(--color-accent-glow),
+    0 0 0 3px color-mix(in srgb, var(--color-accent) 20%, transparent);
 }
 
 .settings-row-control input[type="checkbox"] {
@@ -125,10 +190,27 @@
   width: 38px;
   height: 22px;
   border-radius: 999px;
-  background: var(--color-border);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--color-bg) 60%, black) 0%,
+    color-mix(in srgb, var(--color-bg) 85%, black) 100%
+  );
   position: relative;
   cursor: pointer;
-  transition: background var(--anim-fast) var(--anim-ease);
+  outline: none;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.5), inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  transition: background var(--anim-fast) var(--anim-ease), box-shadow var(--anim-fast) var(--anim-ease);
+}
+/* Keyboard-only ring. :focus-visible doesn't fire on a mouse click, so
+   click-then-F-to-fullscreen never leaves a stuck outline behind — Tab
+   navigation still gets one, since that's a real a11y need. */
+.settings-row-control input[type="checkbox"]:focus-visible {
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.35),
+              0 0 0 2px var(--color-bg),
+              0 0 0 4px color-mix(in srgb, var(--color-accent) 65%, transparent);
+}
+.settings-row-control input[type="checkbox"]:hover {
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.4), inset 0 0 0 1px rgba(255, 255, 255, 0.16);
 }
 .settings-row-control input[type="checkbox"]::before {
   content: '';
@@ -136,15 +218,38 @@
   top: 2px; left: 2px;
   width: 18px; height: 18px;
   border-radius: 50%;
-  background: var(--color-text);
-  transition: transform var(--anim-fast) var(--anim-spring);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--color-text-dim) 40%, white) 0%,
+    var(--color-text-dim) 50%,
+    color-mix(in srgb, var(--color-text-dim) 75%, black) 100%
+  );
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  transition: transform var(--anim-fast) var(--anim-spring), background var(--anim-fast) var(--anim-ease), box-shadow var(--anim-fast) var(--anim-ease);
 }
+.settings-row-control input[type="checkbox"]:hover::before {
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--color-text-secondary) 50%, white) 0%,
+    var(--color-text-secondary) 50%,
+    color-mix(in srgb, var(--color-text-secondary) 75%, black) 100%
+  );
+}
+
 .settings-row-control input[type="checkbox"]:checked {
-  background: var(--color-accent);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--color-accent) 92%, white) 0%,
+    var(--color-accent) 45%,
+    color-mix(in srgb, var(--color-accent) 80%, black) 100%
+  );
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.25),
+              0 0 10px 1px color-mix(in srgb, var(--color-accent) 45%, transparent);
 }
 .settings-row-control input[type="checkbox"]:checked::before {
   transform: translateX(16px);
-  background: var(--color-bg);
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.5);
 }
 
 .settings-row-control--inline {
@@ -457,32 +562,6 @@ body[data-bg-style="gradient"], body[data-bg-style="acrylic-mica"], body[data-bg
   -webkit-backdrop-filter: none !important;
 }
 
-.settings-wrap {
-  padding: 36px 48px 120px;
-  max-width: 780px;
-}
-
-.settings-section {
-  margin-bottom: 44px;
-}
-
-.settings-grid {
-  display: flex;
-  flex-direction: column;
-  background: color-mix(in srgb, var(--color-text) 3%, transparent);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  overflow: hidden;
-}
-
-.settings-grid .setting-row {
-  border-radius: 0;
-  border-bottom: 1px solid var(--color-border);
-  padding: 14px 20px;
-}
-
-.settings-grid .setting-row:last-child { border-bottom: none; }
-
 .settings-folder-list {
   display: flex;
   flex-direction: column;
@@ -532,45 +611,6 @@ body[data-bg-style="gradient"], body[data-bg-style="acrylic-mica"], body[data-bg
 .mod-desc { font-size: 12px; color: var(--color-text-secondary); margin-bottom: 8px; line-height: 1.4; }
 
 .mod-files { display: flex; gap: 6px; }
-
-.setting-label {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--color-text);
-  line-height: 1.4;
-}
-
-.section-title {
-  font-size: 13px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--color-text-dim);
-  font-family: var(--font-mono);
-  margin: 0 0 6px;
-}
-
-.section-desc {
-  font-size: 12px;
-  color: var(--color-text-dim);
-  margin: 0 0 16px;
-  line-height: 1.5;
-}
-
-.setting-sublabel {
-  display: block;
-  font-size: 11px;
-  font-weight: 400;
-  color: var(--color-text-dim);
-  margin-top: 3px;
-  line-height: 1.4;
-}
-
-.setting-input-wrap {
-  display: flex;
-  align-items: center;
-  flex-shrink: 0;
-}
 
 .mod-list-container { margin-top: 4px; }
 

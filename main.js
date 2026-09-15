@@ -1,5 +1,7 @@
 const { app, BrowserWindow, ipcMain, dialog, shell, screen, nativeImage } = require('electron');
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
+
+app.commandLine.appendSwitch('force_high_performance_gpu');
 const path = require('path');
 const fs = require('fs');
 
@@ -36,20 +38,6 @@ function emitToRenderer(name, payload) {
   }
 }
 
-// --- Taskbar thumbnail toolbar (Windows only — ITaskbarList3) ---
-// This is the row of buttons Windows draws BELOW the hover-preview
-// thumbnail (what Edge/Spotify/etc show) — distinct from the window's own
-// content shrunk down, and distinct from the SMTC tray widget. Electron
-// exposes it via win.setThumbarButtons(); it silently no-ops on non-Windows
-// platforms but we still gate on process.platform.
-//
-// Button clicks route through the existing 'miniplayer-command' event
-// player-ui.js already handles (togglePlayPause/previous/next) — reused
-// deliberately rather than adding a parallel handler.
-//
-// nativeImage needs real bitmap data (no SVG support), so the four glyphs
-// are embedded as base64 PNG data URLs rather than shipped as separate
-// files.
 let isPlayingForThumbar = false;
 
 const THUMBAR_ICONS = {
@@ -94,8 +82,7 @@ function updateThumbarButtons(win, isPlaying) {
         click: () => emitToRenderer('miniplayer-command', { action: 'next' }),
       },
     ]);
-    // setThumbarButtons returns false if it failed WITHOUT throwing — this
-    // return value is easy to miss and was silently ignored before.
+
     console.log(`[Musik] setThumbarButtons(${isPlaying ? 'playing' : 'paused'}) returned:`, ok);
   } catch (err) {
     console.warn('[Musik] setThumbarButtons threw:', err.message);
@@ -123,8 +110,7 @@ function createMiniplayerWindow() {
     height: settings.height || 180,
     minWidth: 220,
     minHeight: 150,
-    // transparent:true + no backgroundColor — combining the two on Windows
-    // paints an opaque square instead of real per-pixel transparency.
+
     transparent: true,
     frame: false,
     minimizable: false,
@@ -196,8 +182,6 @@ function toggleMiniplayer() {
   return true;
 }
 
-// Plain-text tail log for the game-duck meter when fullscreen-exclusive
-// games block overlay windows. Capped ~1MB, trimmed to last ~200KB.
 const duckDebugLogPath = () => path.join(app.getPath('userData'), 'duck-debug.log');
 let duckDebugLogSizeChecked = 0;
 function appendDuckDebugLog(level, target, smoothed) {
@@ -224,8 +208,7 @@ function createWindow() {
     icon: path.join(__dirname, 'build', 'icon.ico'),
     minWidth: 900,
     minHeight: 600,
-    // transparent must stay false here — setBackgroundMaterial (acrylic/mica)
-    // silently no-ops when transparent:true is also set.
+
     backgroundColor: '#00000000',
     frame: false,
     webPreferences: {
@@ -250,18 +233,6 @@ function createWindow() {
 
   mainWindow.on('enter-full-screen', () => emitToRenderer('fullscreenchange', { fullscreen: true }));
   mainWindow.on('leave-full-screen', () => emitToRenderer('fullscreenchange', { fullscreen: false }));
-
-  // TEMP DEBUG — diagnosing the backdrop-filter flicker on #now-playing-bar.
-  // F9 opens chrome://gpu in a plain window using THIS app's own bundled
-  // Chromium/GPU process, not your regular browser, so we can see actual
-  // "Problems Detected" for the process that's really rendering the bug.
-  // Strip this whole block out once we're done diagnosing.
-  mainWindow.webContents.on('before-input-event', (event, input) => {
-    if (input.type === 'keyDown' && input.key === 'F9') {
-      const gpuWin = new BrowserWindow({ width: 900, height: 700 });
-      gpuWin.loadURL('chrome://gpu');
-    }
-  });
 }
 
 let rescanTimer = null;
@@ -351,9 +322,7 @@ ipcMain.handle('get-mod-file', async (_e, modName, fileName) => {
 
 ipcMain.handle('set-mod-enabled', async (_e, modId, enabled) => {
   const ok = ModLoader?.setModEnabled ? ModLoader.setModEnabled(modId, enabled) : false;
-  // No live hot-injection/removal path for mod CSS/JS exists yet — reload
-  // is the simplest correct fix (confirmed equivalent to the manual ctrl+r
-  // workaround). Only reload on an actual successful toggle, not a no-op.
+
   if (ok && mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.reload();
   return ok;
 });
@@ -370,7 +339,6 @@ ipcMain.handle('read-tags', async (_e, filePath) => {
   return Library?.readTags ? Library.readTags(filePath) : null;
 });
 
-// --- Window controls ---
 ipcMain.handle('window:minimize', () => mainWindow?.minimize());
 ipcMain.handle('window:maximize', () => {
   if (!mainWindow) return;
@@ -387,7 +355,6 @@ ipcMain.handle('window:toggle-fullscreen', () => {
 });
 ipcMain.handle('window:is-fullscreen', () => mainWindow?.isFullScreen() ?? false);
 
-// --- Miniplayer ---
 ipcMain.handle('window:toggle-miniplayer', () => toggleMiniplayer());
 ipcMain.handle('window:is-miniplayer-open', () => !!(miniplayerWindow && !miniplayerWindow.isDestroyed()));
 
@@ -413,7 +380,6 @@ ipcMain.handle('miniplayer:resize-for-queue', (_e, open) => {
   return true;
 });
 
-// --- Player ---
 ipcMain.handle('player:play', async (_e, trackId) => AudioEngine?.play?.(trackId));
 ipcMain.handle('player:pause', async () => AudioEngine?.pause?.());
 ipcMain.handle('player:seek', async (_e, seconds) => AudioEngine?.seek?.(seconds));
@@ -421,7 +387,6 @@ ipcMain.handle('player:set-volume', async (_e, value) => AudioEngine?.setVolume?
 ipcMain.handle('player:get-state', async () => AudioEngine?.getState?.() ?? null);
 ipcMain.handle('player:get-current-track', async () => AudioEngine?.getCurrentTrack?.() ?? null);
 
-// --- Queue ---
 ipcMain.handle('queue:get', async () => QueueManager?.getQueue?.() ?? []);
 ipcMain.handle('queue:add', async (_e, track) => QueueManager?.add?.(track));
 ipcMain.handle('queue:remove', async (_e, index) => QueueManager?.remove?.(index));
@@ -433,7 +398,6 @@ ipcMain.handle('queue:move', async (_e, fromIndex, toIndex) => QueueManager?.mov
 ipcMain.handle('queue:shuffle', async (_e, enabled) => QueueManager?.shuffle?.(enabled));
 ipcMain.handle('queue:set-repeat-mode', async (_e, mode) => QueueManager?.setRepeatMode?.(mode));
 
-// --- Library ---
 ipcMain.handle('library:get-tracks', async () => Library?.getTracks?.() ?? []);
 ipcMain.handle('library:get-playlists', async () => Library?.getPlaylists?.() ?? []);
 ipcMain.handle('library:scan-folder', async (_e, folderPath) => Library?.scanFolder?.(folderPath));
@@ -458,22 +422,17 @@ ipcMain.handle('library:delete-playlist', async (_e, id) => Library?.deletePlayl
 ipcMain.handle('library:add-track', async (_e, id, filePath) => Library?.addTrackToPlaylist?.(id, filePath) ?? null);
 ipcMain.handle('library:remove-track', async (_e, id, filePath) => Library?.removeTrackFromPlaylist?.(id, filePath) ?? null);
 ipcMain.handle('library:reorder-tracks', async (_e, id, fromIndex, toIndex) => Library?.reorderPlaylistTracks?.(id, fromIndex, toIndex) ?? null);
-// NEW CHANNEL — bulk-adds individual files straight to the library (not
-// folder-aware, see Library.addFiles doc comment). Backs the "Add from
-// Computer" option in the Add Tracks modal.
+
 ipcMain.handle('library:add-files', async (_e, filePaths) => Library?.addFiles?.(filePaths) ?? []);
 
-// --- Art ---
 ipcMain.handle('art:extract', async (_e, filePath) => ArtProvider?.extract?.(filePath) ?? null);
 ipcMain.handle('art:fetch-online', async (_e, trackMeta) => ArtProvider?.fetchOnline?.(trackMeta) ?? null);
 
-// --- Lyrics ---
 ipcMain.handle('lyrics:get', async (_e, trackMeta) => Lyrics?.get?.(trackMeta) ?? null);
 ipcMain.handle('lyrics:save-manual', async (_e, trackMeta, payload) => Lyrics?.saveManual?.(trackMeta, payload) ?? null);
 ipcMain.handle('lyrics:clear-manual', async (_e, trackMeta) => Lyrics?.clearManual?.(trackMeta) ?? null);
 ipcMain.handle('lyrics:romanize-lines', async (_e, lines) => Lyrics?.romanizeLines?.(lines) ?? null);
 
-// --- Scrobbling ---
 ipcMain.handle('scrobble:get-settings', async () => Scrobbler?.getSettings?.() ?? null);
 ipcMain.handle('scrobble:set-credentials', async (_e, creds) => Scrobbler?.setCredentials?.(creds));
 ipcMain.handle('scrobble:get-auth-url', async () => Scrobbler?.getAuthUrl?.() ?? null);
@@ -492,7 +451,6 @@ ipcMain.handle('scrobble:now-playing', async (_e, track) => Scrobbler?.updateNow
 ipcMain.handle('scrobble:scrobble', async (_e, track, timestamp) => Scrobbler?.scrobble?.(track, timestamp) ?? null);
 ipcMain.handle('scrobble:get-lifetime-stats', async () => Scrobbler?.getLifetimeLastfmStats?.() ?? null);
 
-// --- Game-reactive volume ducking (Windows only) ---
 ipcMain.handle('game-duck:get-settings', async () => GameDuck?.getSettings?.() ?? { available: false });
 ipcMain.handle('game-duck:set-enabled', async (_e, value) => GameDuck?.setEnabled?.(value) ?? null);
 ipcMain.handle('game-duck:set-sensitivity', async (_e, value) => GameDuck?.setSensitivity?.(value) ?? null);
@@ -501,12 +459,10 @@ ipcMain.handle('game-duck:set-max-duck', async (_e, value) => GameDuck?.setMaxDu
 ipcMain.handle('game-duck:set-manual-override', async (_e, value) => GameDuck?.setManualOverride?.(value) ?? null);
 ipcMain.handle('game-duck:set-track-loudness', async (_e, lufs) => GameDuck?.setTrackLoudness?.(lufs) ?? null);
 
-// --- Stats ---
 ipcMain.handle('stats:get-session', async () => Stats?.getSessionStats?.() ?? null);
 ipcMain.handle('stats:get-lifetime', async () => Stats?.getLifetimeStats?.() ?? null);
 ipcMain.handle('stats:record-play', async (_e, track) => Stats?.recordPlay?.(track) ?? null);
 
-// --- Theme ---
 const themeStorePath = () => path.join(app.getPath('userData'), 'theme.json');
 
 ipcMain.handle('theme:set-var', async (_e, name, value) => {
@@ -525,7 +481,6 @@ ipcMain.handle('theme:get-accent', async () => {
   return store['--accent'] ?? null;
 });
 
-// --- UI (mod-driven injection; DOM work happens in renderer) ---
 ipcMain.handle('ui:inject-css', async (_e, css) => {
   emitToRenderer('inject-css', css);
   return true;
@@ -540,7 +495,6 @@ ipcMain.handle('ui:remove-element', async (_e, elementId) => {
 });
 ipcMain.handle('ui:get-view', async () => AudioEngine ? null : null);
 
-// --- System ---
 ipcMain.handle('system:open-external', async (_e, url) => {
   if (typeof url === 'string' && /^https?:\/\//i.test(url)) {
     shell.openExternal(url);

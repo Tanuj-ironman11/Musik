@@ -1,6 +1,5 @@
-/* component/player-bar.css — extracted from: layouts.css, playback.css */
 
-/* Player bar */
+
 #now-playing-bar {
   position: fixed;
   bottom: 16px;
@@ -22,25 +21,9 @@
   overflow: hidden;
   contain: paint;
   opacity: 1;
-  /* .pb-progress-row got its own compositor layer (see that rule) to stop
-     its every-tick text/gradient updates from touching this element's
-     backdrop-filter. That isolated the noisy child, but left this blur
-     itself un-promoted — Chromium doesn't reliably cache a backdrop-filter
-     result across frames unless the filtered element is its own stable
-     layer, so partial re-tiling could still slip through as the same
-     flickering diagonal seam. Promoting the actual blurred element closes
-     that gap. Harmless alongside the existing transform transition below
-     (fullscreen slide) — this just makes the layer persistent instead of
-     created/destroyed on demand. */
+
   will-change: transform;
-  /* box-shadow deliberately NOT in this transition list. It was only here
-     for the hover glow-intensify, but this shadow also references
-     --color-accent-glow, which accent-extractor updates on every track
-     skip — CSS transitions any change to a listed property regardless of
-     cause, so each skip was triggering a real ~0.4s animated ramp of the
-     shadow directly on this backdrop-filtered element: a slower-paced but
-     still real repaint storm on the blur. Trade-off: hover's glow now
-     snaps instead of smoothly growing. */
+
   transition:
     transform 0.4s var(--ease-spring),
     border-color 0.4s var(--ease-out),
@@ -49,10 +32,6 @@
     opacity 0.26s var(--ease-out);
 }
 
-/* Fullscreen Now Playing is up — player bar slides down out of view.
-   Slightly longer delay than the sidebar so the exit reads as a
-   sequence (titlebar → sidebar → player bar) rather than everything
-   vanishing in one flat cut. */
 body.npf-open #now-playing-bar {
   transform: translateY(calc(100% + 32px));
   opacity: 0;
@@ -86,13 +65,6 @@ body[data-active-view="now-playing"] #now-playing-bar {
   pointer-events: none;
 }
 
-/* ─── 3. Cards & Covers ─── */
-/* Corner ring used to be two separately-rasterized rounded rects: this
-   box-shadow plus a same-radius ::after with its own inset shadow. At
-   fractional (150%) Windows scaling the two independently anti-aliased
-   corners could round to slightly different sub-pixel positions, showing
-   up as a bright seam at whichever corner drifted worst. One combined
-   box-shadow list fixes it — same visual ring, single rasterization pass. */
 .pb-art-wrap {
   position: relative;
   width: 52px;
@@ -100,12 +72,7 @@ body[data-active-view="now-playing"] #now-playing-bar {
   border-radius: var(--radius-md);
   overflow: hidden;
   flex-shrink: 0;
-  /* setArt() in player-bar.js does a full innerHTML replace here on every
-     track skip — a much bigger paint event than .pb-progress-row's text/
-     gradient ticks. That was enough to reach #now-playing-bar's blur even
-     with the parent promoted to its own layer (see will-change: transform
-     above): promoting the parent doesn't contain a child's own repaint.
-     Same fix as the progress row — give this its own layer too. */
+
   transform: translateZ(0);
   will-change: contents;
   background: var(--color-bg-surface);
@@ -176,7 +143,6 @@ body[data-active-view="now-playing"] #now-playing-bar {
 
 .pb-artist:hover { color: var(--color-text); cursor: pointer; }
 
-/* ── Left: track info ── */
 .pb-track-info {
   display: flex;
   align-items: center;
@@ -192,7 +158,6 @@ body[data-active-view="now-playing"] #now-playing-bar {
   gap: 2px;
 }
 
-/* ── Center: transport controls + progress ── */
 .pb-center {
   display: flex;
   flex-direction: column;
@@ -238,20 +203,12 @@ body[data-active-view="now-playing"] #now-playing-bar {
   -webkit-backdrop-filter: blur(6px);
 }
 
-/* Had hover but nothing acknowledged an actual click — prev/next/shuffle/
-   repeat all felt unresponsive compared to the play button next to them.
-   0.88 was too subtle to register as a "press" on a rapid click; 0.8 plus
-   a tighter glow ring gives it an actual thud, closer in weight to what
-   pb-btn-play already does. */
 .pb-btn:active {
   transform: scale(0.8);
   background: var(--color-accent-subtle);
   box-shadow: 0 0 0 3px var(--color-accent-subtle);
 }
 
-/* Toggle-style pb-btns (shuffle/repeat) use aria-pressed rather than a
-   separate class — give the active state a visible accent so it's clear
-   the toggle is actually on, not just hovered. */
 .pb-btn[aria-pressed="true"] {
   color: var(--color-accent);
   background: var(--color-accent-subtle);
@@ -275,11 +232,6 @@ body[data-active-view="now-playing"] #now-playing-bar {
   transition: transform 0.22s var(--ease-spring), background var(--anim-fast, 0.15s) var(--anim-ease, ease), box-shadow 0.2s var(--anim-ease, ease);
 }
 
-/* Both icons are always in the DOM now, stacked on top of each other,
-   positioned absolutely so they share the same center. .is-playing
-   (toggled in player-bar.js) cross-fades between them with a slight
-   rotation on each — reads as one icon morphing into the other rather
-   than a hard cut between two separate glyphs. */
 .pb-btn-play svg {
   position: absolute;
   width: 16px;
@@ -316,12 +268,6 @@ body[data-active-view="now-playing"] #now-playing-bar {
     0 4px 14px rgba(0, 0, 0, 0.25);
 }
 
-/* Old version scaled to 0.94 — barely registered as a press. This is an
-   actual compression: button drops further (0.8) than the icon inside it
-   (0.7), then the spring easing above overshoots slightly on release
-   rather than just snapping back, which is what makes a press feel like
-   it "landed" instead of just toggling a size. Active-state icon scale
-   is layered on top of whichever transform .is-playing already set. */
 .pb-btn-play:active {
   transform: scale(0.8);
   box-shadow:
@@ -333,8 +279,6 @@ body[data-active-view="now-playing"] #now-playing-bar {
 
 .pb-btn-play.is-playing:active .pb-icon-pause { transform: scale(0.7) rotate(0deg); }
 
-/* Click ripple — spawned/removed by player-bar.js on click. Clipped to
-   the button's circular bounds via overflow:hidden on .pb-btn/.pb-btn-play. */
 .pb-ripple {
   position: absolute;
   border-radius: 50%;
@@ -343,9 +287,6 @@ body[data-active-view="now-playing"] #now-playing-bar {
   will-change: transform, opacity;
 }
 
-/* .pb-btn-play's currentColor is --color-bg (dark icon on a light circle) —
-   a ripple in that color would barely show. Accent reads clearly against
-   the button's light fill instead. */
 .pb-btn-play .pb-ripple {
   background: var(--color-accent);
 }
@@ -372,16 +313,7 @@ body[data-active-view="now-playing"] #now-playing-bar {
   gap: 10px;
   width: 100%;
   max-width: 520px;
-  /* Promotes this row to its own compositor layer. The seek bar's
-     --progress custom property and the time labels' text both
-     rewrite dozens of times a second during playback; without this,
-     those repaints were forcing #now-playing-bar's backdrop-filter to
-     recompute every tick, which showed up as a flickering diagonal
-     compositing seam across the art next door. Isolating the layer
-     here means those updates stay local instead of touching the
-     blur. (Tried moving the blur itself onto a separate pseudo-
-     element instead — made the glass render flat/grey and didn't fix
-     the seam, so reverted that; this is the other direction.) */
+
   transform: translateZ(0);
   will-change: contents;
 }
@@ -396,15 +328,6 @@ body[data-active-view="now-playing"] #now-playing-bar {
   font-variant-numeric: tabular-nums;
 }
 
-/* --progress drives the seek bar's fill gradient. Plain custom properties
-   don't animate — that's *why* JS has been forced to push a new value
-   many times a second just to fake smooth motion, and that churn is what's
-   been reaching #now-playing-bar's blur. Registering the real type makes
-   it animatable, so the fill can tween on its own between sparse JS
-   updates (once a second, matching the time counter) instead of JS
-   simulating smoothness by brute force. Global registration, not scoped
-   to a selector — ideally lives in tokens.css alongside the rest of the
-   token system; left here for now since that file isn't in front of me. */
 @property --progress {
   syntax: '<percentage>';
   inherits: true;
@@ -429,8 +352,6 @@ body[data-active-view="now-playing"] #now-playing-bar {
   transition: --progress 0.95s linear, height 0.15s var(--ease-out);
 }
 
-/* The bar itself thickens on hover/drag — the position indicator isn't a
-   shape sitting on top of the track, it's the track responding. */
 .pb-progress-row:hover .pb-progress,
 .pb-progress:focus-visible {
   height: 7px;
@@ -439,18 +360,10 @@ body[data-active-view="now-playing"] #now-playing-bar {
   height: 8px;
 }
 
-/* While the user is actually dragging, the fill must track the thumb
-   exactly — a 0.95s tween here would make it visibly lag behind the
-   cursor. Toggled by player-bar.js on mousedown/change. */
 .pb-progress.pb-seeking {
   transition: none;
 }
 
-/* Position indicator — a slim accent capsule, not a dot. Reads as the
-   fill's own leading edge lit up, not a separate shape dropped on the
-   bar. Squashed flat at rest (scaleY(0.3), invisible via opacity) and
-   pops upright on hover — same family color as the fill, just brighter,
-   so it blends instead of standing out as foreign. */
 .pb-progress::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
@@ -505,8 +418,6 @@ body[data-active-view="now-playing"] #now-playing-bar {
   transform: scaleY(1);
 }
 
-/* Dragging state — taller, brighter, stronger glow. .pb-seeking is set
-   by player-bar.js on mousedown; :active covers native press feedback. */
 .pb-progress:active::-webkit-slider-thumb,
 .pb-progress.pb-seeking::-webkit-slider-thumb {
   opacity: 1;
@@ -529,7 +440,6 @@ body[data-active-view="now-playing"] #now-playing-bar {
     0 0 0 3px color-mix(in srgb, var(--color-accent) 20%, transparent);
 }
 
-/* ── Right: queue toggle + volume ── */
 .pb-right {
   display: flex;
   align-items: center;
@@ -552,10 +462,6 @@ body[data-active-view="now-playing"] #now-playing-bar {
   flex-shrink: 0;
 }
 
-/* ── Volume slider — deliberately NOT glass. A thin hover-only thumb on
-   a flat line read as unfinished; this is a proper filled track with an
-   always-visible thumb, closer to the Windows volume flyout than the
-   seek bar's minimal hover treatment. ── */
 .pb-volume-slider {
   -webkit-appearance: none;
   appearance: none;
@@ -614,7 +520,6 @@ body[data-active-view="now-playing"] #now-playing-bar {
 .pb-volume-slider:hover::-moz-range-thumb,
 .pb-volume-slider:focus-visible::-moz-range-thumb { height: 16px; }
 
-/* Dragging state — taller and brighter, same language as the seek bar. */
 .pb-volume-slider:active::-webkit-slider-thumb {
   height: 20px;
   background: color-mix(in srgb, var(--color-accent) 80%, white);
@@ -647,29 +552,15 @@ body[data-active-view="now-playing"] #now-playing-bar {
   box-shadow: none;
 }
 
-/* Queue toggle: previously shared pb-btn's generic hover/active with no
-   animation of its own — prev/next got the carousel kick, play got the
-   morph, this got nothing, then got a whole-icon pop which read too much
-   like a generic bounce. This version treats the three bars as a queue
-   themselves: a wave passes through them left-to-right with a per-line
-   stagger and each bar compresses/snaps like an accordion, distinct from
-   the carousel's horizontal exit/re-enter and the play button's morph.
-   Keyframes (pb-queue-wave / pb-queue-arrow-nudge) live in animations.css. */
 #pb-queue-toggle svg {
   transition: color var(--anim-fast, 0.15s) var(--anim-ease, ease);
 }
 
-/* Panel-open state: same visual language as the existing aria-pressed
-   rule (shuffle/repeat), so "queue is open" reads the same way those do. */
 #pb-queue-toggle[aria-pressed="true"] {
   color: var(--color-accent);
   background: var(--color-accent-subtle);
 }
 
-/* Miniplayer toggle — same family as pb-queue-toggle (base .pb-btn hover/
-   active already covers most of it), aria-pressed reflects whether the
-   miniplayer window is currently open. Kick animation is pb-mini-kick,
-   defined in animations.css. */
 #pb-miniplayer-toggle[aria-pressed="true"] {
   color: var(--color-accent);
   background: var(--color-accent-subtle);
@@ -687,26 +578,6 @@ body[data-active-view="now-playing"] #now-playing-bar {
   letter-spacing: 0.3px;
 }
 
-
-/* ─── Miniplayer window ───
-   Reuses pb-art-wrap/pb-art/pb-title/pb-artist/pb-btn/pb-btn-play/
-   pb-controls/pb-progress-row as-is. Genuinely new pieces below: the
-   window's own background (this is a separate transparent BrowserWindow
-   with nothing behind it worth blurring, so a real semi-opaque fill +
-   border stands in for backdrop-filter here rather than depending on
-   .glass-surface, which assumes being layered over other app content),
-   the art-sizing frame, and the inline queue popup. #pb-queue-toggle
-   keeps its real id so it inherits the existing wave-kick animation
-   above instead of needing a duplicate. */
-
-/* Window itself has square corners by default (transparent BrowserWindow) —
-   #mp-root being rounded isn't enough, the frame behind it shows through
-   the corner gaps. Round + clip at the html/body level too.
-   Plain selector, not :has() — a silent no-match here means the whole
-   rounding is skipped with no visible error. Also zero out the browser's
-   default 8px body margin: left unset, that margin sits outside #mp-root's
-   own radius/overflow, inside html's box, showing as an unclipped square
-   sliver at each corner regardless of the radius below. */
 html,
 body[data-window="miniplayer"] {
   margin: 0;
@@ -745,10 +616,6 @@ body[data-window="miniplayer"] {
   -webkit-app-region: no-drag;
 }
 
-/* Art sizes off whichever axis is tighter — bounded by max-height AND
-   max-width at once, so widening the window without adding height can't
-   balloon it, and it never grows past what's actually left over after
-   text/controls/progress take their space. */
 .mp-art-frame {
   flex: 1 1 auto;
   min-height: 0;
@@ -764,12 +631,6 @@ body[data-window="miniplayer"] {
   aspect-ratio: 1 / 1;
 }
 
-/* Was object-fit: contain so no part of the cover got cropped, but any
-   non-square art then left a letterboxed gap around the image — small
-   enough to be invisible at the player bar's 52px size, but as the
-   miniplayer's art frame grows that gap widens into a visible gray
-   boundary between the image and the wrap's rounded edge. Filling the
-   frame removes the gap entirely; corners stay clean at every size. */
 #mp-root .pb-art {
   object-fit: cover;
 }
@@ -778,9 +639,6 @@ body[data-window="miniplayer"] {
   background: transparent;
 }
 
-/* The wrap's corner ring (box-shadow) is sized for the tiny 52px
-   player-bar art. At miniplayer scale it read as a stray gray border
-   sitting outside the image's rounded corners — drop it here. */
 #mp-root .pb-art-wrap {
   box-shadow: none;
 }
@@ -901,10 +759,6 @@ body[data-window="miniplayer"] {
   color: var(--color-danger);
 }
 
-/* Drag handle — replaces the old up/down arrow buttons. Grab cursor signals
-   draggability; the li itself carries `draggable`, but dragstart bails out
-   unless it originated on this handle (see miniplayer-ui.js), so clicking
-   the label/remove button never accidentally starts a drag. */
 .mp-queue-item-handle {
   width: 18px;
   height: 18px;
@@ -937,8 +791,6 @@ body[data-window="miniplayer"] {
   opacity: 0.4;
 }
 
-/* Drop position indicator — a thin accent line on whichever edge of the
-   hovered row the dragged item would land on. */
 .mp-queue-item--drop-before {
   box-shadow: inset 0 2px 0 var(--color-accent);
 }
@@ -953,8 +805,6 @@ body[data-window="miniplayer"] {
   border-color: var(--glass-border-color);
 }
 
-/* Currently-playing track — set via .mp-queue-item--active in
-   miniplayer-ui.js's renderQueue(), matched against currentFilePath. */
 .mp-queue-item--active {
   background: var(--color-accent-subtle);
   border-color: var(--color-accent);
@@ -968,14 +818,10 @@ body[data-window="miniplayer"] {
   cursor: default;
 }
 
-/* Height threshold: below this, art gets cut entirely so controls
-   always keep their room, no matter how short the window gets. */
 #mp-root.mp-no-art .mp-art-frame {
   display: none;
 }
 
-/* Width threshold: below this, title/artist drop since there's no
-   room for text next to the controls without wrapping/clipping badly. */
 #mp-root.mp-no-text .pb-text {
   display: none;
 }

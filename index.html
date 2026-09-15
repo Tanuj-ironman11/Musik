@@ -143,6 +143,7 @@
   <script type="module" src="src/ui/three-loader.js"></script>
   <script src="src/ui/fullscreen.js" defer></script>
   <script src="src/ui/visualizer.js" defer></script>
+  <script src="src/ui/three-postfx.js" defer></script>
   <script src="src/ui/accent-extractor.js" defer></script>
   <script src="src/ui/player-bar.js" defer></script>
   <script src="src/ui/queue-panel.js" defer></script>
@@ -150,12 +151,12 @@
 
   <!-- Mod injection sanitization + runtime. DOMPurify MUST load first —
        defer preserves this ordering.
-       No integrity hash yet: computing one requires the actual vendored
-       file bytes, which haven't been uploaded this session. A fabricated
-       hash would silently block the script from loading at all (integrity
-       mismatches fail closed) — send the file and I'll generate the real
-       sha384 and add it here. -->
-  <script src="src/vendor/purify.min.js" defer></script>
+       Sourced from npm (dompurify@3.4.15) rather than a manually vendored
+       copy — same pattern as three.js below, and bundled into the shipped
+       app the same way (node_modules/**/* is already in electron-builder's
+       files array). Integrity hash generated from the actual installed
+       file bytes. -->
+  <script src="node_modules/dompurify/dist/purify.min.js" integrity="sha384-uUMu9JDY09vBzRf9SPcK2VgUj+W/70J6Soc+Dded5P474ElQ63iv9j5N3DE7Kp3N" defer></script>
   <script src="src/ui/mod-runtime.js" defer></script>
 
 </body>

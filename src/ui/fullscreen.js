@@ -546,8 +546,17 @@
   window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && isOpen) { close(); return; }
 
-    const tag = document.activeElement?.tagName;
-    const typing = tag === 'INPUT' || tag === 'TEXTAREA' || document.activeElement?.isContentEditable;
+    // Only actual text-entry input types count as "typing" — checkboxes,
+    // ranges, radios, etc. have no use for a letter key, so they shouldn't
+    // block the shortcut just because they happen to be focused (this is
+    // what let a focused Settings toggle eat the F press).
+    const active = document.activeElement;
+    const tag = active?.tagName;
+    const TEXT_ENTRY_TYPES = new Set(['text', 'password', 'number', 'search', 'email', 'tel', 'url']);
+    const typing =
+      tag === 'TEXTAREA' ||
+      active?.isContentEditable ||
+      (tag === 'INPUT' && TEXT_ENTRY_TYPES.has((active.type || 'text').toLowerCase()));
     if (!typing && e.key.toLowerCase() === 'f' && !e.ctrlKey && !e.metaKey && !e.altKey) {
       toggle();
     }
