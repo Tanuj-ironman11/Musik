@@ -267,6 +267,38 @@
   100% { opacity: 1; transform: scale(1) translateY(0); }
 }
 
+/* ─── Liquid glass system ───
+   Ambient drift for the elevated glass tier's specular highlight
+   (tokens.css .glass-surface--elevated::after, and any bespoke elevated
+   surface that opts in — shell.css's confirm/metadata modals). Was
+   defined inline in tokens.css and shell.css — moved here per this
+   file's own rule that all @keyframes live in one place. */
+
+@keyframes glass-sheen-drift {
+  0%, 100% { background-position: 0% 0%; }
+  50%      { background-position: 100% 100%; }
+}
+
+/* ─── Context menu entrance ───
+   context-menu.js appends a fresh element per right-click and removes
+   it on close — never a persistent element toggled by a class — so
+   this needs to be a self-playing animation, not a transition gated on
+   a state change. Trigger lives in shell.css (.context-menu, .ctx-menu). */
+
+@keyframes ctx-menu-in {
+  from { opacity: 0; transform: translateY(-4px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* ─── Metadata dossier: best-match stamp ───
+   One-shot glint on the gold stamp when a high-confidence match lands —
+   plays once, not looped (a badge that shimmers forever reads as stuck,
+   not as a reward). Trigger lives in shell.css (.dossier-stamp.gold::after). */
+
+@keyframes dossier-glint {
+  to { background-position: -50% 0; }
+}
+
 /* ─── Library: grid/list entrance + row removal ───
    Referenced by library.css (.home-playlists-row > *, .lib-track-list >
    .lib-track-row, .lib-playlist-header, .lib-track-row--removing) but

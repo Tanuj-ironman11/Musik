@@ -13,7 +13,7 @@
   border-bottom: 1px solid rgba(255, 255, 255, 0.03);
   display: flex;
   align-items: center;
-  z-index: 10000;
+  z-index: var(--z-titlebar);
   opacity: 1;
   transform: translateY(0);
   transition:
@@ -79,7 +79,7 @@ body.npf-open #titlebar {
   align-items: center;
   gap: clamp(6px, 0.8vw, 9px);
   height: 100%;
-  z-index: 10001;
+  z-index: var(--z-window-controls);
   -webkit-app-region: no-drag;
 }
 
@@ -177,7 +177,7 @@ body.layout-topbar #now-playing-bar {
   overflow-y: auto;
   overflow-x: hidden;
   box-sizing: border-box;
-  z-index: 10;
+  z-index: var(--z-content);
 
   max-width: 100%;
   min-height: 100%;
@@ -230,7 +230,7 @@ body.layout-topbar #now-playing-bar {
 
 /* Modals / dialogs */
 #confirm-modal-overlay {
-  position: fixed; inset: 0; z-index: 9999;
+  position: fixed; inset: 0; z-index: var(--z-modal-backdrop);
   display: none; align-items: center; justify-content: center;
   pointer-events: none;
 }
@@ -239,37 +239,91 @@ body.layout-topbar #now-playing-bar {
 
 .confirm-modal-backdrop { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.6); opacity: 0; }
 
+/* Rework: was a flat rgba(#161616) slab with a solid border and no
+   blur at all — the only modal in the app with zero glass treatment.
+   Brought up to the same elevated glass tier + noise grain used by
+   .metadata-modal below and .playlist-create-modal (shared.css), just
+   without the gradient-ring/bloom flourish that fits a bigger dialog
+   better than a small confirm box. */
 .confirm-modal-box {
   position: relative; z-index: 1;
+  overflow: hidden;
   width: min(380px, 90vw);
-  background: var(--color-bg-surface, #161616);
-  border: 1px solid var(--color-border, rgba(255, 255, 255, 0.08));
+  background: var(--glass-bg-elevated);
+  backdrop-filter: blur(var(--glass-blur-elevated)) saturate(var(--glass-saturate-elevated));
+  -webkit-backdrop-filter: blur(var(--glass-blur-elevated)) saturate(var(--glass-saturate-elevated));
+  border: 1px solid var(--glass-border-color);
   border-radius: 12px;
   padding: 24px;
+  box-shadow:
+    0 24px 56px -16px rgba(0, 0, 0, 0.65),
+    0 8px 20px -10px rgba(0, 0, 0, 0.45),
+    var(--glass-edge-highlight);
   opacity: 0;
   transform: translateY(8px) scale(0.98);
+  transition: opacity var(--anim-medium) var(--anim-ease), transform var(--anim-medium) var(--anim-spring);
+}
+
+.confirm-modal-box::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: var(--glass-noise);
+  mix-blend-mode: overlay;
+  opacity: 0.5;
+  pointer-events: none;
+  border-radius: inherit;
+}
+
+/* Same specular sheen every other elevated glass surface has now
+   (dropdown panel, .glass-surface--elevated) — this modal was the one
+   place still missing it. */
+.confirm-modal-box::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--glass-specular);
+  mix-blend-mode: soft-light;
+  opacity: 0.5;
+  pointer-events: none;
+  border-radius: inherit;
 }
 
 #confirm-modal-overlay.confirm-modal-open .confirm-modal-backdrop { opacity: 1; }
 
 #confirm-modal-overlay.confirm-modal-open .confirm-modal-box { opacity: 1; transform: translateY(0) scale(1); }
 
-.confirm-modal-title { font-weight: 700; font-size: 16px; color: var(--color-text); margin-bottom: 8px; }
+.confirm-modal-title { font-weight: 700; font-size: 16px; color: var(--color-text); margin-bottom: 8px; position: relative; z-index: 1; }
 
-.confirm-modal-message { font-size: 13px; line-height: 1.5; color: var(--color-text-secondary); margin-bottom: 18px; }
+.confirm-modal-message { font-size: 13px; line-height: 1.5; color: var(--color-text-secondary); margin-bottom: 18px; position: relative; z-index: 1; }
 
-.confirm-modal-options { display: flex; flex-direction: column; gap: 8px; }
+.confirm-modal-options { display: flex; flex-direction: column; gap: 8px; position: relative; z-index: 1; }
 
 .context-menu, .ctx-menu {
   position: fixed;
+  overflow: hidden;
   background: rgba(22, 22, 22, 0.94);
-  backdrop-filter: blur(12px) saturate(1.5);
+  backdrop-filter: blur(12px) saturate(var(--glass-saturate-standard));
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: var(--radius-md);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
-  z-index: 10000;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6), var(--glass-edge-highlight);
+  z-index: var(--z-context-menu);
   min-width: 170px;
   padding: 6px 4px;
+}
+
+/* This was the one menu/panel in the app with zero grain — small and
+   quick to appear, but still visibly flatter than every other glass
+   surface once you'd seen the rest get the noise treatment. */
+.context-menu::before, .ctx-menu::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: var(--glass-noise);
+  mix-blend-mode: overlay;
+  opacity: 0.4;
+  pointer-events: none;
+  border-radius: inherit;
 }
 
 .ctx-separator { height: 1px; background: rgba(255,255,255,0.05); margin: 3px 4px; }
@@ -280,21 +334,61 @@ body.layout-topbar #now-playing-bar {
   inset: 0;
   background: rgba(0,0,0,0.65);
   backdrop-filter: blur(10px);
-  z-index: 99999;
+  z-index: var(--z-modal-elevated);
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
+/* Rework: same flat-slab problem as .confirm-modal-box above, just with
+   a backdrop-filter already present — still no noise grain, so up close
+   it read as a plain dark panel rather than glass. Added the same
+   feTurbulence layer every other glass surface in the app uses. No
+   gradient-ring border here — this modal is data-dense (tables, field
+   grids), and the extra sheen fought for attention against the content. */
 .metadata-modal, .meta-fix-content {
-  background: rgba(14,14,14,0.98);
-  backdrop-filter: blur(32px);
-  border: 1px solid rgba(255,255,255,0.08);
-  box-shadow: 0 32px 80px rgba(0,0,0,0.8);
+  position: relative;
+  background: var(--glass-bg-elevated);
+  backdrop-filter: blur(var(--glass-blur-elevated, 32px)) saturate(var(--glass-saturate-elevated));
+  -webkit-backdrop-filter: blur(var(--glass-blur-elevated, 32px)) saturate(var(--glass-saturate-elevated));
+  border: 1px solid var(--glass-border-color);
+  box-shadow:
+    0 32px 80px -20px rgba(0, 0, 0, 0.8),
+    0 8px 24px -12px rgba(0, 0, 0, 0.5),
+    var(--glass-edge-highlight);
   max-height: 85vh;
   overflow: hidden;
   display: flex;
   flex-direction: column;
+}
+
+.metadata-modal::before, .meta-fix-content::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: var(--glass-noise);
+  mix-blend-mode: overlay;
+  opacity: 0.5;
+  pointer-events: none;
+  border-radius: inherit;
+  z-index: 0;
+}
+
+.metadata-modal::after, .meta-fix-content::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--glass-specular);
+  mix-blend-mode: soft-light;
+  opacity: 0.35;
+  pointer-events: none;
+  border-radius: inherit;
+  z-index: 0;
+}
+
+.metadata-modal > *, .meta-fix-content > * {
+  position: relative;
+  z-index: 1;
 }
 
 .metadata-modal { width: 520px; max-width: 92vw; border-radius: var(--radius-lg); }

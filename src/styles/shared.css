@@ -88,7 +88,7 @@
   background: rgba(0, 0, 0, 0.55);
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
-  z-index: 300;
+  z-index: var(--z-modal-backdrop);
   animation: playlist-create-overlay-in 0.16s var(--ease-out, ease) both;
 }
 
@@ -138,6 +138,14 @@
    stacking extra pseudo-elements. Noise uses feTurbulence per the
    UI-direction spec (20% Acrylic), blended with overlay so it reads
    as grain, not a visible texture. */
+/* Third layer here is the same --glass-specular highlight the rest of
+   the glass system uses (tokens.css .glass-surface--elevated). Kept
+   static rather than the drifting version elevated surfaces get — this
+   element's background is already a 3-layer stack (bloom + noise +
+   specular), and animating background-position only on one of those
+   layers needs its own dedicated multi-value keyframe matched to this
+   exact layer count. Not worth the fragility for one modal; static
+   still reads noticeably richer than before. */
 .playlist-create-modal::after {
   content: "";
   position: absolute;
@@ -146,9 +154,10 @@
   pointer-events: none;
   background-image:
     radial-gradient(120% 90% at 88% -12%, rgba(var(--color-accent-rgb), 0.18), transparent 60%),
-    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='1' stitchTiles='stitch'/></filter><rect width='100%25' height='100%25' filter='url(%23n)' opacity='0.045'/></svg>");
-  background-size: cover, 160px 160px;
-  background-blend-mode: normal, soft-light;
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='1' stitchTiles='stitch'/></filter><rect width='100%25' height='100%25' filter='url(%23n)' opacity='0.045'/></svg>"),
+    var(--glass-specular);
+  background-size: cover, 160px 160px, cover;
+  background-blend-mode: normal, soft-light, soft-light;
 }
 
 .playlist-create-header,

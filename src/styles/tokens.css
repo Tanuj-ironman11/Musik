@@ -5,29 +5,29 @@
 @import "../../node_modules/@fontsource/nunito/700.css";
 
 :root {
-  --sidebar-width-collapsed: calc(var(--sidebar-width) * 1.15);
+  /* Layout shadows */
   --sidebar-shadow: 0 16px 40px rgba(0, 0, 0, 0.4), inset 0 1px 1px rgba(255, 255, 255, 0.05);
-  --player-shadow: 0 20px 48px rgba(0, 0, 0, 0.65), inset 0 1px 1px rgba(255, 255, 255, 0.06);
-  --card-shadow: 0 8px 24px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(255, 255, 255, 0.04);
-}
+  --player-shadow:  0 20px 48px rgba(0, 0, 0, 0.65), inset 0 1px 1px rgba(255, 255, 255, 0.06);
+  --card-shadow:    0 8px 24px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(255, 255, 255, 0.04);
 
-body[data-active-view="now-playing"] #main {
-  bottom: 0 !important;
-  height: 100vh !important;
-  padding: 0 !important;
-  display: flex !important;
-  flex-direction: column !important;
-  align-items: center !important;
-  justify-content: center !important;
-}
-
-:root {
+  --sidebar-width-collapsed: calc(var(--sidebar-width) * 1.15);
   --topbar-height: 56px;
-}
 
-.metadata-modal-body, .meta-fix-body { flex: 1; overflow-y: auto; padding: 20px 24px; }
+  /* Z-index scale. Real numbers kept close to what was already shipping
+     (other CSS files not in this pass may still reference the old raw
+     numbers), so this doesn't renumber the whole app — it just names
+     the tiers and fixes one real bug: .context-menu/.ctx-menu used to
+     share 10000 with #titlebar, meaning a context menu could render
+     behind the titlebar depending on paint order. Bumped above it. */
+  --z-content:          10;
+  --z-dropdown:         30;
+  --z-dropdown-portal:  3000;
+  --z-modal-backdrop:   9999;
+  --z-titlebar:         10000;
+  --z-context-menu:     10050;
+  --z-window-controls:  10101;
+  --z-modal-elevated:   99999;
 
-:root {
   --color-bg:             #080808;
   --color-bg-elevated:    #0e0e0e;
   --color-bg-surface:     #141414;
@@ -38,7 +38,7 @@ body[data-active-view="now-playing"] #main {
   --color-border-strong:  rgba(255, 255, 255, 0.10);
   --color-text:           #f0f0f0;
   --color-text-secondary: #888888;
-  --color-text-dim:       #444444;
+  --color-text-dim:       #666666;
   --color-danger:         #e05555;
   --color-danger-rgb:     224, 85, 85;
 
@@ -105,13 +105,48 @@ body[data-active-view="now-playing"] #main {
   --glass-bg-standard:   rgba(18, 18, 18, 0.48);
   --glass-bg-elevated:   rgba(12, 12, 12, 0.6);
 
-  --glass-edge-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  /* Was a single flat top highlight. Added a thin all-around inner ring
+     alongside it — that second layer is what reads as "light bending at
+     a glass edge" rather than just "a bright top border". Every glass
+     surface already pulling this token gets it automatically. */
+  --glass-edge-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.10), inset 0 0 0 1px rgba(255, 255, 255, 0.035);
   --glass-border-color:   rgba(255, 255, 255, 0.09);
+
+  /* Tiered saturation — subtle surfaces stay closer to the old flat 1.5,
+     elevated surfaces (modals, dropdowns) push more vivid for a wetter,
+     more "liquid" look where it's most noticeable. --glass-saturate
+     itself is untouched on purpose: other CSS files outside this pass
+     still read it directly and shouldn't shift underneath them. */
+  --glass-saturate-subtle:   1.3;
+  --glass-saturate-standard: 1.55;
+  --glass-saturate-elevated: 1.85;
 
   --glass-noise: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='matrix' values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.05 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 
   --glass-radius: var(--radius-lg);
+
+  /* Liquid-glass specular layer: a soft diagonal highlight that sits on
+     top of the noise grain, like light catching a curved glass edge.
+     Static on subtle/standard surfaces; the elevated tier additionally
+     drifts very slowly (see .glass-surface--elevated::after below) for
+     a touch of ambient motion without turning into a moving shine. */
+  --glass-specular: linear-gradient(135deg,
+    rgba(255, 255, 255, 0.10) 0%,
+    rgba(255, 255, 255, 0.03) 22%,
+    rgba(255, 255, 255, 0) 45%);
 }
+
+body[data-active-view="now-playing"] #main {
+  bottom: 0 !important;
+  height: 100vh !important;
+  padding: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+.metadata-modal-body, .meta-fix-body { flex: 1; overflow-y: auto; padding: 20px 24px; }
 
 *, *::before, *::after {
   box-sizing: border-box;
@@ -158,6 +193,18 @@ body::after {
   pointer-events: none;
 }
 
+/* Respect the OS-level "reduce motion" setting: kills the ambient glass
+   drift, spring bounces, and transition sweeps app-wide for anyone who's
+   asked for that, without changing default behavior for everyone else. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 a { color: inherit; text-decoration: none; }
 
 ul, ol { list-style: none; }
@@ -195,20 +242,20 @@ img { display: block; max-width: 100%; }
 
 .glass-surface {
   background: var(--glass-bg-standard);
-  backdrop-filter: blur(var(--glass-blur-standard)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur-standard)) saturate(var(--glass-saturate));
+  backdrop-filter: blur(var(--glass-blur-standard)) saturate(var(--glass-saturate-standard));
+  -webkit-backdrop-filter: blur(var(--glass-blur-standard)) saturate(var(--glass-saturate-standard));
 }
 
 .glass-surface--subtle {
   background: var(--glass-bg-subtle);
-  backdrop-filter: blur(var(--glass-blur-subtle)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur-subtle)) saturate(var(--glass-saturate));
+  backdrop-filter: blur(var(--glass-blur-subtle)) saturate(var(--glass-saturate-subtle));
+  -webkit-backdrop-filter: blur(var(--glass-blur-subtle)) saturate(var(--glass-saturate-subtle));
 }
 
 .glass-surface--elevated {
   background: var(--glass-bg-elevated);
-  backdrop-filter: blur(var(--glass-blur-elevated)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur-elevated)) saturate(var(--glass-saturate));
+  backdrop-filter: blur(var(--glass-blur-elevated)) saturate(var(--glass-saturate-elevated));
+  -webkit-backdrop-filter: blur(var(--glass-blur-elevated)) saturate(var(--glass-saturate-elevated));
   box-shadow: var(--glass-edge-highlight), var(--shadow-elevated);
 }
 
@@ -223,6 +270,36 @@ img { display: block; max-width: 100%; }
   opacity: 0.5;
   pointer-events: none;
   border-radius: inherit;
+}
+
+.glass-surface::after,
+.glass-surface--subtle::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--glass-specular);
+  mix-blend-mode: soft-light;
+  opacity: 0.5;
+  pointer-events: none;
+  border-radius: inherit;
+}
+
+/* Elevated tier gets the same specular highlight, but drifting slowly —
+   the closest a flat backdrop-filter blur can get to "liquid" glass
+   without a moving shimmer sweep. Paused entirely under reduced-motion
+   above. */
+.glass-surface--elevated::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--glass-specular);
+  background-size: 220% 220%;
+  background-position: 0% 0%;
+  mix-blend-mode: soft-light;
+  opacity: 0.6;
+  pointer-events: none;
+  border-radius: inherit;
+  animation: glass-sheen-drift 12s ease-in-out infinite;
 }
 
 /* component/primitives.css */
@@ -294,6 +371,8 @@ input[type="range"] {
 .eq-bar--3 { animation: q-eq-bounce 0.9s ease-in-out infinite 0.3s; height: 65%; }
 
 .btn {
+  position: relative;
+  overflow: hidden;
   transition: color 0.15s ease, background 0.15s ease, border-color 0.15s ease, transform 0.12s var(--ease-out), box-shadow 0.15s ease;
 }
 
@@ -309,15 +388,46 @@ input[type="range"] {
   background: var(--color-accent-subtle);
 }
 
+/* Press bloom — a glow that blooms from center and fades on release.
+   No JS/keyframes needed, just a transition on a pseudo-element
+   triggered by :active — the honest ceiling for a ripple in plain CSS
+   (a real position-tracking ripple needs the click coordinates from
+   JS). Side effect to be aware of: adding overflow:hidden to .btn will
+   clip any child that intentionally overflows the button bounds (e.g.
+   a badge or tooltip anchored to a button) — worth a quick check if
+   any button in the app relies on that. */
+.btn::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(circle at center, var(--color-accent-glow-strong) 0%, transparent 70%);
+  opacity: 0;
+  transform: scale(0.6);
+  pointer-events: none;
+  transition: opacity var(--anim-fast) var(--anim-ease), transform var(--anim-fast) var(--anim-ease);
+}
+
+.btn:active::after {
+  opacity: 0.6;
+  transform: scale(1);
+}
+
 .custom-switch .switch-slider {
   background-color: rgba(255, 255, 255, 0.12);
   border: 1px solid rgba(255, 255, 255, 0.05);
   border-radius: var(--radius-pill, 99px);
-  transition: background-color var(--anim-fast) var(--anim-ease), border-color var(--anim-fast) var(--anim-ease);
+  transition: background-color var(--anim-fast) var(--anim-ease), border-color var(--anim-fast) var(--anim-ease), box-shadow var(--anim-fast) var(--anim-ease);
+}
+
+.custom-switch:hover .switch-slider {
+  background-color: rgba(255, 255, 255, 0.18);
 }
 
 .custom-switch .switch-slider::before {
   background-color: var(--color-text, #ffffff);
+  background-image: radial-gradient(circle at 32% 28%, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0.2) 45%, rgba(255, 255, 255, 0) 72%);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
   transition: transform var(--anim-fast) var(--anim-spring);
 }
 
@@ -327,9 +437,22 @@ input[type="range"] {
   box-shadow: 0 0 10px var(--color-accent-glow);
 }
 
+.custom-switch:hover input:checked + .switch-slider {
+  box-shadow: 0 0 14px var(--color-accent-glow-strong);
+}
+
 .custom-switch input:checked + .switch-slider::before {
   transform: translateX(18px);
   background-color: #060608;
+}
+
+/* Forwards the focus ring onto the visible slider — if the checkbox
+   itself is visually hidden (standard pattern for this component), the
+   global :focus-visible rule above lands on an invisible element and
+   keyboard focus disappears on toggles otherwise. */
+.custom-switch input:focus-visible + .switch-slider {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
 }
 
 .custom-select {
@@ -347,16 +470,14 @@ input[type="range"] {
   position: relative;
   overflow: hidden;
   background: var(--glass-bg-subtle);
-  backdrop-filter: blur(var(--glass-blur-subtle)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur-subtle)) saturate(var(--glass-saturate));
+  backdrop-filter: blur(var(--glass-blur-subtle)) saturate(var(--glass-saturate-subtle));
+  -webkit-backdrop-filter: blur(var(--glass-blur-subtle)) saturate(var(--glass-saturate-subtle));
   border: 1px solid var(--glass-border-color);
   border-radius: var(--radius-md, 8px);
   color: var(--color-text, #f2f2f2);
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
-  /* Ambient lift at rest, not just on hover — a resting flat trigger next
-     to a floating glass panel read as mismatched depth. */
   box-shadow: var(--glass-edge-highlight), 0 2px 10px -4px rgba(0, 0, 0, 0.5);
   transition: background var(--anim-fast) var(--anim-ease),
               border-color var(--anim-fast) var(--anim-ease),
@@ -364,15 +485,23 @@ input[type="range"] {
               transform var(--anim-fast) var(--anim-spring);
 }
 
-/* Same acrylic noise grain as the rest of the glass system — the trigger
-   had none before, which is a big part of why it read as a plain flat
-   button rather than glass. */
 .custom-select-trigger::before {
   content: "";
   position: absolute;
   inset: 0;
   background-image: var(--glass-noise);
   mix-blend-mode: overlay;
+  opacity: 0.4;
+  pointer-events: none;
+  border-radius: inherit;
+}
+
+.custom-select-trigger::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--glass-specular);
+  mix-blend-mode: soft-light;
   opacity: 0.4;
   pointer-events: none;
   border-radius: inherit;
@@ -389,8 +518,6 @@ input[type="range"] {
   transform: translateY(-1px) scale(var(--anim-press));
 }
 
-/* Open state keeps the same lift the hover gives it, plus an accent ring
-   so it reads as "active" even after the cursor moves down to an option. */
 .custom-select.open .custom-select-trigger {
   background: var(--glass-bg-standard);
   border-color: color-mix(in srgb, var(--color-accent) 45%, transparent);
@@ -425,19 +552,15 @@ input[type="range"] {
   top: calc(100% + 6px);
   left: 0;
   right: 0;
-  z-index: 30;
+  z-index: var(--z-dropdown);
   max-height: 240px;
   overflow-y: auto;
   overflow-x: hidden;
   background: var(--glass-bg-elevated);
-  backdrop-filter: blur(var(--glass-blur-elevated)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur-elevated)) saturate(var(--glass-saturate));
+  backdrop-filter: blur(var(--glass-blur-elevated)) saturate(var(--glass-saturate-elevated));
+  -webkit-backdrop-filter: blur(var(--glass-blur-elevated)) saturate(var(--glass-saturate-elevated));
   border: 1px solid var(--glass-border-color);
   border-radius: var(--radius-md, 8px);
-  /* Wider spread + a second, tighter shadow than before — against a page
-     this dark, the old single soft shadow barely read as "elevated" at
-     all. The two-layer shadow gives a crisp near edge and a diffuse far
-     edge, which separates from the background much more clearly. */
   box-shadow:
     0 4px 12px -4px rgba(0, 0, 0, 0.7),
     0 24px 48px -16px rgba(0, 0, 0, 0.65),
@@ -449,9 +572,6 @@ input[type="range"] {
   transition: opacity var(--anim-fast) var(--anim-ease), transform var(--anim-fast) var(--anim-spring), visibility var(--anim-fast) var(--anim-ease), border-color var(--anim-fast) var(--anim-ease), box-shadow var(--anim-fast) var(--anim-ease);
 }
 
-/* Same acrylic noise grain as .glass-surface--elevated, so this panel
-   actually reads as part of the same glass system instead of a plain
-   flat box that happens to share a color. */
 .custom-select-options::before {
   content: "";
   position: absolute;
@@ -463,14 +583,27 @@ input[type="range"] {
   border-radius: inherit;
 }
 
+/* The trigger this panel drops from already has a specular sheen
+   (::after above) — the panel itself didn't, so opening the dropdown
+   meant the highlight visibly disappeared for as long as it was open.
+   Matching treatment here keeps the two reading as one continuous
+   surface. */
+.custom-select-options::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--glass-specular);
+  mix-blend-mode: soft-light;
+  opacity: 0.4;
+  pointer-events: none;
+  border-radius: inherit;
+}
+
 .custom-select.open .custom-select-options {
   opacity: 1;
   visibility: visible;
   transform: translateY(0);
   pointer-events: auto;
-  /* Matches the trigger's open-state ring above — same accent language
-     on both pieces so they read as one paired control, not two
-     unrelated boxes that happen to be near each other. */
   border-color: color-mix(in srgb, var(--color-accent) 45%, transparent);
   box-shadow:
     0 0 0 1px color-mix(in srgb, var(--color-accent) 20%, transparent),
@@ -478,19 +611,18 @@ input[type="range"] {
     0 24px 48px -16px rgba(0, 0, 0, 0.65);
 }
 
-/* Portal variant — used when JS moves the options panel out to <body>
-   to escape an ancestor's backdrop-filter stacking context (e.g. inside
-   .settings-section). position/top/left/width are set inline by JS off
-   the trigger's live bounding rect, so only positioning mode + stacking
-   need to change here. Open state can't rely on the ".custom-select.open"
-   ancestor combinator anymore since the panel is no longer a descendant
-   of .custom-select after the move — it gets its own .is-open class instead. */
+/* Portal variant — used when JS moves the options panel out to <body> to
+   escape an ancestor's backdrop-filter stacking context (e.g. inside
+   .settings-section). Position/size are set inline by JS off the
+   trigger's live bounding rect. Can't rely on the ".custom-select.open"
+   ancestor combinator once it's no longer a descendant, so it gets its
+   own .is-open class instead. */
 .custom-select-options--portal {
   position: fixed;
   top: 0;
   left: 0;
   right: auto;
-  z-index: 3000;
+  z-index: var(--z-dropdown-portal);
 }
 
 .custom-select-options--portal.is-open {
@@ -522,8 +654,6 @@ input[type="range"] {
   border-bottom: none;
 }
 
-/* Accent bar, off-canvas until hover/selected — cheaper than animating
-   border-left width and doesn't nudge the text's box when it appears. */
 .custom-option::before {
   content: "";
   position: absolute;
@@ -555,6 +685,9 @@ input[type="range"] {
   background: rgba(var(--color-accent-rgb), 0.1);
   color: var(--color-accent);
   font-weight: 700;
+  /* Small persistent lift so the selected row still reads as "picked"
+     after the cursor moves away, not just while hovered. */
+  transform: scale(1.015);
 }
 
 .custom-option.selected::before {
@@ -570,7 +703,7 @@ input[type="range"] {
   font-size: 12px;
   font-family: var(--font-mono);
   outline: none;
-  transition: border-color var(--anim-fast) var(--anim-ease), background var(--anim-fast) var(--anim-ease);
+  transition: border-color var(--anim-fast) var(--anim-ease), background var(--anim-fast) var(--anim-ease), box-shadow var(--anim-fast) var(--anim-ease);
   box-sizing: border-box;
 }
 
@@ -578,7 +711,13 @@ input[type="range"] {
   color: var(--color-text-dim, rgba(255, 255, 255, 0.3));
 }
 
+.text-input:hover {
+  border-color: rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.055);
+}
+
 .text-input:focus {
   border-color: rgba(var(--color-accent-rgb), 0.4);
   background: rgba(255, 255, 255, 0.07);
+  box-shadow: 0 0 0 3px rgba(var(--color-accent-rgb), 0.12);
 }
