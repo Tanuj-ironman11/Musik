@@ -95,45 +95,60 @@
   --vis-bar-color:   var(--color-accent);
   --vis-bar-glow:    var(--color-accent-glow);
 
-  /* Glass surface system — three depth tiers */
-  --glass-blur-subtle:   10px;
-  --glass-blur-standard: 16px;
-  --glass-blur-elevated: 26px;
+  /* Glass surface system — three depth tiers.
+     Blur/tint pulled way down from the original frosted look, targeting
+     the "clear liquid glass" read (content stays legible through it)
+     instead of the old murkier frosted-glass read. --glass-saturate
+     itself stays untouched — other CSS files outside this pass still
+     read it directly and shouldn't shift underneath them. */
+  --glass-blur-subtle:   5px;
+  --glass-blur-standard: 7px;
+  --glass-blur-elevated: 11px;
   --glass-saturate:      1.5;
 
-  --glass-bg-subtle:     rgba(255, 255, 255, 0.035);
-  --glass-bg-standard:   rgba(18, 18, 18, 0.48);
-  --glass-bg-elevated:   rgba(12, 12, 12, 0.6);
+  --glass-bg-subtle:     rgba(255, 255, 255, 0.025);
+  --glass-bg-standard:   rgba(18, 18, 18, 0.22);
+  --glass-bg-elevated:   rgba(12, 12, 12, 0.32);
 
-  /* Was a single flat top highlight. Added a thin all-around inner ring
-     alongside it — that second layer is what reads as "light bending at
-     a glass edge" rather than just "a bright top border". Every glass
-     surface already pulling this token gets it automatically. */
-  --glass-edge-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.10), inset 0 0 0 1px rgba(255, 255, 255, 0.035);
+  /* Thin, brighter rim instead of a soft glow — with blur/tint this low,
+     the edge highlight is doing most of the "this is glass, not just a
+     translucent box" work, so it needs to read crisper than before.
+     Every glass surface already pulling this token gets it automatically.
+     Uniform rim highlights still read flat, though — real curved glass
+     catches light unevenly around the edge. So this is now three layers:
+     a brighter top-left highlight, a thin thumb of dark on the opposite
+     (bottom-right) edge to imply the surface curving away from the
+     light, and the original all-around ring underneath for definition
+     when there's no light direction to speak of. */
+  --glass-edge-highlight:
+    inset 1px 1px 0 rgba(255, 255, 255, 0.20),
+    inset -1px -1px 0 rgba(0, 0, 0, 0.14),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.05);
   --glass-border-color:   rgba(255, 255, 255, 0.09);
 
-  /* Tiered saturation — subtle surfaces stay closer to the old flat 1.5,
-     elevated surfaces (modals, dropdowns) push more vivid for a wetter,
-     more "liquid" look where it's most noticeable. --glass-saturate
-     itself is untouched on purpose: other CSS files outside this pass
-     still read it directly and shouldn't shift underneath them. */
-  --glass-saturate-subtle:   1.3;
-  --glass-saturate-standard: 1.55;
-  --glass-saturate-elevated: 1.85;
+  /* Tiered saturation, pulled back proportionally to the lighter blur —
+     the old values were tuned against much heavier frost and read as
+     oversaturated once the blur/tint dropped. */
+  --glass-saturate-subtle:   1.1;
+  --glass-saturate-standard: 1.2;
+  --glass-saturate-elevated: 1.4;
 
   --glass-noise: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='matrix' values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.05 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 
   --glass-radius: var(--radius-lg);
 
-  /* Liquid-glass specular layer: a soft diagonal highlight that sits on
-     top of the noise grain, like light catching a curved glass edge.
-     Static on subtle/standard surfaces; the elevated tier additionally
-     drifts very slowly (see .glass-surface--elevated::after below) for
-     a touch of ambient motion without turning into a moving shine. */
-  --glass-specular: linear-gradient(135deg,
-    rgba(255, 255, 255, 0.10) 0%,
-    rgba(255, 255, 255, 0.03) 22%,
-    rgba(255, 255, 255, 0) 45%);
+  /* Liquid-glass specular layer. Was a linear sweep crossing half the
+     panel — real reflections are localized, not a wash, so this is now
+     a soft glint anchored near one corner instead, reading as "light
+     catching one spot" rather than "a diagonal highlight painted across
+     the surface." Static on subtle/standard surfaces; the elevated tier
+     additionally drifts very slowly (see .glass-surface--elevated::after
+     below) for a touch of ambient motion without turning into a moving
+     shine. */
+  --glass-specular: radial-gradient(120% 90% at 18% 12%,
+    rgba(255, 255, 255, 0.22) 0%,
+    rgba(255, 255, 255, 0.06) 28%,
+    rgba(255, 255, 255, 0) 52%);
 }
 
 body[data-active-view="now-playing"] #main {
@@ -188,7 +203,7 @@ body::after {
   inset: 0;
   z-index: -1;
   background-image: var(--glass-noise);
-  opacity: 0.4;
+  opacity: 0.18;
   mix-blend-mode: overlay;
   pointer-events: none;
 }
@@ -242,23 +257,32 @@ img { display: block; max-width: 100%; }
 
 .glass-surface {
   background: var(--glass-bg-standard);
-  backdrop-filter: blur(var(--glass-blur-standard)) saturate(var(--glass-saturate-standard));
-  -webkit-backdrop-filter: blur(var(--glass-blur-standard)) saturate(var(--glass-saturate-standard));
+  backdrop-filter: blur(var(--glass-blur-standard)) saturate(var(--glass-saturate-standard)) contrast(1.05);
+  -webkit-backdrop-filter: blur(var(--glass-blur-standard)) saturate(var(--glass-saturate-standard)) contrast(1.05);
 }
 
 .glass-surface--subtle {
   background: var(--glass-bg-subtle);
-  backdrop-filter: blur(var(--glass-blur-subtle)) saturate(var(--glass-saturate-subtle));
-  -webkit-backdrop-filter: blur(var(--glass-blur-subtle)) saturate(var(--glass-saturate-subtle));
+  backdrop-filter: blur(var(--glass-blur-subtle)) saturate(var(--glass-saturate-subtle)) contrast(1.05);
+  -webkit-backdrop-filter: blur(var(--glass-blur-subtle)) saturate(var(--glass-saturate-subtle)) contrast(1.05);
 }
 
 .glass-surface--elevated {
   background: var(--glass-bg-elevated);
-  backdrop-filter: blur(var(--glass-blur-elevated)) saturate(var(--glass-saturate-elevated));
-  -webkit-backdrop-filter: blur(var(--glass-blur-elevated)) saturate(var(--glass-saturate-elevated));
+  backdrop-filter: blur(var(--glass-blur-elevated)) saturate(var(--glass-saturate-elevated)) contrast(1.06);
+  -webkit-backdrop-filter: blur(var(--glass-blur-elevated)) saturate(var(--glass-saturate-elevated)) contrast(1.06);
   box-shadow: var(--glass-edge-highlight), var(--shadow-elevated);
 }
 
+/* Clear-center, frosted-rim trick: this layer runs its OWN, heavier
+   backdrop-filter on top of the surface's base blur, then a radial mask
+   hides that extra blur everywhere except a ring near the edge. Net
+   result: center stays close to the base blur (sharper), the rim gets
+   properly frosted — the "flat face, curved rim" read real glass has,
+   without any displacement-map trickery. Noise grain rides along on the
+   same layer, which is a happy accident: it now shows up mostly at the
+   rim too, where real frost would actually catch texture, and stays out
+   of the way of whatever's legible in the center. */
 .glass-surface::before,
 .glass-surface--subtle::before,
 .glass-surface--elevated::before {
@@ -267,9 +291,26 @@ img { display: block; max-width: 100%; }
   inset: 0;
   background-image: var(--glass-noise);
   mix-blend-mode: overlay;
-  opacity: 0.5;
+  opacity: 0.22;
   pointer-events: none;
   border-radius: inherit;
+  -webkit-mask-image: radial-gradient(120% 120% at 50% 50%, transparent 42%, black 88%);
+  mask-image: radial-gradient(120% 120% at 50% 50%, transparent 42%, black 88%);
+}
+
+.glass-surface::before {
+  backdrop-filter: blur(calc(var(--glass-blur-standard) + 9px));
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur-standard) + 9px));
+}
+
+.glass-surface--subtle::before {
+  backdrop-filter: blur(calc(var(--glass-blur-subtle) + 6px));
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur-subtle) + 6px));
+}
+
+.glass-surface--elevated::before {
+  backdrop-filter: blur(calc(var(--glass-blur-elevated) + 12px));
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur-elevated) + 12px));
 }
 
 .glass-surface::after,
@@ -491,7 +532,7 @@ input[type="range"] {
   inset: 0;
   background-image: var(--glass-noise);
   mix-blend-mode: overlay;
-  opacity: 0.4;
+  opacity: 0.18;
   pointer-events: none;
   border-radius: inherit;
 }
@@ -578,7 +619,7 @@ input[type="range"] {
   inset: 0;
   background-image: var(--glass-noise);
   mix-blend-mode: overlay;
-  opacity: 0.5;
+  opacity: 0.22;
   pointer-events: none;
   border-radius: inherit;
 }

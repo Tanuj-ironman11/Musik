@@ -9,12 +9,18 @@
   z-index: 10000;
   background:
     linear-gradient(180deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0) 40%),
+    var(--glass-specular),
     var(--glass-bg-standard);
-  backdrop-filter: blur(18px) saturate(1.4);
-  -webkit-backdrop-filter: blur(18px) saturate(1.4);
+  background-blend-mode: normal, soft-light, normal;
+  /* Was hardcoded blur(18px) saturate(1.4) — now pulls the shared
+     standard tier so this moves in lockstep with the rest of the app's
+     glass tuning instead of drifting out of sync. */
+  backdrop-filter: blur(var(--glass-blur-standard)) saturate(var(--glass-saturate-standard)) contrast(1.05);
+  -webkit-backdrop-filter: blur(var(--glass-blur-standard)) saturate(var(--glass-saturate-standard)) contrast(1.05);
   border: 1px solid var(--glass-border-color);
   border-radius: 22px;
   box-shadow:
+    var(--glass-edge-highlight),
     var(--player-shadow),
     0 0 0 1px rgba(255, 255, 255, 0.03) inset,
     0 0 60px -20px var(--color-accent-glow);
@@ -48,6 +54,23 @@ body.npf-open #now-playing-bar {
   height: 1px;
   background: linear-gradient(90deg, transparent, rgba(255,255,255,0.25), transparent);
   pointer-events: none;
+}
+
+/* Same clear-center/frosted-rim trick as the shared .glass-surface
+   system (tokens.css) — its own heavier backdrop-filter, masked to a
+   ring near the edge so the bar's center stays sharp (readable track
+   info) while the rim actually frosts. ::before is already the top
+   seam highlight, so this rides on ::after instead. */
+#now-playing-bar::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  backdrop-filter: blur(calc(var(--glass-blur-standard) + 9px));
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur-standard) + 9px));
+  -webkit-mask-image: radial-gradient(140% 220% at 50% 50%, transparent 55%, black 92%);
+  mask-image: radial-gradient(140% 220% at 50% 50%, transparent 55%, black 92%);
 }
 
 #now-playing-bar:hover {
@@ -199,8 +222,8 @@ body[data-active-view="now-playing"] #now-playing-bar {
   color: var(--color-text);
   background: var(--color-accent-dim);
   box-shadow: 0 0 0 1px var(--color-accent-subtle), 0 0 12px var(--color-accent-glow);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
 }
 
 .pb-btn:active {

@@ -22,13 +22,48 @@
   border: 1px solid var(--color-border);
   border-radius: calc(var(--radius-md) + 6px);
   margin-bottom: 28px;
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
-  box-shadow: 0 8px 24px -12px rgba(0, 0, 0, 0.4);
+  /* Was a flat, hardcoded blur(18px) with no saturate/contrast — now on
+     the shared standard tier so this tracks the rest of the app's glass
+     tuning instead of drifting out of sync with it. Kept the more
+     opaque color-mix background above (rather than swapping to
+     --glass-bg-standard) since this card holds dense settings text and
+     needs the extra contrast for legibility, unlike the decorative
+     surfaces. */
+  backdrop-filter: blur(var(--glass-blur-standard)) saturate(var(--glass-saturate-standard)) contrast(1.05);
+  -webkit-backdrop-filter: blur(var(--glass-blur-standard)) saturate(var(--glass-saturate-standard)) contrast(1.05);
+  box-shadow: var(--glass-edge-highlight), 0 8px 24px -12px rgba(0, 0, 0, 0.4);
+  isolation: isolate;
   transition: border-color var(--anim-fast) var(--anim-ease);
 }
 .settings-section:hover {
   border-color: color-mix(in srgb, var(--color-accent) 30%, var(--color-border));
+}
+
+/* Same clear-center/frosted-rim trick as the shared .glass-surface
+   system (tokens.css): its own heavier backdrop-filter, masked to a
+   ring near the edge so the bulk of the card (where the actual settings
+   text lives) stays sharp while the rim reads as frosted glass. */
+.settings-section::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  backdrop-filter: blur(calc(var(--glass-blur-standard) + 9px));
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur-standard) + 9px));
+  -webkit-mask-image: radial-gradient(120% 160% at 50% 50%, transparent 55%, black 90%);
+  mask-image: radial-gradient(120% 160% at 50% 50%, transparent 55%, black 90%);
+}
+
+.settings-section::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: var(--glass-specular);
+  mix-blend-mode: soft-light;
+  opacity: 0.5;
 }
 
 .settings-section-title {
