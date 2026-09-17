@@ -50,8 +50,10 @@ const PRESETS = {
     hipHop:        { label: 'Hip-Hop',           gains: [4.0, 3.5, 1.5, 0.5, -1.0, 0, 1.0, 1.5, 2.5, 2.0] },
     acoustic:      { label: 'Acoustic',         gains: [1.5, 1.0, 0.5, 0, 1.0, 1.5, 1.5, 2.0, 2.5, 1.5] },
     spokenWord:    { label: 'Spoken Word',       gains: [-3.0, -1.5, 0, 1.0, 2.0, 2.5, 1.5, 0, -1.5, -2.5] },
-    major4OG:      { label: 'Major IV: OG',      gains: [3.0, 1.5, -1.0, -0.5, 0.5, 1.0, 1.5, 2.5, 2.5, 2.0] },
   };
+
+  // Merge in gitignored local-only presets, if loaded (see eq-presets.local.js).
+  Object.assign(PRESETS, window.MusikLocalPresets || {});
 
 
   function defaultBands() {
