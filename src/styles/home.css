@@ -44,18 +44,12 @@
   background: var(--color-accent);
   border-color: transparent;
   transform: translateY(-2px) scale(1.08);
-  box-shadow: 0 6px 20px -4px var(--color-accent-glow), 0 0 0 1px rgba(255, 255, 255, 0.06) inset;
+  box-shadow: 0 6px 20px -4px var(--color-accent-glow);
 }
 
 .home-add-icon-btn:active {
   transform: translateY(-1px) scale(var(--anim-press));
   transition-duration: 0.1s;
-}
-
-.home-recent-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 170px));
-  gap: 20px;
 }
 
 .home-playlists-row {
@@ -75,8 +69,13 @@
   max-width: 640px;
   padding: 20px;
   margin-bottom: 36px;
-  background: var(--color-bg-surface, #161616);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  /* Was a flat solid var(--color-bg-surface) — zero backdrop-filter, on
+     a screen where every other card is at least trying to be glass.
+     Real sampling, not painted: same standard tier as .settings-section. */
+  background: var(--glass-bg-standard);
+  backdrop-filter: blur(var(--glass-blur-standard)) saturate(var(--glass-saturate-standard)) contrast(1.05);
+  -webkit-backdrop-filter: blur(var(--glass-blur-standard)) saturate(var(--glass-saturate-standard)) contrast(1.05);
+  border: 1px solid var(--glass-border-color);
   border-radius: 8px;
   box-shadow: 0 0 0 1px var(--color-accent-subtle, transparent), 0 12px 32px -12px rgba(0, 0, 0, 0.6), 0 0 48px -16px var(--color-accent-glow, transparent);
 }
@@ -223,6 +222,10 @@
   margin: 0 0 14px;
 }
 
+/* The only .home-recent-grid rule now — a duplicate earlier in this
+   file (auto-fit, no margin-top) had identical specificity and was
+   silently overridden by this one; removed rather than left as dead
+   weight. */
 .home-recent-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(130px, 170px));
@@ -261,7 +264,7 @@
   backdrop-filter: blur(var(--glass-blur-standard)) saturate(1.6);
   -webkit-backdrop-filter: blur(var(--glass-blur-standard)) saturate(1.6);
   border: 1px solid rgba(255,255,255,0.18);
-  box-shadow: 0 4px 16px rgba(0,0,0,0.35), 0 0 0 1px rgba(255,255,255,0.04) inset;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.35);
   display: flex; align-items: center; justify-content: center;
   color: #fff; flex-shrink: 0;
   transform: translateY(4px);
@@ -278,7 +281,7 @@
   background: var(--color-accent);
   border-color: transparent;
   color: #060606;
-  box-shadow: 0 6px 22px -2px var(--color-accent-glow), 0 0 0 1px rgba(255,255,255,0.06) inset;
+  box-shadow: 0 6px 22px -2px var(--color-accent-glow);
   transform: translateY(0) scale(1.08);
 }
 

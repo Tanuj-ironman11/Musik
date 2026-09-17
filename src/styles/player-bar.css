@@ -7,11 +7,7 @@
   width: calc(100% - var(--sidebar-width-collapsed) - 48px);
   height: var(--player-bar-height);
   z-index: 10000;
-  background:
-    linear-gradient(180deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0) 40%),
-    var(--glass-specular),
-    var(--glass-bg-standard);
-  background-blend-mode: normal, soft-light, normal;
+  background: var(--glass-bg-standard);
   /* Was hardcoded blur(18px) saturate(1.4) — now pulls the shared
      standard tier so this moves in lockstep with the rest of the app's
      glass tuning instead of drifting out of sync. */
@@ -20,9 +16,7 @@
   border: 1px solid var(--glass-border-color);
   border-radius: 22px;
   box-shadow:
-    var(--glass-edge-highlight),
     var(--player-shadow),
-    0 0 0 1px rgba(255, 255, 255, 0.03) inset,
     0 0 60px -20px var(--color-accent-glow);
   overflow: hidden;
   contain: paint;
@@ -47,20 +41,12 @@ body.npf-open #now-playing-bar {
     opacity 0.22s var(--ease-out) 0.06s;
 }
 
-#now-playing-bar::before {
-  content: "";
-  position: absolute;
-  top: 0; left: 12%; right: 12%;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.25), transparent);
-  pointer-events: none;
-}
-
 /* Same clear-center/frosted-rim trick as the shared .glass-surface
    system (tokens.css) — its own heavier backdrop-filter, masked to a
    ring near the edge so the bar's center stays sharp (readable track
-   info) while the rim actually frosts. ::before is already the top
-   seam highlight, so this rides on ::after instead. */
+   info) while the rim actually frosts. This is real: it's an extra,
+   genuinely-live blur sample, just spatially masked to the edge —
+   not a painted highlight. */
 #now-playing-bar::after {
   content: "";
   position: absolute;
@@ -77,7 +63,6 @@ body.npf-open #now-playing-bar {
   border-color: color-mix(in srgb, var(--color-text) 16%, transparent);
   box-shadow:
     var(--player-shadow),
-    0 0 0 1px rgba(255, 255, 255, 0.04) inset,
     0 0 80px -16px var(--color-accent-glow);
 }
 

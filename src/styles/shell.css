@@ -257,8 +257,7 @@ body.layout-topbar #now-playing-bar {
   padding: 24px;
   box-shadow:
     0 24px 56px -16px rgba(0, 0, 0, 0.65),
-    0 8px 20px -10px rgba(0, 0, 0, 0.45),
-    var(--glass-edge-highlight);
+    0 8px 20px -10px rgba(0, 0, 0, 0.45);
   opacity: 0;
   transform: translateY(8px) scale(0.98);
   transition: opacity var(--anim-medium) var(--anim-ease), transform var(--anim-medium) var(--anim-spring);
@@ -270,20 +269,6 @@ body.layout-topbar #now-playing-bar {
   inset: 0;
   background-image: var(--glass-noise);
   mix-blend-mode: overlay;
-  opacity: 0.5;
-  pointer-events: none;
-  border-radius: inherit;
-}
-
-/* Same specular sheen every other elevated glass surface has now
-   (dropdown panel, .glass-surface--elevated) — this modal was the one
-   place still missing it. */
-.confirm-modal-box::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: var(--glass-specular);
-  mix-blend-mode: soft-light;
   opacity: 0.5;
   pointer-events: none;
   border-radius: inherit;
@@ -306,7 +291,7 @@ body.layout-topbar #now-playing-bar {
   backdrop-filter: blur(12px) saturate(var(--glass-saturate-standard));
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: var(--radius-md);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6), var(--glass-edge-highlight);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
   z-index: var(--z-context-menu);
   min-width: 170px;
   padding: 6px 4px;
@@ -354,8 +339,7 @@ body.layout-topbar #now-playing-bar {
   border: 1px solid var(--glass-border-color);
   box-shadow:
     0 32px 80px -20px rgba(0, 0, 0, 0.8),
-    0 8px 24px -12px rgba(0, 0, 0, 0.5),
-    var(--glass-edge-highlight);
+    0 8px 24px -12px rgba(0, 0, 0, 0.5);
   max-height: 85vh;
   overflow: hidden;
   display: flex;
@@ -369,18 +353,6 @@ body.layout-topbar #now-playing-bar {
   background-image: var(--glass-noise);
   mix-blend-mode: overlay;
   opacity: 0.5;
-  pointer-events: none;
-  border-radius: inherit;
-  z-index: 0;
-}
-
-.metadata-modal::after, .meta-fix-content::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: var(--glass-specular);
-  mix-blend-mode: soft-light;
-  opacity: 0.35;
   pointer-events: none;
   border-radius: inherit;
   z-index: 0;

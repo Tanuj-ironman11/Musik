@@ -31,7 +31,7 @@
      surfaces. */
   backdrop-filter: blur(var(--glass-blur-standard)) saturate(var(--glass-saturate-standard)) contrast(1.05);
   -webkit-backdrop-filter: blur(var(--glass-blur-standard)) saturate(var(--glass-saturate-standard)) contrast(1.05);
-  box-shadow: var(--glass-edge-highlight), 0 8px 24px -12px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 8px 24px -12px rgba(0, 0, 0, 0.4);
   isolation: isolate;
   transition: border-color var(--anim-fast) var(--anim-ease);
 }
@@ -53,17 +53,6 @@
   -webkit-backdrop-filter: blur(calc(var(--glass-blur-standard) + 9px));
   -webkit-mask-image: radial-gradient(120% 160% at 50% 50%, transparent 55%, black 90%);
   mask-image: radial-gradient(120% 160% at 50% 50%, transparent 55%, black 90%);
-}
-
-.settings-section::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  pointer-events: none;
-  background: var(--glass-specular);
-  mix-blend-mode: soft-light;
-  opacity: 0.5;
 }
 
 .settings-section-title {

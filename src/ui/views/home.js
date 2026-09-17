@@ -114,16 +114,24 @@ window.MusikViews.home = async function renderHome(main) {
       .sort((a, b) => b.lastPlayedAt - a.lastPlayedAt)
       .slice(0, 8);
 
-    if (played.length) {
-      html += `
-        <div class="home-section">
-          <h2 class="view-title" style="font-size:16px; margin-bottom:12px;">Recently played</h2>
-          <div class="home-recent-grid">
-            ${played.map(trackCardHTML).join('')}
-          </div>
+    // Was: this whole section only rendered if something had a
+    // lastPlayedAt. A library with tracks but zero play history (true
+    // for anything never clicked yet) plus zero playlists meant html
+    // stayed '' all the way to body.innerHTML — nothing rendered, not
+    // even the empty state, since that only covers zero tracks AND
+    // zero playlists. Falling back to a plain library slice keeps this
+    // section non-empty whenever there's anything to show at all.
+    const sectionTracks = played.length ? played : tracks.slice(0, 8);
+    const sectionTitle = played.length ? 'Recently played' : 'Your library';
+
+    html += `
+      <div class="home-section">
+        <h2 class="view-title" style="font-size:16px; margin-bottom:12px;">${sectionTitle}</h2>
+        <div class="home-recent-grid">
+          ${sectionTracks.map(trackCardHTML).join('')}
         </div>
-      `;
-    }
+      </div>
+    `;
   }
 
   if (playlists.length) {
