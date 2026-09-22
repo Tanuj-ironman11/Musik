@@ -51,6 +51,7 @@ let saveTimer = null;
 function init(userDataPath) {
   storagePath = path.join(userDataPath, 'musik-library.json');
   load();
+  refreshMissingTrackMetadata();
 }
 
 function load() {
@@ -134,6 +135,11 @@ async function readTags(filePath) {
       artist: metadata.common.artist ?? 'Unknown Artist',
       album: metadata.common.album ?? 'Unknown Album',
       duration: metadata.format.duration ?? 0,
+      sampleRate: metadata.format.sampleRate || null,
+      bitsPerSample: metadata.format.bitsPerSample || null,
+      numberOfChannels: metadata.format.numberOfChannels || null,
+      lossless: Boolean(metadata.format.lossless),
+      codec: metadata.format.codec || path.extname(filePath).slice(1).toUpperCase(),
       addedAt: Date.now(),
       lastPlayedAt: null,
       artData: picture
@@ -144,6 +150,24 @@ async function readTags(filePath) {
     console.warn(`[Musik] readTags failed for ${filePath}:`, err.message);
     return null;
   }
+}
+
+async function refreshMissingTrackMetadata() {
+  let changed = false;
+  for (const track of tracks) {
+    if (Number.isFinite(track.sampleRate)) continue;
+
+    const metadata = await readTags(track.filePath);
+    if (!metadata) continue;
+
+    const addedAt = track.addedAt;
+    const lastPlayedAt = track.lastPlayedAt;
+    Object.assign(track, metadata);
+    track.addedAt = addedAt ?? metadata.addedAt;
+    track.lastPlayedAt = lastPlayedAt ?? null;
+    changed = true;
+  }
+  if (changed) scheduleSave();
 }
 
 // Bulk-adds individual files straight to the library — deliberately NOT

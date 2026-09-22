@@ -221,6 +221,28 @@ Napi::Value SetTargetProcesses(const Napi::CallbackInfo& info) {
   return Napi::Boolean::New(env, true);
 }
 
+// setExcludedProcesses([pid, pid, ...]) — NEW. Start() only lets you set
+// the excluded set once, at capture-thread startup; there was previously
+// no way to add/remove an excluded PID (e.g. a notch-widget app like
+// v-notch) without stopping and restarting the whole capture thread. This
+// mirrors setTargetProcesses so exclusions can be updated live, same as
+// targets already could be. Musik's own PID is always re-added regardless
+// of what's passed in, so a caller can never accidentally un-exclude self.
+Napi::Value SetExcludedProcesses(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  std::lock_guard<std::mutex> lock(g_configMutex);
+  g_excludedPids.clear();
+  g_excludedPids.insert(GetCurrentProcessId());
+  if (info.Length() > 0 && info[0].IsArray()) {
+    Napi::Array arr = info[0].As<Napi::Array>();
+    for (uint32_t i = 0; i < arr.Length(); i++) {
+      Napi::Value v = arr[i];
+      if (v.IsNumber()) g_excludedPids.insert((DWORD)v.As<Napi::Number>().Uint32Value());
+    }
+  }
+  return Napi::Boolean::New(env, true);
+}
+
 // Synchronous one-shot enumeration for UI purposes — "here's everything
 // currently making sound, pick which one(s) to duck against." Does its
 // own CoInitialize since this runs on whatever thread calls it (expected:
@@ -264,6 +286,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("stop", Napi::Function::New(env, Stop));
   exports.Set("getLevel", Napi::Function::New(env, GetLevel));
   exports.Set("setTargetProcesses", Napi::Function::New(env, SetTargetProcesses));
+  exports.Set("setExcludedProcesses", Napi::Function::New(env, SetExcludedProcesses));
   exports.Set("getSessions", Napi::Function::New(env, GetSessions));
   return exports;
 }

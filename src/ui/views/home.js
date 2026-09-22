@@ -108,31 +108,9 @@ window.MusikViews.home = async function renderHome(main) {
 
   let html = '';
 
-  if (tracks.length) {
-    const played = tracks
-      .filter((t) => t.lastPlayedAt)
-      .sort((a, b) => b.lastPlayedAt - a.lastPlayedAt)
-      .slice(0, 8);
-
-    // Was: this whole section only rendered if something had a
-    // lastPlayedAt. A library with tracks but zero play history (true
-    // for anything never clicked yet) plus zero playlists meant html
-    // stayed '' all the way to body.innerHTML — nothing rendered, not
-    // even the empty state, since that only covers zero tracks AND
-    // zero playlists. Falling back to a plain library slice keeps this
-    // section non-empty whenever there's anything to show at all.
-    const sectionTracks = played.length ? played : tracks.slice(0, 8);
-    const sectionTitle = played.length ? 'Recently played' : 'Your library';
-
-    html += `
-      <div class="home-section">
-        <h2 class="view-title" style="font-size:16px; margin-bottom:12px;">${sectionTitle}</h2>
-        <div class="home-recent-grid">
-          ${sectionTracks.map(trackCardHTML).join('')}
-        </div>
-      </div>
-    `;
-  }
+  const played = tracks
+    .filter((t) => t.lastPlayedAt)
+    .sort((a, b) => b.lastPlayedAt - a.lastPlayedAt);
 
   if (playlists.length) {
     html += `
@@ -140,6 +118,27 @@ window.MusikViews.home = async function renderHome(main) {
         <h2 class="view-title" style="font-size:16px; margin-bottom:12px;">Playlists</h2>
         <div class="home-playlists-row">
           ${playlists.map((p) => playlistCardHTML(p, tracks)).join('')}
+        </div>
+      </div>
+    `;
+  }
+
+  if (tracks.length) {
+    // Was: this whole section only rendered if something had a
+    // lastPlayedAt. A library with tracks but zero play history (true
+    // for anything never clicked yet) plus zero playlists meant html
+    // stayed '' all the way to body.innerHTML — nothing rendered, not
+    // even the empty state, since that only covers zero tracks AND
+    // zero playlists. Falling back to a plain library slice keeps this
+    // section non-empty whenever there's anything to show at all.
+    const sectionTracks = played.length ? played.slice(0, 8) : tracks.slice(0, 8);
+    const sectionTitle = played.length ? 'Recently played' : 'Your library';
+
+    html += `
+      <div class="home-section">
+        <h2 class="view-title" style="font-size:16px; margin-bottom:12px;">${sectionTitle}</h2>
+        <div class="home-recent-grid">
+          ${sectionTracks.map(trackCardHTML).join('')}
         </div>
       </div>
     `;
@@ -155,6 +154,20 @@ window.MusikViews.home = async function renderHome(main) {
     });
 
     if (t) window.MusikContextMenu?.attachTrack?.(el, t);
+
+    el.querySelector('[data-track-options]')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      spawnIconKick(e.currentTarget);
+      // Reuses the same context-menu handler attachTrack() just wired for
+      // right-click — no second menu implementation, just a synthetic
+      // trigger positioned at the button instead of the cursor.
+      const rect = e.currentTarget.getBoundingClientRect();
+      el.dispatchEvent(new MouseEvent('contextmenu', {
+        bubbles: true,
+        clientX: rect.left,
+        clientY: rect.bottom,
+      }));
+    });
   });
 
   window.MusikCards.wirePlaylistCards(body, playlists, tracks);
@@ -171,6 +184,11 @@ function trackCardHTML(track) {
         ${artSrc
           ? `<img src="${artSrc}" alt="">`
           : `<div class="pb-art--placeholder"><svg class="placeholder-note-icon" viewBox="0 0 24 24"><path d="M9 18V5l12-2v13M9 18a3 3 0 11-6 0 3 3 0 016 0zm12-2a3 3 0 11-6 0 3 3 0 016 0z" stroke="currentColor" stroke-width="1.5" fill="none"/></svg></div>`}
+        <div class="lib-card-hover">
+          <button class="lib-card-hover-btn" data-track-options title="Options">
+            <svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>
+          </button>
+        </div>
       </div>
       <div class="home-playlist-name">${escapeHTML(track.title)}</div>
       <div class="home-playlist-count">${escapeHTML(track.artist)}</div>

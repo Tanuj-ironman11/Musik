@@ -24,6 +24,11 @@
   let trackStartTimestamp = 0;
   let hasScrobbled = false;
 
+  // NEW — object URL for a fallback-decoded (ALAC/AAC) track. Revoked on the
+  // next graph rebuild so decoded WAV data doesn't pile up in memory across
+  // tracks. See createAudioGraph() and the 'error' handler below.
+  let decodedBlobUrl = null;
+
   // Continuous loudness metering (rolling short-term BS.1770 estimate) feeds
   // game-duck's auto-boost. Separate analyser chain, never connected to
   // destination, so it can't affect audible output.
@@ -39,7 +44,33 @@
     if (audioEl) audioEl.volume = Math.max(0, Math.min(1, currentVolume * duckMultiplier));
   }
 
-  function createAudioGraph() {
+  function routeAudioGraph() {
+    if (!sourceNode || !analyserNode) return;
+
+    try {
+      sourceNode.disconnect();
+      for (const filter of eqNodes) filter.disconnect();
+    } catch (_) {}
+
+    const hasActiveEQ = eqNodes.some((node) => Math.abs(node.gain.value) > 0.0001);
+    if (hasActiveEQ) {
+      sourceNode.connect(eqNodes[0]);
+      for (let i = 0; i < eqNodes.length - 1; i++) eqNodes[i].connect(eqNodes[i + 1]);
+      const eqOutput = eqNodes[eqNodes.length - 1];
+      eqOutput.connect(analyserNode);
+      if (loudnessFilterHigh) {
+        eqOutput.connect(loudnessFilterHigh);
+      }
+      return;
+    }
+
+    sourceNode.connect(analyserNode);
+    if (loudnessFilterHigh) {
+      sourceNode.connect(loudnessFilterHigh);
+    }
+  }
+
+  function createAudioGraph(nativeSampleRate) {
     // Must pause + detach old element BEFORE closing the AudioContext, or it
     // can keep decoding unrouted in the background — this was the source of
     // the volume desync bug (stale elements each holding their own gain).
@@ -53,13 +84,65 @@
     if (audioCtx) {
       try { audioCtx.close(); } catch (_) {}
     }
+    // NEW — drop any fallback-decoded WAV data from the previous track.
+    if (decodedBlobUrl) {
+      URL.revokeObjectURL(decodedBlobUrl);
+      decodedBlobUrl = null;
+    }
     stopLoudnessMetering();
 
     audioEl = new Audio();
     audioEl.crossOrigin = 'anonymous';
     audioEl.volume = Math.max(0, Math.min(1, currentVolume * duckMultiplier)); // new elements default to 1.0
 
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    // NO-RESAMPLING FIX: without an explicit sampleRate, AudioContext always
+    // uses the output device's default rate (e.g. 48000Hz), and Web Audio
+    // silently resamples every decoded file to match it before the graph
+    // ever sees the signal — a 44.1kHz or 96kHz file gets quietly converted
+    // every single time, which is exactly what the "never resample
+    // internally" rule is supposed to rule out. Requesting the file's own
+    // rate here removes that step: source rate == context rate == no
+    // resample needed for this stage.
+    //
+    // Requires `nativeSampleRate` (the track's real sample rate) to actually
+    // be passed in — see loadTrack() below. That value has to come from
+    // wherever tags get read (music-metadata reports it as
+    // `format.sampleRate`); if the track object handed to this file doesn't
+    // carry a `sampleRate` field yet, that's a library.js/tag-reader change
+    // still needed elsewhere, not something fixable from this file alone.
+    //
+    // CEILING WORTH KNOWING: this removes the avoidable resample inside
+    // Musik's own Web Audio graph. It does NOT guarantee bit-perfect output
+    // at the hardware level — Windows' shared-mode WASAPI (the only mode
+    // Chromium/Electron exposes) still mixes everything at its own fixed
+    // engine rate downstream, same as it does for every other app. True
+    // exclusive-mode passthrough isn't reachable from here; that'd need a
+    // native audio backend, not a JS change.
+    const contextOptions = {};
+    if (typeof nativeSampleRate === 'number' && Number.isFinite(nativeSampleRate) && nativeSampleRate > 0) {
+      contextOptions.sampleRate = nativeSampleRate;
+    }
+    try {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)(contextOptions);
+    } catch (err) {
+      // Requested rate rejected (rare, but some rates outside the browser's
+      // supported range can throw) — fall back rather than break playback.
+      console.warn('[Musik] AudioContext rejected sampleRate', nativeSampleRate, '— falling back to default:', err.message);
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    if (
+      typeof nativeSampleRate === 'number' &&
+      Number.isFinite(nativeSampleRate) &&
+      Math.abs(audioCtx.sampleRate - nativeSampleRate) > 0.5
+    ) {
+      console.warn(
+        '[Musik] requested sample rate was not available:',
+        nativeSampleRate,
+        'Hz; using',
+        audioCtx.sampleRate,
+        'Hz'
+      );
+    }
     sourceNode = audioCtx.createMediaElementSource(audioEl);
     analyserNode = audioCtx.createAnalyser();
     // Lower smoothing so the sidebar's tiny EQ bars read snappy; per-bar
@@ -78,11 +161,6 @@
       filter.gain.value = 0; // flat until eq.js applies saved state
       return filter;
     });
-    sourceNode.connect(eqNodes[0]);
-    for (let i = 0; i < eqNodes.length - 1; i++) eqNodes[i].connect(eqNodes[i + 1]);
-    const eqOutput = eqNodes[eqNodes.length - 1];
-
-    eqOutput.connect(analyserNode);
     analyserNode.connect(audioCtx.destination);
 
     // Loudness tap — independent branch, never reaches destination.
@@ -102,12 +180,18 @@
     loudnessAnalyser = audioCtx.createAnalyser();
     loudnessAnalyser.fftSize = 2048;
 
-    eqOutput.connect(loudnessFilterHigh);
     loudnessFilterHigh.connect(loudnessFilterRLB);
     loudnessFilterRLB.connect(loudnessAnalyser);
 
+    routeAudioGraph();
+
     // eq.js listens for this to reapply saved band values to the fresh nodes.
     window.Musik?.events?.push('audiograph-rebuilt', { eqNodes });
+
+    // NEW — one retry per track: set true right before the retry fires below,
+    // so a genuinely bad/missing file still surfaces a real error instead of
+    // looping.
+    let fallbackAttempted = false;
 
     audioEl.addEventListener('play', () => window.Musik.events.push('play', currentTrack));
     audioEl.addEventListener('pause', () => window.Musik.events.push('pause', currentTrack));
@@ -129,7 +213,7 @@
         }
       }
     });
-    audioEl.addEventListener('error', () => {
+    audioEl.addEventListener('error', async () => {
       const err = audioEl.error;
       console.error('[Musik] audio element error', {
         code: err?.code,
@@ -137,6 +221,33 @@
         src: audioEl.src,
         track: currentTrack,
       });
+
+      // NEW — MEDIA_ERR_SRC_NOT_SUPPORTED (4) is what fires for a codec
+      // Chromium has no decoder for at all (ALAC, some AAC/M4A variants) —
+      // as opposed to a missing/corrupt file. One retry only, and only from
+      // the original file:// path (not an already-decoded blob: URL), so a
+      // genuinely bad file can't loop forever.
+      const isUnsupportedCodec = err?.code === 4;
+      const isOriginalFile = typeof audioEl.src === 'string' && audioEl.src.startsWith('file:');
+      if (isUnsupportedCodec && !fallbackAttempted && isOriginalFile && currentTrack?.filePath) {
+        fallbackAttempted = true;
+        console.log('[Musik] native playback failed, trying fallback decode for', currentTrack.filePath);
+        const result = await window.Musik?.audio?.decodeToPlayable?.(currentTrack.filePath);
+        if (result?.ok) {
+          if (decodedBlobUrl) URL.revokeObjectURL(decodedBlobUrl);
+          const blob = new Blob([result.wav], { type: 'audio/wav' });
+          decodedBlobUrl = URL.createObjectURL(blob);
+          audioEl.src = decodedBlobUrl;
+          try {
+            await audioEl.play();
+          } catch (playErr) {
+            console.error('[Musik] fallback playback failed to start:', playErr.message);
+          }
+          return;
+        }
+        console.error('[Musik] fallback decode failed:', result?.error);
+      }
+
       window.Musik.events.emit('playbackerror', { code: err?.code, message: err?.message, track: currentTrack });
     });
     audioEl.addEventListener('ended', () => {
@@ -191,8 +302,12 @@
   }
 
   async function loadTrack(track) {
-    // track: { filePath, title, artist, album, duration, artData }
-    createAudioGraph();
+    // track: { filePath, title, artist, album, duration, artData, sampleRate }
+    // sampleRate is used by createAudioGraph() to avoid forced resampling —
+    // see the comment there. If tag reading doesn't populate it yet, this
+    // silently falls back to the old (resampling) behavior rather than
+    // breaking playback.
+    createAudioGraph(track.sampleRate);
     currentTrack = track;
     window.Musik?.gameDuck?.setTrackLoudness?.(null); // clear old track's boost immediately
 
@@ -220,6 +335,12 @@
       const tags = await window.Musik.library.readTags(p);
       if (tags) {
         tracks.push(tags);
+        // NEW — readTags() only parses metadata, it doesn't persist to the
+        // library (only addFiles()/scanFolder() do). Without this, a file
+        // added here plays immediately but never appears in the library
+        // and is gone on next launch. Not awaited, same as the scrobble
+        // call above — shouldn't delay playback starting.
+        window.Musik.library.addFiles([p]);
         continue;
       }
 
@@ -395,6 +516,7 @@
     jumpTo,
     getAnalyser: () => analyserNode, // future visualizer hook
     getEQNodes: () => eqNodes, // live BiquadFilterNode[10] — eq.js drives these directly
+    notifyEQChanged: routeAudioGraph,
     getCurrentTime: () => audioEl?.currentTime ?? 0,
     getDuration: () => audioEl?.duration || (currentTrack?.duration ?? 0),
     getVolume: () => currentVolume,

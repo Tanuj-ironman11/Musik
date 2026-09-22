@@ -22,6 +22,7 @@
   --z-content:          10;
   --z-dropdown:         30;
   --z-dropdown-portal:  3000;
+  --z-player:           9000;
   --z-modal-backdrop:   9999;
   --z-titlebar:         10000;
   --z-context-menu:     10050;
@@ -37,10 +38,13 @@
   --color-border:         rgba(255, 255, 255, 0.05);
   --color-border-strong:  rgba(255, 255, 255, 0.10);
   --color-text:           #f0f0f0;
-  --color-text-secondary: #888888;
-  --color-text-dim:       #666666;
+  --color-text-secondary: #b0b0b0;
+  --color-text-dim:       #858585;
   --color-danger:         #e05555;
   --color-danger-rgb:     224, 85, 85;
+  --color-warning:        #c98a3d;
+  --color-warning-rgb:    201, 138, 61;
+  --color-on-accent:      #050505;
 
   --color-accent:         #3db8f5;
   --color-accent-rgb:     61, 184, 245;
@@ -84,8 +88,8 @@
   --anim-fast:    150ms;
   --anim-medium:  240ms;
   --anim-slow:    380ms;
-  --anim-ease:    cubic-bezier(0.4, 0, 0.2, 1);
-  --anim-spring:  cubic-bezier(0.34, 1.56, 0.64, 1);
+  --anim-ease:    var(--ease-out);
+  --anim-spring:  var(--ease-spring);
   --anim-lift:    1.04;
   --anim-press:   0.96;
   --shadow-soft:     0 4px 20px rgba(0, 0, 0, 0.5);
@@ -251,7 +255,7 @@ img { display: block; max-width: 100%; }
   position: relative;
   border: 1px solid var(--glass-border-color);
   border-radius: var(--glass-radius);
-  box-shadow: var(--shadow-soft);
+  box-shadow: var(--glass-edge-highlight), var(--shadow-soft);
   isolation: isolate;
 }
 
@@ -313,7 +317,7 @@ img { display: block; max-width: 100%; }
   -webkit-backdrop-filter: blur(calc(var(--glass-blur-elevated) + 12px));
 }
 
-/* component/primitives.css */
+/* styles/tokens.css */
 input[type="range"] {
   outline: none;
 }
@@ -380,91 +384,6 @@ input[type="range"] {
 .eq-bar--2 { animation: q-eq-bounce 0.9s ease-in-out infinite 0.15s; height: 100%; }
 
 .eq-bar--3 { animation: q-eq-bounce 0.9s ease-in-out infinite 0.3s; height: 65%; }
-
-.btn {
-  position: relative;
-  overflow: hidden;
-  transition: color 0.15s ease, background 0.15s ease, border-color 0.15s ease, transform 0.12s var(--ease-out), box-shadow 0.15s ease;
-}
-
-.btn:hover {
-  background: var(--color-accent-dim);
-  color: var(--color-text);
-  transform: translateY(-1px);
-  box-shadow: 0 4px 16px var(--color-accent-glow);
-}
-
-.btn:active {
-  transform: translateY(0) scale(var(--anim-press));
-  background: var(--color-accent-subtle);
-}
-
-/* Press bloom — a glow that blooms from center and fades on release.
-   No JS/keyframes needed, just a transition on a pseudo-element
-   triggered by :active — the honest ceiling for a ripple in plain CSS
-   (a real position-tracking ripple needs the click coordinates from
-   JS). Side effect to be aware of: adding overflow:hidden to .btn will
-   clip any child that intentionally overflows the button bounds (e.g.
-   a badge or tooltip anchored to a button) — worth a quick check if
-   any button in the app relies on that. */
-.btn::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: radial-gradient(circle at center, var(--color-accent-glow-strong) 0%, transparent 70%);
-  opacity: 0;
-  transform: scale(0.6);
-  pointer-events: none;
-  transition: opacity var(--anim-fast) var(--anim-ease), transform var(--anim-fast) var(--anim-ease);
-}
-
-.btn:active::after {
-  opacity: 0.6;
-  transform: scale(1);
-}
-
-.custom-switch .switch-slider {
-  background-color: rgba(255, 255, 255, 0.12);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  border-radius: var(--radius-pill, 99px);
-  transition: background-color var(--anim-fast) var(--anim-ease), border-color var(--anim-fast) var(--anim-ease), box-shadow var(--anim-fast) var(--anim-ease);
-}
-
-.custom-switch:hover .switch-slider {
-  background-color: rgba(255, 255, 255, 0.18);
-}
-
-.custom-switch .switch-slider::before {
-  background-color: var(--color-text, #ffffff);
-  background-image: radial-gradient(circle at 32% 28%, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0.2) 45%, rgba(255, 255, 255, 0) 72%);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
-  transition: transform var(--anim-fast) var(--anim-spring);
-}
-
-.custom-switch input:checked + .switch-slider {
-  background-color: var(--color-accent);
-  border-color: transparent;
-  box-shadow: 0 0 10px var(--color-accent-glow);
-}
-
-.custom-switch:hover input:checked + .switch-slider {
-  box-shadow: 0 0 14px var(--color-accent-glow-strong);
-}
-
-.custom-switch input:checked + .switch-slider::before {
-  transform: translateX(18px);
-  background-color: #060608;
-}
-
-/* Forwards the focus ring onto the visible slider — if the checkbox
-   itself is visually hidden (standard pattern for this component), the
-   global :focus-visible rule above lands on an invisible element and
-   keyboard focus disappears on toggles otherwise. */
-.custom-switch input:focus-visible + .switch-slider {
-  outline: 2px solid var(--color-accent);
-  outline-offset: 2px;
-}
 
 .custom-select {
   position: relative;

@@ -22,7 +22,8 @@
 // Multiplier curve: below effective sensitivity, multiplier is 1.0 (no
 // duck). From effective sensitivity to effective duckCeiling, multiplier
 // ramps linearly down to maxDuck. At/above ceiling, pinned to maxDuck.
-// Smoothed with simple attack/decay so it doesn't snap.
+// Smoothed with time-based attack/release plus a release hold (see the
+// ballistics constants) so it doesn't snap or pump on bursty audio.
 //
 // Track-loudness auto-tuning (setTrackLoudness): player-ui.js feeds a
 // rolling BS.1770-ish LUFS estimate of the currently playing track. A
@@ -62,6 +63,10 @@ const DEFAULTS = {
   sensitivity: 0.15,
   duckCeiling: 0.4,
   maxDuck: 0.35,
+  // Process names (not PIDs — PIDs change every relaunch) that should
+  // never count toward ducking, e.g. a notch-widget visualizer that has
+  // its own active audio session but isn't something to duck for.
+  excludedProcessNames: [],
 };
 
 const LUFS_REFERENCE = -18;
@@ -84,10 +89,20 @@ let onDebugTick = null; // optional: (level, target, smoothed) => void
 
 // Ballistics for the OUTPUT multiplier (separate from the addon's own
 // internal level smoothing) — duck-in fast, release slow, so it doesn't
-// feel like it's chattering when a game's audio is bursty.
-const DUCK_IN = 0.35;
-const DUCK_RELEASE = 0.08;
-const POLL_MS = 100;
+// feel like it's chattering when a game's audio is bursty or when someone
+// is talking (speech = short bursts with tiny gaps between words).
+//
+// Time-based, NOT per-tick: the old per-tick coefficients (0.35 / 0.08 at
+// 100ms) meant changing POLL_MS silently changed how the ducking felt.
+// Now the time constants are in ms and the per-tick coefficient is derived
+// from the real elapsed time (1 - e^(-dt/tau)).
+//
+// These five numbers are TUNING values (subjective feel), not bug fixes.
+const POLL_MS = 30;           // how often the level is sampled
+const DUCK_IN_MS = 50;        // attack time constant — how fast it ducks
+const DUCK_RELEASE_MS = 900;  // release time constant — how slowly it recovers
+const HOLD_MS = 700;          // after the last "still ducking" moment, wait this long before releasing (bridges gaps between words/sentences)
+const SNAP_EPSILON = 0.002;   // within this of target = land exactly on it (stops endless tiny updates)
 
 function loadAddon() {
   if (process.platform !== 'win32') return null;
@@ -120,6 +135,36 @@ function getOwnProcessPids() {
   }
 }
 
+// Resolves settings.excludedProcessNames against whatever audio sessions
+// are currently active, unions the result with our own PIDs, and pushes
+// the combined set to the addon via setExcludedProcesses(). Doesn't touch
+// the capture thread's start/stop state — addon.cc's setExcludedProcesses
+// updates the live exclude set in place, no restart needed.
+function refreshExcludedPids() {
+  if (!addon || typeof addon.setExcludedProcesses !== 'function') return;
+
+  const ownPids = getOwnProcessPids();
+  const names = (settings.excludedProcessNames || []).map((n) => n.toLowerCase());
+  let matchedPids = [];
+  if (names.length > 0) {
+    try {
+      const sessions = addon.getSessions();
+      matchedPids = sessions
+        .filter((s) => names.includes(String(s.name || '').toLowerCase()))
+        .map((s) => s.pid);
+    } catch (err) {
+      console.warn('[Musik] game-duck: getSessions() failed during exclude refresh:', err.message);
+    }
+  }
+
+  const combined = Array.from(new Set([...ownPids, ...matchedPids]));
+  try {
+    addon.setExcludedProcesses(combined);
+  } catch (err) {
+    console.warn('[Musik] game-duck: setExcludedProcesses() failed:', err.message);
+  }
+}
+
 // The exclude list is only accurate at the instant it's captured — Musik
 // spawns processes lazily (e.g. Chromium's audio-handling process doesn't
 // exist until playback actually starts, a new miniplayer window spawns its
@@ -127,8 +172,10 @@ function getOwnProcessPids() {
 // addon.cc re-applies whatever PID list is passed EVERY call to start(),
 // even while already running, without resetting the capture thread or its
 // level smoothing — so it's safe to call this on a timer.
-let refreshCounter = 0;
-const REFRESH_EVERY_TICKS = 20; // ~2s at POLL_MS=100
+// Time-based (was tick-counted: 20 ticks @ 100ms). Tick-counting would have
+// turned into a refresh every 600ms after the POLL_MS change.
+let lastRefreshAt = 0;
+const REFRESH_EVERY_MS = 2000;
 
 function loadSettingsFromDisk() {
   if (!settingsPath || !fs.existsSync(settingsPath)) return;
@@ -172,24 +219,48 @@ function computeTargetMultiplier(level) {
   return 1.0 - clamped * (1.0 - settings.maxDuck);
 }
 
+let lastTickAt = 0;
+let holdUntil = 0;
+let lastSentMultiplier = 1.0;
+
 function tick() {
   if (!addon) return;
 
-  refreshCounter++;
-  if (refreshCounter >= REFRESH_EVERY_TICKS) {
-    refreshCounter = 0;
-    try {
-      addon.start(getOwnProcessPids());
-    } catch (err) {
-      console.warn('[Musik] game-duck: exclude-list refresh failed:', err.message);
-    }
+  const now = Date.now();
+  // Real elapsed time, capped so a stalled main process (long GC, sleep
+  // wake) doesn't produce one giant jump.
+  const dt = lastTickAt ? Math.min(now - lastTickAt, 250) : POLL_MS;
+  lastTickAt = now;
+
+  if (now - lastRefreshAt >= REFRESH_EVERY_MS) {
+    lastRefreshAt = now;
+    refreshExcludedPids();
   }
 
   const level = addon.getLevel();
-  const target = computeTargetMultiplier(level);
-  const coeff = target < smoothedMultiplier ? DUCK_IN : DUCK_RELEASE;
-  smoothedMultiplier += (target - smoothedMultiplier) * coeff;
-  onMultiplierChange(smoothedMultiplier);
+  let target = computeTargetMultiplier(level);
+
+  // Hold: every time the signal is at least as loud as what we're already
+  // ducked to, restart the hold timer. While it's running, refuse to
+  // release — this is what stops the volume pumping back up in the gaps
+  // between words. Only applies while ducking is actually active, so the
+  // manual-override hotkey / disabling the feature still releases at once.
+  if (target < 1.0 && target <= smoothedMultiplier) {
+    holdUntil = now + HOLD_MS;
+  } else if (target > smoothedMultiplier && settings.enabled && !manualOverride && now < holdUntil) {
+    target = smoothedMultiplier;
+  }
+
+  const tau = target < smoothedMultiplier ? DUCK_IN_MS : DUCK_RELEASE_MS;
+  smoothedMultiplier += (target - smoothedMultiplier) * (1 - Math.exp(-dt / tau));
+  if (Math.abs(target - smoothedMultiplier) < SNAP_EPSILON) smoothedMultiplier = target;
+
+  // Only push when the value actually changed — at 30ms polling that's
+  // ~33 msgs/s while moving, zero once it settles.
+  if (smoothedMultiplier !== lastSentMultiplier) {
+    lastSentMultiplier = smoothedMultiplier;
+    onMultiplierChange(smoothedMultiplier);
+  }
   if (onDebugTick) onDebugTick(level, target, smoothedMultiplier);
 }
 
@@ -201,6 +272,10 @@ function startPolling() {
     console.warn('[Musik] game-duck: addon.start() failed:', err.message);
     return;
   }
+  refreshExcludedPids(); // apply user-excluded names immediately, don't wait for the first periodic refresh
+  lastRefreshAt = Date.now();
+  lastTickAt = 0;
+  holdUntil = 0;
   pollInterval = setInterval(tick, POLL_MS);
 }
 
@@ -213,6 +288,8 @@ function stopPolling() {
     try { addon.stop(); } catch (_) {}
   }
   smoothedMultiplier = 1.0;
+  lastSentMultiplier = 1.0;
+  holdUntil = 0;
   onMultiplierChange(1.0);
 }
 
@@ -245,6 +322,7 @@ function getSettings() {
     sensitivity: settings.sensitivity,
     duckCeiling: settings.duckCeiling,
     maxDuck: settings.maxDuck,
+    excludedProcessNames: settings.excludedProcessNames,
     manualOverride,
     trackLoudnessLufs,
   };
@@ -307,6 +385,19 @@ function setTargetProcesses(pids) {
   }
 }
 
+// Process names (e.g. "v-notch.exe") to always exclude from ducking
+// consideration, no matter how loud their audio session gets. Persisted,
+// unlike setTargetProcesses' PID list, since names survive relaunches
+// and PIDs don't.
+function setExcludedProcessNames(names) {
+  settings.excludedProcessNames = Array.isArray(names)
+    ? names.filter((n) => typeof n === 'string')
+    : [];
+  saveSettingsToDisk();
+  refreshExcludedPids();
+  return getSettings();
+}
+
 module.exports = {
   init,
   getSettings,
@@ -318,4 +409,5 @@ module.exports = {
   setTrackLoudness,
   getAudioSessions,
   setTargetProcesses,
+  setExcludedProcessNames,
 };

@@ -11,6 +11,12 @@ const LAYOUT_MODE_KEY = 'musikLayoutMode';
 function getLayoutMode() {
   return localStorage.getItem(LAYOUT_MODE_KEY) || 'dynamic';
 }
+
+const COMPACT_SETTINGS_KEY = 'musik:compact-settings';
+
+function getCompactSettings() {
+  return localStorage.getItem(COMPACT_SETTINGS_KEY) !== 'off';
+}
 function broadcastLayoutChange() {
   window.dispatchEvent(new CustomEvent('musik:layout-change', {
     detail: { mode: getLayoutMode() },
@@ -310,23 +316,54 @@ window.MusikViews['settings'] = async function renderSettings(main) {
   const scrobblerSettings = (await window.Musik?.scrobble?.getSettings?.()) ?? { connected: false, username: null, enabled: true, usingCustomApiKey: false, lastScrobbleAt: null };
 
   main.innerHTML = `
-    <div class="settings-page">
-      <h1 class="settings-title">Settings</h1>
-
-      <section class="settings-section" id="settings-playback">
-        <h2 class="settings-section-title">Playback</h2>
-        <div class="settings-row">
-          <div class="settings-row-label">
-            <span class="settings-row-name">Default volume</span>
-            <span class="settings-row-desc">Volume applied on launch, before you touch the slider.</span>
-          </div>
-          <div class="settings-row-control">
-            <input type="range" id="settings-default-volume" min="0" max="100"
-              value="${getStoredDefaultVolumePercent()}" />
-            <span id="settings-default-volume-value" class="settings-row-value"></span>
-          </div>
+    <div class="settings-page${getCompactSettings() ? ' settings-page--compact' : ''}">
+      <div class="settings-header">
+        <h1 class="settings-title">Settings</h1>
+        <div class="settings-view-toggle" id="settings-view-toggle" role="group" aria-label="Settings layout" data-compact="${getCompactSettings()}">
+          <span class="settings-view-toggle-thumb" aria-hidden="true"></span>
+          <button type="button" class="settings-view-opt" data-compact="false" aria-pressed="${!getCompactSettings()}" aria-label="Single column" title="Single column">
+            <svg class="settings-view-icon" viewBox="0 0 16 16" aria-hidden="true">
+              <rect class="sv-bar sv-bar--single" x="2" y="3" width="12" height="10" rx="2.5"/>
+            </svg>
+          </button>
+          <button type="button" class="settings-view-opt" data-compact="true" aria-pressed="${getCompactSettings()}" aria-label="Side by side" title="Side by side">
+            <svg class="settings-view-icon" viewBox="0 0 16 16" aria-hidden="true">
+              <rect class="sv-bar sv-bar--l" x="2" y="3" width="5" height="10" rx="2"/>
+              <rect class="sv-bar sv-bar--r" x="9" y="3" width="5" height="10" rx="2"/>
+            </svg>
+          </button>
         </div>
-      </section>
+      </div>
+
+      <div class="settings-section-grid settings-section-grid--compact">
+        <section class="settings-section" id="settings-playback">
+          <h2 class="settings-section-title">Playback</h2>
+          <div class="settings-row">
+            <div class="settings-row-label">
+              <span class="settings-row-name">Default volume</span>
+              <span class="settings-row-desc">Volume applied on launch, before you touch the slider.</span>
+            </div>
+            <div class="settings-row-control">
+              <input type="range" id="settings-default-volume" min="0" max="100"
+                value="${getStoredDefaultVolumePercent()}" />
+              <span id="settings-default-volume-value" class="settings-row-value"></span>
+            </div>
+          </div>
+        </section>
+
+        <section class="settings-section" id="settings-miniplayer">
+          <h2 class="settings-section-title">Miniplayer</h2>
+          <div class="settings-row">
+            <div class="settings-row-label">
+              <span class="settings-row-name">Always on top</span>
+              <span class="settings-row-desc">Keep the miniplayer floating above other windows. Off = it behaves like a normal window.</span>
+            </div>
+            <div class="settings-row-control">
+              <input type="checkbox" id="settings-mini-always-on-top" ${getMiniAlwaysOnTop() ? 'checked' : ''} />
+            </div>
+          </div>
+        </section>
+      </div>
 
       <section class="settings-section" id="settings-layout">
         <h2 class="settings-section-title">Layout</h2>
@@ -340,19 +377,6 @@ window.MusikViews['settings'] = async function renderSettings(main) {
           ${layoutCardHTML('dynamic', 'Dynamic', 'Hidden until you hover the edge.')}
           ${layoutCardHTML('pinned', 'Pinned', 'Sidebar stays expanded, always visible.')}
           ${layoutCardHTML('topbar', 'Top Bar', 'Sidebar becomes a bar across the top.')}
-        </div>
-      </section>
-
-      <section class="settings-section" id="settings-miniplayer">
-        <h2 class="settings-section-title">Miniplayer</h2>
-        <div class="settings-row">
-          <div class="settings-row-label">
-            <span class="settings-row-name">Always on top</span>
-            <span class="settings-row-desc">Keep the miniplayer floating above other windows. Off = it behaves like a normal window.</span>
-          </div>
-          <div class="settings-row-control">
-            <input type="checkbox" id="settings-mini-always-on-top" ${getMiniAlwaysOnTop() ? 'checked' : ''} />
-          </div>
         </div>
       </section>
 
@@ -472,6 +496,7 @@ window.MusikViews['settings'] = async function renderSettings(main) {
         </div>
       </section>
 
+      <div class="settings-section-grid settings-section-grid--compact">
       <section class="settings-section" id="settings-library">
         <h2 class="settings-section-title">Library</h2>
         <div class="settings-row">
@@ -520,6 +545,7 @@ window.MusikViews['settings'] = async function renderSettings(main) {
         </div>
         <div id="settings-mods-list"></div>
       </section>
+      </div>
 
       <section class="settings-section" id="settings-game-mode">
         <h2 class="settings-section-title">Game mode</h2>
@@ -586,6 +612,7 @@ window.MusikViews['settings'] = async function renderSettings(main) {
         `}
       </section>
 
+      <div class="settings-section-grid settings-section-grid--compact">
       <section class="settings-section" id="settings-scrobbling">
         <h2 class="settings-section-title">Last.fm</h2>
         ${lastfmSectionHTML(scrobblerSettings)}
@@ -603,6 +630,18 @@ window.MusikViews['settings'] = async function renderSettings(main) {
           </div>
         </div>
       </section>
+      </div>
+
+      <nav class="settings-section-rail" aria-label="Settings sections">
+        <button type="button" class="settings-section-dot is-active" data-target="settings-playback" aria-label="Playback"><span>Playback</span></button>
+        <button type="button" class="settings-section-dot" data-target="settings-layout" aria-label="Layout"><span>Layout</span></button>
+        <button type="button" class="settings-section-dot" data-target="settings-eq" aria-label="Equalizer"><span>Equalizer</span></button>
+        <button type="button" class="settings-section-dot" data-target="settings-visualizer" aria-label="Visualizer"><span>Visualizer</span></button>
+        <button type="button" class="settings-section-dot" data-target="settings-library" aria-label="Library"><span>Library</span></button>
+        <button type="button" class="settings-section-dot" data-target="settings-game-mode" aria-label="Game mode"><span>Game mode</span></button>
+        <button type="button" class="settings-section-dot" data-target="settings-scrobbling" aria-label="Account"><span>Account</span></button>
+      </nav>
+      <button type="button" class="settings-back-to-top" aria-label="Back to top">↑</button>
     </div>
   `;
 
@@ -621,6 +660,70 @@ window.MusikViews['settings'] = async function renderSettings(main) {
     localStorage.setItem(MINI_ALWAYS_ON_TOP_KEY, String(e.target.checked));
     window.Musik?.miniplayer?.setAlwaysOnTop?.(e.target.checked);
   });
+
+  const settingsPage = main.querySelector('.settings-page');
+  const sectionRail = settingsPage?.querySelector('.settings-section-rail');
+  const backToTop = settingsPage?.querySelector('.settings-back-to-top');
+  const sectionDots = [...(sectionRail?.querySelectorAll('.settings-section-dot') ?? [])];
+  const navigableSections = sectionDots
+    .map((dot) => document.getElementById(dot.dataset.target))
+    .filter(Boolean);
+
+  const paintSectionRail = () => {
+    const mainTop = main.getBoundingClientRect().top;
+    const threshold = mainTop + 120;
+    let current = navigableSections[0];
+    for (const section of navigableSections) {
+      if (section.getBoundingClientRect().top <= threshold) current = section;
+    }
+    sectionDots.forEach((dot) => {
+      dot.classList.toggle('is-active', dot.dataset.target === current?.id);
+    });
+    backToTop?.classList.toggle('is-visible', main.scrollTop > 420);
+  };
+
+  sectionDots.forEach((dot) => {
+    dot.addEventListener('click', () => {
+      document.getElementById(dot.dataset.target)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, { signal });
+  });
+  main.addEventListener('scroll', paintSectionRail, { signal, passive: true });
+  backToTop?.addEventListener('click', () => {
+    main.scrollTo({ top: 0, behavior: 'smooth' });
+  }, { signal });
+  paintSectionRail();
+
+  // Feeds the hover spotlight in settings.css (.settings-section::after).
+  settingsPage?.addEventListener('pointermove', (e) => {
+    const card = e.target.closest?.('.settings-section');
+    if (!card) return;
+    const r = card.getBoundingClientRect();
+    card.style.setProperty('--mx', `${e.clientX - r.left}px`);
+    card.style.setProperty('--my', `${e.clientY - r.top}px`);
+  }, { signal, passive: true });
+
+  const viewToggle = document.getElementById('settings-view-toggle');
+  viewToggle?.addEventListener('click', (e) => {
+    const opt = e.target.closest('.settings-view-opt');
+    if (!opt) return;
+    const compact = opt.dataset.compact === 'true';
+    if (compact === (viewToggle.dataset.compact === 'true')) return;
+
+    localStorage.setItem(COMPACT_SETTINGS_KEY, compact ? 'on' : 'off');
+    settingsPage?.classList.toggle('settings-page--compact', compact);
+    viewToggle.dataset.compact = String(compact);
+    viewToggle.querySelectorAll('.settings-view-opt').forEach((o) => {
+      o.setAttribute('aria-pressed', String(o === opt));
+    });
+
+    // Restart the click-kick on the thumb + the newly selected icon.
+    for (const el of [viewToggle.querySelector('.settings-view-toggle-thumb'), opt.querySelector('.settings-view-icon')]) {
+      el.classList.remove('is-kick');
+      void el.getBoundingClientRect();
+      el.classList.add('is-kick');
+      el.addEventListener('animationend', () => el.classList.remove('is-kick'), { once: true });
+    }
+  }, { signal });
 
   const rescanIntervalSelect = document.getElementById('settings-rescan-interval');
   const rescanNowBtn = document.getElementById('settings-rescan-now');

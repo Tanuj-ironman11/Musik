@@ -1,10 +1,147 @@
 /* src/styles/settings.css — glass card treatment, matches sidebar/player-bar */
 
 .settings-page {
-  max-width: 960px;
-  margin: 64px auto;
-  padding: 0 32px 80px;
+  max-width: 1120px;
+  margin: 40px auto 0;
+  padding: 0 40px 96px;
   color: var(--color-text);
+}
+
+.settings-section-grid {
+  display: grid;
+  /* Collapses to one column on its own when the window can't fit two
+     ~360px cards — no breakpoint to maintain. */
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr));
+  gap: 16px;
+  margin-bottom: 16px;
+  align-items: start;
+}
+
+.settings-section-grid > .settings-section {
+  margin-bottom: 0;
+}
+
+.settings-page:not(.settings-page--compact) .settings-section-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.settings-section {
+  scroll-margin-top: 32px;
+}
+
+.settings-section-rail {
+  position: fixed;
+  top: 50%;
+  right: 22px;
+  z-index: var(--z-dropdown);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  transform: translateY(-50%);
+}
+
+.settings-section-dot {
+  position: relative;
+  width: 8px;
+  height: 8px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-text) 28%, transparent);
+  cursor: pointer;
+  transition: height var(--anim-medium) var(--ease-spring),
+              background var(--anim-fast) var(--anim-ease),
+              box-shadow var(--anim-fast) var(--anim-ease),
+              transform var(--anim-fast) var(--ease-spring);
+}
+
+.settings-section-dot:hover,
+.settings-section-dot:focus-visible {
+  transform: scale(1.35);
+  background: var(--color-text-secondary);
+}
+
+.settings-section-dot.is-active {
+  height: 24px;
+  background: var(--color-accent);
+  box-shadow: 0 0 12px var(--color-accent-glow);
+}
+
+.settings-section-dot span {
+  position: absolute;
+  right: 20px;
+  top: 50%;
+  padding: 5px 9px;
+  border: 1px solid var(--glass-border-color);
+  border-radius: var(--radius-sm);
+  background: var(--glass-bg-elevated);
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-50%) translateX(4px);
+  transition: opacity var(--anim-fast) var(--anim-ease), transform var(--anim-fast) var(--ease-spring);
+}
+
+.settings-section-dot:hover span,
+.settings-section-dot:focus-visible span {
+  opacity: 1;
+  transform: translateY(-50%) translateX(0);
+}
+
+.settings-back-to-top {
+  position: fixed;
+  right: 16px;
+  bottom: calc(var(--player-bar-height) + 32px);
+  z-index: var(--z-dropdown);
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--glass-border-color);
+  border-radius: 50%;
+  background: var(--glass-bg-elevated);
+  color: var(--color-text-secondary);
+  font-family: var(--font-mono);
+  font-size: 17px;
+  line-height: 1;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(8px);
+  transition: opacity var(--anim-medium) var(--ease-out),
+              transform var(--anim-medium) var(--ease-spring),
+              color var(--anim-fast) var(--anim-ease),
+              border-color var(--anim-fast) var(--anim-ease);
+}
+
+.settings-back-to-top.is-visible {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+.settings-back-to-top:hover {
+  color: var(--color-accent);
+  border-color: color-mix(in srgb, var(--color-accent) 50%, var(--glass-border-color));
+}
+
+@media (max-width: 760px) {
+  .settings-page {
+    padding: 0 20px 96px;
+  }
+
+  .settings-section-rail {
+    display: none;
+  }
+}
+
+.settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 28px;
 }
 
 .settings-title {
@@ -12,65 +149,193 @@
   font-weight: 700;
   font-size: var(--font-size-xl);
   letter-spacing: 0.01em;
-  margin-bottom: 28px;
+  margin: 0;
 }
 
 .settings-section {
+  /* Tune this one number: lower = glassier, higher = more solid.
+     82% was the original solid look; 58% was too glassy. */
+  --settings-card-alpha: 70%;
   position: relative;
-  padding: 22px 26px;
-  background: color-mix(in srgb, var(--color-bg-surface) 82%, transparent);
+  padding: 22px 24px;
+  background: color-mix(in srgb, var(--color-bg-surface) var(--settings-card-alpha), transparent);
   border: 1px solid var(--color-border);
-  border-radius: calc(var(--radius-md) + 6px);
-  margin-bottom: 28px;
-  /* Was a flat, hardcoded blur(18px) with no saturate/contrast — now on
-     the shared standard tier so this tracks the rest of the app's glass
-     tuning instead of drifting out of sync with it. Kept the more
-     opaque color-mix background above (rather than swapping to
-     --glass-bg-standard) since this card holds dense settings text and
-     needs the extra contrast for legibility, unlike the decorative
-     surfaces. */
+  /* Softer, rounder silhouette — same corner language as the player bar
+     and queue panel instead of a flat rounded rectangle. */
+  border-radius: var(--radius-lg, 20px);
+  margin-bottom: 16px;
+  /* Shared standard glass tier so this tracks the rest of the app's blur
+     tuning. Background stays a touch heavier than --glass-bg-standard
+     because this card holds dense settings text. */
   backdrop-filter: blur(var(--glass-blur-standard)) saturate(var(--glass-saturate-standard)) contrast(1.05);
   -webkit-backdrop-filter: blur(var(--glass-blur-standard)) saturate(var(--glass-saturate-standard)) contrast(1.05);
-  box-shadow: 0 8px 24px -12px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 12px 32px -16px rgba(0, 0, 0, 0.55);
   isolation: isolate;
-  transition: border-color var(--anim-fast) var(--anim-ease);
+  transition: border-color var(--anim-medium, 0.3s) var(--anim-ease),
+              box-shadow var(--anim-medium, 0.3s) var(--anim-ease);
 }
+/* Hover: accent-tinted rim + soft glow, and a spotlight that follows the
+   cursor (--mx/--my set by settings.js). No movement — these cards hold
+   sliders and dropdowns, and a card shifting under your cursor while you
+   drag something is worse than no lift at all. */
 .settings-section:hover {
-  border-color: color-mix(in srgb, var(--color-accent) 30%, var(--color-border));
+  border-color: color-mix(in srgb, var(--color-accent) 38%, var(--color-border));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-accent) 12%, transparent),
+              0 16px 40px -18px color-mix(in srgb, var(--color-accent) 38%, rgba(0, 0, 0, 0.5));
 }
+.settings-section::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: radial-gradient(
+    320px circle at var(--mx, 50%) var(--my, 0%),
+    color-mix(in srgb, var(--color-accent) 11%, transparent),
+    transparent 70%
+  );
+  opacity: 0;
+  transition: opacity var(--anim-medium, 0.3s) var(--anim-ease);
+}
+.settings-section:hover::after { opacity: 1; }
 
-/* Same clear-center/frosted-rim trick as the shared .glass-surface
-   system (tokens.css): its own heavier backdrop-filter, masked to a
-   ring near the edge so the bulk of the card (where the actual settings
-   text lives) stays sharp while the rim reads as frosted glass. */
+/* Real rim depth: this samples the background again and blurs only the
+   outer edge. It adds depth without painting a bright outline around the
+   card. */
 .settings-section::before {
   content: "";
   position: absolute;
   inset: 0;
   border-radius: inherit;
   pointer-events: none;
-  backdrop-filter: blur(calc(var(--glass-blur-standard) + 9px));
-  -webkit-backdrop-filter: blur(calc(var(--glass-blur-standard) + 9px));
-  -webkit-mask-image: radial-gradient(120% 160% at 50% 50%, transparent 55%, black 90%);
-  mask-image: radial-gradient(120% 160% at 50% 50%, transparent 55%, black 90%);
+  backdrop-filter: blur(calc(var(--glass-blur-standard) + 8px));
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur-standard) + 8px));
+  -webkit-mask-image: radial-gradient(120% 160% at 50% 50%, transparent 58%, black 92%);
+  mask-image: radial-gradient(120% 160% at 50% 50%, transparent 58%, black 92%);
 }
 
+.settings-section > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* Same clear-center/frosted-rim trick as the shared .glass-surface
+   system (tokens.css): its own heavier backdrop-filter, masked to a
+   ring near the edge so the bulk of the card (where the actual settings
+   text lives) stays sharp while the rim reads as frosted glass. */
 .settings-section-title {
   font-family: var(--font-mono);
   font-size: var(--font-size-xs);
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--color-accent);
-  margin-bottom: 14px;
+  margin-bottom: 6px;
+}
+
+/* ── Settings view toggle (single column ↔ side by side) ──────────────
+   Lives in the page header. Sliding accent thumb rides the `translate`
+   property so the squash keyframe (which owns `transform`) doesn't fight
+   the slide. Icon bars + thumb get an .is-kick class from settings.js
+   on change, removed on animationend. Keyframes: animations.css. */
+
+.settings-view-toggle {
+  --svt-w: 40px;
+  --svt-h: 28px;
+  position: relative;
+  isolation: isolate;
+  display: inline-grid;
+  grid-template-columns: repeat(2, var(--svt-w));
+  padding: 3px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--color-bg-surface) 70%, var(--color-bg) 30%);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+
+.settings-view-toggle-thumb {
+  position: absolute;
+  z-index: 0;
+  top: 3px;
+  left: 3px;
+  width: var(--svt-w);
+  height: var(--svt-h);
+  border-radius: var(--radius-pill);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 55%, var(--color-border));
+  background: color-mix(in srgb, var(--color-accent) 16%, var(--color-bg-surface));
+  box-shadow: 0 0 12px var(--color-accent-glow);
+  box-sizing: border-box;
+  translate: 0 0;
+  transition: translate var(--anim-medium, 0.3s) var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1));
+  pointer-events: none;
+}
+.settings-view-toggle[data-compact="true"] .settings-view-toggle-thumb {
+  translate: var(--svt-w) 0;
+}
+.settings-view-toggle-thumb.is-kick {
+  animation: settings-view-thumb-squash var(--anim-medium, 0.3s) var(--ease-out, ease-out);
+}
+
+.settings-view-opt {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: var(--svt-w);
+  height: var(--svt-h);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--color-text-dim);
+  cursor: pointer;
+  transition: color var(--anim-fast) var(--anim-ease);
+}
+.settings-view-opt:hover { color: var(--color-text); }
+.settings-view-opt[aria-pressed="true"] { color: var(--color-accent); }
+.settings-view-opt:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--color-bg),
+              0 0 0 4px color-mix(in srgb, var(--color-accent) 65%, transparent);
+}
+
+.settings-view-icon {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  overflow: visible;
+}
+.settings-view-icon .sv-bar {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.settings-view-icon .sv-bar--l { --dir: -1; }
+.settings-view-icon .sv-bar--r { --dir: 1; }
+.settings-view-icon.is-kick .sv-bar--single {
+  animation: settings-view-icon-stack 0.42s var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1));
+}
+.settings-view-icon.is-kick .sv-bar--l,
+.settings-view-icon.is-kick .sv-bar--r {
+  animation: settings-view-icon-split 0.42s var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .settings-view-toggle-thumb { transition: none; }
+  .settings-view-toggle-thumb.is-kick,
+  .settings-view-icon.is-kick .sv-bar { animation: none; }
 }
 
 .settings-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 20px;
-  padding: 10px 0;
+  gap: 24px;
+  padding: 14px 0;
 }
+/* Card padding already provides the bottom margin — without this the
+   last row stacked 14px + 22px and the card looked bottom-heavy. */
+.settings-section > .settings-row:last-child { padding-bottom: 0; }
 .settings-row + .settings-row {
   border-top: 1px solid var(--color-border);
 }
@@ -89,11 +354,12 @@
 .settings-row-label {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
+  flex: 1 1 0;
   min-width: 0;
 }
 .settings-row-name { font-size: 13px; font-weight: 600; color: var(--color-text); }
-.settings-row-desc { font-size: 11px; color: color-mix(in srgb, var(--color-text-dim) 55%, var(--color-text) 45%); line-height: 1.4; }
+.settings-row-desc { font-size: 11px; color: var(--color-text-secondary); line-height: 1.4; }
 
 .settings-row-control {
   display: flex;
@@ -768,13 +1034,14 @@ body[data-bg-style="gradient"], body[data-bg-style="acrylic-mica"], body[data-bg
   box-sizing: border-box;
   padding: 20px 20px 14px;
   border-radius: 14px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--glass-border-color);
   background:
     radial-gradient(140% 100% at 50% -10%, color-mix(in srgb, var(--color-accent) 7%, transparent), transparent 55%),
     linear-gradient(180deg,
       color-mix(in srgb, var(--color-bg) 88%, black) 0%,
       color-mix(in srgb, var(--color-bg) 78%, black) 100%);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04),
+  box-shadow: var(--glass-edge-highlight),
+              inset 0 1px 0 rgba(255, 255, 255, 0.04),
               inset 0 2px 10px rgba(0, 0, 0, 0.45),
               0 10px 30px -18px rgba(0, 0, 0, 0.6);
   /* Bands are flex:1 and compress to fit — overflow is a last-resort

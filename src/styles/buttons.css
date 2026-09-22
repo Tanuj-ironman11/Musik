@@ -18,6 +18,12 @@
   white-space: nowrap;
   cursor: pointer;
   letter-spacing: 0.2px;
+  overflow: hidden;
+  transition: color var(--anim-fast) var(--anim-ease),
+              background var(--anim-fast) var(--anim-ease),
+              border-color var(--anim-fast) var(--anim-ease),
+              transform var(--anim-fast) var(--ease-out),
+              box-shadow var(--anim-fast) var(--anim-ease);
 }
 
 .btn::before {
@@ -33,6 +39,31 @@
 .btn:hover {
   color: var(--color-text);
   border-color: rgba(255,255,255,0.18);
+  background: var(--color-accent-dim);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px var(--color-accent-glow);
+}
+
+.btn:active {
+  transform: translateY(0) scale(var(--anim-press));
+  background: var(--color-accent-subtle);
+}
+
+.btn::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(circle at center, var(--color-accent-glow-strong) 0%, transparent 70%);
+  opacity: 0;
+  transform: scale(0.6);
+  pointer-events: none;
+  transition: opacity var(--anim-fast) var(--anim-ease), transform var(--anim-fast) var(--anim-ease);
+}
+
+.btn:active::after {
+  opacity: 0.6;
+  transform: scale(1);
 }
 
 .btn-sm { padding: 6px 12px; font-size: 11px; }
@@ -40,14 +71,14 @@
 .btn-primary {
   background: var(--color-accent);
   border-color: transparent;
-  color: #000;
+  color: var(--color-on-accent);
   font-weight: 700;
 }
 .btn-primary::before { display: none; }
 .btn-primary:hover {
   background: color-mix(in srgb, var(--color-accent) 85%, #fff);
   border-color: transparent;
-  color: #000;
+  color: var(--color-on-accent);
 }
 
 .btn-danger {
@@ -60,88 +91,16 @@
   color: var(--color-danger);
 }
 
-.btn-warning { color: #c98a3d; border-color: rgba(201,138,61,0.2); }
-.btn-warning:hover { border-color: rgba(201,138,61,0.4); background: rgba(201,138,61,0.08); color: #d99840; }
+.btn-warning { color: var(--color-warning); border-color: rgba(var(--color-warning-rgb), 0.2); }
+.btn-warning:hover { border-color: rgba(var(--color-warning-rgb), 0.4); background: rgba(var(--color-warning-rgb), 0.08); color: var(--color-warning); }
 
 .icon-btn,
-.pb-btn,
 .control-btn,
 .queue-action-btn {
   position: relative;
   background: transparent;
   border: none;
   cursor: pointer;
-}
-
-/* ─── Player Bar Buttons ─── */
-.pb-btn {
-  width: 34px;
-  height: 34px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  color: var(--color-text-dim);
-  flex-shrink: 0;
-}
-.pb-btn:hover {
-  color: var(--color-text);
-  background: rgba(255,255,255,0.06);
-}
-.pb-btn--active { color: var(--color-accent) !important; }
-
-/* Large circular Accent Play Button */
-.pb-btn-play {
-  width: clamp(38px, 4vw, 46px);
-  height: clamp(38px, 4vw, 46px);
-  border-radius: 50%;
-  background: var(--color-accent);
-  color: #000;
-  box-shadow: 0 4px 20px var(--color-accent-glow);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-.pb-btn-play:hover {
-  background: color-mix(in srgb, var(--color-accent) 85%, #fff);
-  box-shadow: 0 6px 28px rgba(var(--color-accent-rgb), 0.45);
-}
-
-.pb-btn-play .pb-icon-play {
-  width: clamp(13px, 1.6vw, 18px);
-  height: clamp(13px, 1.6vw, 18px);
-  fill: #000;
-  transform: translateX(1px);
-  display: block;
-}
-
-.pb-btn-play .pb-icon-pause {
-  width: clamp(13px, 1.6vw, 18px);
-  height: clamp(13px, 1.6vw, 18px);
-  fill: #000;
-  display: block;
-}
-
-.pb-btn-repeat,
-.pb-btn-queue { position: relative; }
-
-.pb-repeat-badge {
-  position: absolute;
-  font-size: 7px;
-  font-weight: 700;
-  bottom: 3px;
-  right: 3px;
-  background: var(--color-accent);
-  color: #000;
-  border-radius: 50%;
-  width: 10px;
-  height: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  line-height: 1;
-  pointer-events: none;
 }
 
 /* ─── Fullscreen & Lyrics Buttons ─── */
@@ -351,4 +310,39 @@
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+/* ─── Toggle switches ─── */
+.custom-switch .switch-slider {
+  background-color: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: var(--radius-pill, 99px);
+  transition: background-color var(--anim-fast) var(--anim-ease), border-color var(--anim-fast) var(--anim-ease), box-shadow var(--anim-fast) var(--anim-ease);
+}
+
+.custom-switch:hover .switch-slider { background-color: rgba(255, 255, 255, 0.18); }
+
+.custom-switch .switch-slider::before {
+  background-color: var(--color-text, #ffffff);
+  background-image: radial-gradient(circle at 32% 28%, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0.2) 45%, rgba(255, 255, 255, 0) 72%);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  transition: transform var(--anim-fast) var(--anim-spring);
+}
+
+.custom-switch input:checked + .switch-slider {
+  background-color: var(--color-accent);
+  border-color: transparent;
+  box-shadow: 0 0 10px var(--color-accent-glow);
+}
+
+.custom-switch:hover input:checked + .switch-slider { box-shadow: 0 0 14px var(--color-accent-glow-strong); }
+
+.custom-switch input:checked + .switch-slider::before {
+  transform: translateX(18px);
+  background-color: var(--color-on-accent);
+}
+
+.custom-switch input:focus-visible + .switch-slider {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
 }

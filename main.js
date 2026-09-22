@@ -43,7 +43,7 @@ let isPlayingForThumbar = false;
 const THUMBAR_ICONS = {
   play: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAeUlEQVR4nO3WsQ3AMAhEURJlEPafypvEFRKdDRyiuV9HuSfSRIQxxgKp6o9+55tBICFhgIeMAgxRhZQAHjIKMEQGAgNkIXCAh4wCDHGCfJ2AtdZzeqbtAjfjIg0XuB2GA6LDFuQTZMdFiheoDFvpCyDGw3X8DzDGxttAjScf+nlinAAAAABJRU5ErkJggg==',
   pause: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAATUlEQVR4nO2VQQoAIAgErZf4/1f5k7qGeRAhKJq5uaw4N0UA4HdatqiqY53NbNvNdDy9cjzKMp2ywEkQQAABBBBA4A2B6K/7LNMBgCuZddcYIlCq23MAAAAASUVORK5CYII=',
-  previous: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAfUlEQVR4nO2WMRLAIAgEMZOH8P9X8ROtbGMOzqG5rdXbwQE1E0KIA+4+3X1m957WPH8PQCQQ6U+BDGi13q7gDaUC2XCzYgUqwSUBRvAGvgJmOCzADocFImK0CtyQSLVhRAyWSGkOMEQog6giQXsLstWgP0b0Trn9HxBCtLMAlcIxvsphKh8AAAAASUVORK5CYII=',
+  previous: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAfUlEQVR4nO2WMRLAIAgEMZOH8P9X8ROtbGMOzqG5rdXbwQE1E0KIA+4+3X1m957WPH8PQCQQ6U+BDGi13q7gDaUC2XCzYgUqwSUBRvAGvgJmOCzADocFImK0CtyQSLVhRAyWSGkOMEQogqggQXsLstWgP0b0Trn9HxBCtLMAlcIxvsphKh8AAAAASUVORK5CYII=',
   next: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAfUlEQVR4nO3Wuw2AMAxF0QdiEO8/lTeBylKEkPAvcvNuRUHio6QJwBhjjkTkzq77W3t2bvb+/+s7DfBslikMMEQXJAVYIaMAQ1QgZUAV0gZYIaOAKGILQFWPMUBkOABcU4PbANnBVukKqsOB5Al0DLbCJ9A53N3O9wBjbLwHunIt+AGt6ogAAAAASUVORK5CYII=',
 };
 
@@ -304,10 +304,17 @@ ipcMain.handle('musik:push-event', (_e, name, payload) => {
 
 ipcMain.handle('open-file-dialog', async () => {
   const result = await dialog.showOpenDialog(mainWindow, {
-    properties: ['openFile', 'openDirectory', 'multiSelections'],
+    properties: ['openFile', 'multiSelections'],
     filters: [
       { name: 'Audio', extensions: ['mp3', 'flac', 'wav', 'aiff', 'ogg', 'opus', 'aac', 'm4a', 'alac'] },
     ],
+  });
+  return result.canceled ? null : result.filePaths;
+});
+
+ipcMain.handle('open-folder-dialog', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ['openDirectory', 'multiSelections'],
   });
   return result.canceled ? null : result.filePaths;
 });
@@ -458,6 +465,8 @@ ipcMain.handle('game-duck:set-duck-ceiling', async (_e, value) => GameDuck?.setD
 ipcMain.handle('game-duck:set-max-duck', async (_e, value) => GameDuck?.setMaxDuck?.(value) ?? null);
 ipcMain.handle('game-duck:set-manual-override', async (_e, value) => GameDuck?.setManualOverride?.(value) ?? null);
 ipcMain.handle('game-duck:set-track-loudness', async (_e, lufs) => GameDuck?.setTrackLoudness?.(lufs) ?? null);
+ipcMain.handle('game-duck:get-sessions', async () => GameDuck?.getAudioSessions?.() ?? []);
+ipcMain.handle('game-duck:set-excluded-process-names', async (_e, names) => GameDuck?.setExcludedProcessNames?.(names) ?? null);
 
 ipcMain.handle('stats:get-session', async () => Stats?.getSessionStats?.() ?? null);
 ipcMain.handle('stats:get-lifetime', async () => Stats?.getLifetimeStats?.() ?? null);
@@ -501,4 +510,66 @@ ipcMain.handle('system:open-external', async (_e, url) => {
     return true;
   }
   return false;
+});
+
+// ---------------------------------------------------------------------------
+// NEW — ALAC/AAC playback fallback. Chromium's <audio> element can't decode
+// ALAC at all (not a config issue — no decoder for it exists in Chromium),
+// and some AAC/M4A variants are shaky too. @audio/decode-aac is ESM-only, so
+// it's loaded here via dynamic import rather than a plain require() — the
+// renderer's plain-script files (player-ui.js etc.) have no package-loading
+// step at all, so this has to run main-process side regardless.
+//
+// Decodes to raw float samples, then wraps them as an uncompressed 32-bit
+// float WAV in memory (no temp file, nothing written to disk) — WAV needs no
+// extra encoder library and Chromium plays float PCM natively, so this is a
+// container swap only, not a quality tradeoff. Returned as a plain Uint8Array
+// since Buffers don't cross IPC cleanly.
+//
+// Triggered from player-ui.js's <audio> 'error' handler when native playback
+// fails with MEDIA_ERR_SRC_NOT_SUPPORTED — see that file for the retry logic.
+function encodeWavFloat32(channelData, sampleRate) {
+  const numChannels = channelData.length;
+  const numFrames = channelData[0]?.length ?? 0;
+  const bytesPerSample = 4;
+  const blockAlign = numChannels * bytesPerSample;
+  const dataSize = numFrames * blockAlign;
+  const buffer = Buffer.alloc(44 + dataSize);
+
+  buffer.write('RIFF', 0);
+  buffer.writeUInt32LE(36 + dataSize, 4);
+  buffer.write('WAVE', 8);
+  buffer.write('fmt ', 12);
+  buffer.writeUInt32LE(16, 16);
+  buffer.writeUInt16LE(3, 20); // 3 = IEEE float
+  buffer.writeUInt16LE(numChannels, 22);
+  buffer.writeUInt32LE(sampleRate, 24);
+  buffer.writeUInt32LE(sampleRate * blockAlign, 28);
+  buffer.writeUInt16LE(blockAlign, 32);
+  buffer.writeUInt16LE(bytesPerSample * 8, 34);
+  buffer.write('data', 36);
+  buffer.writeUInt32LE(dataSize, 40);
+
+  let offset = 44;
+  for (let i = 0; i < numFrames; i++) {
+    for (let ch = 0; ch < numChannels; ch++) {
+      buffer.writeFloatLE(channelData[ch][i], offset);
+      offset += 4;
+    }
+  }
+
+  return buffer;
+}
+
+ipcMain.handle('audio:decode-to-playable', async (_e, filePath) => {
+  try {
+    const { default: decode } = await import('@audio/decode-aac');
+    const fileBuffer = await fs.promises.readFile(filePath);
+    const { channelData, sampleRate } = await decode(new Uint8Array(fileBuffer));
+    const wavBuffer = encodeWavFloat32(channelData, sampleRate);
+    return { ok: true, wav: new Uint8Array(wavBuffer), sampleRate };
+  } catch (err) {
+    console.error('[Musik] fallback decode failed for', filePath, '—', err.message);
+    return { ok: false, error: err.message };
+  }
 });

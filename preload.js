@@ -121,6 +121,11 @@ const Musik = {
     setMaxDuck: (value) => ipcRenderer.invoke('game-duck:set-max-duck', value),
     setManualOverride: (value) => ipcRenderer.invoke('game-duck:set-manual-override', value),
     setTrackLoudness: (lufs) => ipcRenderer.invoke('game-duck:set-track-loudness', lufs),
+    // NEW — lets Settings show what's currently producing audio, and let
+    // the user pick one to ignore for ducking (fixes false-triggers from
+    // things like a notch-widget visualizer's own audio session).
+    getSessions: () => ipcRenderer.invoke('game-duck:get-sessions'),
+    setExcludedProcessNames: (names) => ipcRenderer.invoke('game-duck:set-excluded-process-names', names),
   },
 
   mods: {
@@ -147,6 +152,10 @@ const Musik = {
 
   dialog: {
     openFile: () => ipcRenderer.invoke('open-file-dialog'),
+    // NEW — pairs with main.js's split of open-file-dialog into
+    // file-only vs folder-only (Windows can't combine openFile +
+    // openDirectory into one native picker).
+    openFolder: () => ipcRenderer.invoke('open-folder-dialog'),
   },
 
   system: {
@@ -176,6 +185,15 @@ const Musik = {
     // Separate from the drag-resize path so it never gets persisted as
     // the user's manually-set size.
     resizeForQueue: (open) => ipcRenderer.invoke('miniplayer:resize-for-queue', open),
+  },
+
+  // NEW — fallback decode for files Chromium's <audio> element can't play
+  // natively (ALAC, and any shaky AAC/M4A variant). Main process decodes to
+  // PCM and hands back a WAV wrapper; player-ui.js's <audio> 'error' handler
+  // is the trigger. Returns { ok: true, wav: Uint8Array, sampleRate } or
+  // { ok: false, error }.
+  audio: {
+    decodeToPlayable: (filePath) => ipcRenderer.invoke('audio:decode-to-playable', filePath),
   },
 
   events: {

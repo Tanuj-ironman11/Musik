@@ -3,6 +3,9 @@
  * Entry point — index.html links only this file. */
 
 @import url('./tokens.css');
+@import url('./animations.css');
+@import url('./shared.css');
+@import url('./buttons.css');
 @import url('./titlebar.css');
 @import url('./shell.css');
 @import url('./navigation.css');
@@ -12,9 +15,6 @@
 @import url('./home.css');
 @import url('./settings.css');
 @import url('./fullscreen.css');
-@import url('./animations.css');
 @import url('./track-actions.css');
 @import url('./profile.css');
 @import url('./search-overlay.css');
-@import url('./buttons.css');
-@import url('./shared.css');

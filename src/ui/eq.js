@@ -52,8 +52,12 @@ const PRESETS = {
     spokenWord:    { label: 'Spoken Word',       gains: [-3.0, -1.5, 0, 1.0, 2.0, 2.5, 1.5, 0, -1.5, -2.5] },
   };
 
-  // Merge in gitignored local-only presets, if loaded (see eq-presets.local.js).
-  Object.assign(PRESETS, window.MusikLocalPresets || {});
+  // Gitignored local-only presets (see eq-presets.local.js), merged lazily on
+  // every read instead of once at load — a one-shot merge silently drops them
+  // if the local file's <script> lands after eq.js in index.html.
+  function allPresets() {
+    return Object.assign({}, PRESETS, window.MusikLocalPresets || {});
+  }
 
 
   function defaultBands() {
@@ -109,6 +113,7 @@ const PRESETS = {
       node.Q.value = band.q;
       node.gain.value = bypassed ? 0 : band.gain;
     });
+    window.MusikPlayerUI?.notifyEQChanged?.();
   }
 
   function commit() {
@@ -150,6 +155,7 @@ const PRESETS = {
     const nodes = window.MusikPlayerUI?.getEQNodes?.();
     const node = nodes?.[index];
     if (node) node.gain.value = state.mode === 'off' ? 0 : clamped;
+    window.MusikPlayerUI?.notifyEQChanged?.();
     return clamped;
   }
 
@@ -180,7 +186,7 @@ const PRESETS = {
   }
 
   function applyPreset(presetId) {
-    const preset = PRESETS[presetId];
+    const preset = allPresets()[presetId];
     if (!preset) return;
     state.bands = EQ_FREQUENCIES.map((freq, i) => ({ freq, gain: preset.gains[i], q: 1.0 }));
     state.lastPreset = presetId;
@@ -197,10 +203,11 @@ const PRESETS = {
   }
 
   function listPresets() {
-    return Object.keys(PRESETS).map((id) => ({
+    const presets = allPresets();
+    return Object.keys(presets).map((id) => ({
       id,
-      label: PRESETS[id].label,
-      sparkline: sparkline(PRESETS[id].gains),
+      label: presets[id].label,
+      sparkline: sparkline(presets[id].gains),
     }));
   }
 

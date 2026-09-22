@@ -17,6 +17,7 @@
   let listEl = null;
   let isOpen = false;
   let dragFromIndex = null;
+  let refreshSeq = 0;
 
   function fmtTime(seconds) {
     if (!isFinite(seconds) || seconds < 0) return '';
@@ -36,6 +37,16 @@
     }[c]));
   }
 
+  // events.emit() only reaches THIS window. The miniplayer is a separate
+  // renderer, so it never heard about queue edits made here. events.push()
+  // round-trips through main.js, which fans the event out to every window
+  // (this one included), so all queue views stay in sync.
+  function notifyQueueChanged() {
+    const ev = window.Musik?.events;
+    if (ev?.push) ev.push('queueupdate');
+    else ev?.emit('queueupdate');
+  }
+
   function rowHTML(track, index, isCurrent) {
     const art = artSrc(track);
     return `
@@ -44,7 +55,7 @@
           <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor"><circle cx="8" cy="6" r="1.4"/><circle cx="8" cy="12" r="1.4"/><circle cx="8" cy="18" r="1.4"/><circle cx="16" cy="6" r="1.4"/><circle cx="16" cy="12" r="1.4"/><circle cx="16" cy="18" r="1.4"/></svg>
         </span>
         ${art
-          ? `<img class="q-art" src="${art}" alt="">`
+          ? `<img class="q-art" src="${art}" alt="" loading="lazy" decoding="async">`
           : `<div class="q-art q-art--placeholder"><svg viewBox="0 0 24 24" width="14" height="14"><path d="M9 18V5l12-2v13M9 18a3 3 0 11-6 0 3 3 0 016 0zm12-2a3 3 0 11-6 0 3 3 0 016 0z" stroke="currentColor" stroke-width="1.5" fill="none"/></svg></div>`}
         <div class="q-row-info">
           <span class="q-row-title">${escapeHTML(track.title)}</span>
@@ -62,8 +73,15 @@
   async function refresh() {
     if (!listEl) return;
 
+    // refresh() is async and gets called from several places (queueupdate
+    // fires from both the manager and the manual emits below). Without
+    // this, two overlapping calls can resolve out of order and paint the
+    // older queue over the newer one.
+    const seq = ++refreshSeq;
     const queue = (await window.Musik.queue.getQueue()) ?? [];
+    if (seq !== refreshSeq) return;
     const current = window.MusikPlayerUI?.getCurrentTrackData?.();
+    const prevScroll = listEl.scrollTop;
 
     if (!queue.length) {
       listEl.innerHTML = `
@@ -76,10 +94,23 @@
     }
 
     listEl.innerHTML = queue
-      .map((t) => rowHTML(t, t.queueIndex, current && t.filePath === current.filePath))
+      .map((t) => rowHTML(t, t.queueIndex, isCurrentRow(t, current)))
       .join('');
+    listEl.scrollTop = prevScroll;
 
     wireRows(queue);
+  }
+
+  function scrollCurrentIntoView() {
+    listEl?.querySelector('.q-row--active')?.scrollIntoView({ block: 'center' });
+  }
+
+  // The manager marks which queue slot is current (t.isCurrent), which is
+  // what tells two copies of the same file apart. The player check on top
+  // keeps a not-yet-played "current" slot (fresh queue, or the playing track
+  // was just removed) from lighting up. `?? true` = older manager, no flag.
+  function isCurrentRow(t, current) {
+    return !!current && t.filePath === current.filePath && (t.isCurrent ?? true);
   }
 
   // Only swaps the active-row class + eq bars, no full re-render — called
@@ -87,6 +118,12 @@
   function highlightCurrent() {
     if (!listEl) return;
     const current = window.MusikPlayerUI?.getCurrentTrackData?.();
+    // Same file queued twice: filePath can't say which row is playing, so
+    // re-fetch and let the manager's isCurrent decide (rare, so the cost is fine).
+    if (current && listEl.querySelectorAll(`.q-row[data-file-path="${CSS.escape(current.filePath)}"]`).length > 1) {
+      refresh();
+      return;
+    }
     listEl.querySelectorAll('.q-row').forEach((row) => {
       const isCurrent = !!current && row.dataset.filePath === current.filePath;
       row.classList.toggle('q-row--active', isCurrent);
@@ -98,6 +135,7 @@
   function wireRows(queue) {
     listEl.querySelectorAll('.q-row').forEach((row, pos) => {
       const track = queue[pos];
+      if (!track) return;
       const index = track.queueIndex;
 
       if (track) window.MusikContextMenu?.attachTrack?.(row, track);
@@ -112,7 +150,7 @@
       row.querySelector('[data-action="remove"]')?.addEventListener('click', async (e) => {
         e.stopPropagation();
         await window.Musik.queue.remove(index);
-        window.Musik.events.emit('queueupdate');
+        notifyQueueChanged();
       });
 
       row.addEventListener('dragstart', (e) => {
@@ -133,7 +171,10 @@
         row.classList.add('q-row--drag-over');
       });
 
-      row.addEventListener('dragleave', () => {
+      row.addEventListener('dragleave', (e) => {
+        // dragleave also fires when the cursor moves onto a child (art,
+        // title, buttons) — only clear when actually leaving the row.
+        if (row.contains(e.relatedTarget)) return;
         row.classList.remove('q-row--drag-over');
       });
 
@@ -142,18 +183,21 @@
         row.classList.remove('q-row--drag-over');
         if (dragFromIndex === null || dragFromIndex === index) return;
         await window.Musik.queue.move(dragFromIndex, index);
-        window.Musik.events.emit('queueupdate');
+        notifyQueueChanged();
       });
     });
   }
 
   function open() {
+    if (!panelEl) init();
+    if (!panelEl) return;
     isOpen = true;
     panelEl.classList.add('q-panel--open');
-    refresh();
+    refresh().then(scrollCurrentIntoView);
   }
 
   function close() {
+    if (!panelEl) return;
     isOpen = false;
     panelEl.classList.remove('q-panel--open');
   }
@@ -164,7 +208,12 @@
   }
 
   function init() {
-    if (document.getElementById('queue-panel')) return;
+    const existing = document.getElementById('queue-panel');
+    if (existing) {
+      panelEl = existing;
+      listEl = document.getElementById('q-panel-list');
+      return;
+    }
 
     panelEl = document.createElement('div');
     panelEl.id = 'queue-panel';
@@ -186,11 +235,13 @@
     document.getElementById('q-panel-close').addEventListener('click', close);
     document.getElementById('q-panel-clear').addEventListener('click', async () => {
       await window.Musik.queue.clear();
-      window.Musik.events.emit('queueupdate');
+      notifyQueueChanged();
     });
 
-    window.Musik.events.on('queueupdate', () => { if (isOpen) refresh(); });
-    window.Musik.events.on('trackupdate', () => { if (isOpen) highlightCurrent(); });
+    const ev = window.Musik?.events;
+    if (!ev) console.warn('[queue-panel] window.Musik.events missing — panel will not live-update');
+    ev?.on('queueupdate', () => { if (isOpen) refresh(); });
+    ev?.on('trackupdate', () => { if (isOpen) highlightCurrent(); });
   }
 
   document.addEventListener('DOMContentLoaded', init);

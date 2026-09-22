@@ -173,12 +173,12 @@
     });
 
     overlay.querySelector('#pcm-folder').addEventListener('click', async () => {
-      // Reuses the existing open-file-dialog channel (already supports
-      // openDirectory) rather than adding a dedicated folder-only picker.
-      // Only the first selected entry is used; scanFolder() no-ops
-      // silently on a non-folder path, which is detected below and
-      // surfaced as an error instead of leaving the user guessing.
-      const paths = await window.Musik?.dialog?.openFile?.();
+      // open-file-dialog is file-only now (main.js split it from a combined
+      // openFile+openDirectory dialog, which Windows can't actually present
+      // as one picker — it silently collapsed to folder-only there, which
+      // is what broke single-file adds elsewhere). Folder picking now goes
+      // through its own dedicated channel.
+      const paths = await window.Musik?.dialog?.openFolder?.();
       if (!paths || !paths.length) return;
       const folderPath = paths[0];
 

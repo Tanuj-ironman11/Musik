@@ -34,7 +34,6 @@
      scrolling long title/artist can keep disturbing the blur for as
      long as it's on screen, not just on the track-change moment. */
   transform: translateZ(0);
-  will-change: contents;
 }
 
 /* Static (non-overflowing) state — no mask needed, avoids clipping short text */
@@ -103,10 +102,11 @@
   isolation: isolate;
   overflow: hidden;
   background: var(--glass-bg-elevated, rgba(255, 255, 255, 0.08));
-  backdrop-filter: blur(var(--glass-blur-elevated, 32px)) saturate(170%);
-  -webkit-backdrop-filter: blur(var(--glass-blur-elevated, 32px)) saturate(170%);
+  backdrop-filter: blur(var(--glass-blur-elevated)) saturate(var(--glass-saturate-elevated));
+  -webkit-backdrop-filter: blur(var(--glass-blur-elevated)) saturate(var(--glass-saturate-elevated));
   border: 1px solid rgba(255, 255, 255, 0.05);
   box-shadow:
+    var(--glass-edge-highlight),
     0 28px 64px -18px rgba(0, 0, 0, 0.6),
     0 8px 20px -10px rgba(0, 0, 0, 0.45),
     inset 0 1px 0 rgba(255, 255, 255, 0.1);
@@ -128,6 +128,7 @@
     rgba(255, 255, 255, 0.04) 42%,
     rgba(var(--color-accent-rgb), 0.3) 100%
   );
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
   -webkit-mask-composite: xor;
   mask-composite: exclude;
@@ -218,6 +219,8 @@
   border-radius: var(--radius-md, 8px);
   border: 1px solid rgba(255, 255, 255, 0.08);
   background: var(--glass-bg-subtle, rgba(255, 255, 255, 0.04));
+  backdrop-filter: blur(var(--glass-blur-subtle)) saturate(var(--glass-saturate-subtle));
+  -webkit-backdrop-filter: blur(var(--glass-blur-subtle)) saturate(var(--glass-saturate-subtle));
   color: var(--color-text);
   cursor: pointer;
   text-align: left;
@@ -226,6 +229,24 @@
               background var(--anim-fast) var(--anim-ease),
               transform var(--anim-fast) var(--anim-spring),
               box-shadow var(--anim-fast) var(--anim-ease);
+}
+
+.playlist-create-option::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background-image: var(--glass-specular), var(--glass-noise);
+  background-size: cover, 140px 140px;
+  background-blend-mode: screen, soft-light;
+  opacity: 0.24;
+}
+
+.playlist-create-option > * {
+  position: relative;
+  z-index: 1;
 }
 .playlist-create-option:hover {
   border-color: rgba(255, 255, 255, 0.16);

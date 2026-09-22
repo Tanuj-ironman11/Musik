@@ -10,6 +10,10 @@ let shuffleEnabled = false;
 let repeatMode = 'off'; // 'off' | 'all' | 'one'
 let shuffleOrder = [];  // when shuffle is on, order of indices into `queue`
 let shufflePos = -1;    // position within shuffleOrder
+// The playing track was removed, so currentIndex now points at the track that
+// slid into its slot (never played). next() must return that track as-is;
+// advancing from it skipped a song every time you removed the current one.
+let currentRemoved = false;
 
 // Returns tracks in the order they'll actually play. When shuffle is off
 // this is plain add-order. When shuffle is on, this now returns tracks in
@@ -17,9 +21,9 @@ let shufflePos = -1;    // position within shuffleOrder
 // instead of raw add-order, so the queue panel and real playback line up.
 function getQueue() {
   if (shuffleEnabled && shuffleOrder.length === queue.length) {
-    return shuffleOrder.map((i) => ({ ...queue[i], queueIndex: i }));
+    return shuffleOrder.map((i) => ({ ...queue[i], queueIndex: i, isCurrent: i === currentIndex }));
   }
-  return queue.map((t, i) => ({ ...t, queueIndex: i }));
+  return queue.map((t, i) => ({ ...t, queueIndex: i, isCurrent: i === currentIndex }));
 }
 
 function add(track) {
@@ -27,20 +31,62 @@ function add(track) {
   // If nothing was playing yet, treat the first added track as current so
   // next()/previous() have a sane starting point.
   if (currentIndex === -1) currentIndex = 0;
-  if (shuffleEnabled) rebuildShuffleOrder(true);
+  if (shuffleEnabled) {
+    if (shuffleOrder.length !== queue.length - 1) {
+      rebuildShuffleOrder(true);
+    } else {
+      // Slot the new track into the not-yet-played part of the order instead
+      // of reshuffling everything (that scrambled "up next" on every add).
+      const lo = shufflePos + 1;
+      const at = lo + Math.floor(Math.random() * (shuffleOrder.length - lo + 1));
+      shuffleOrder.splice(at, 0, queue.length - 1);
+      shufflePos = shuffleOrder.indexOf(currentIndex);
+    }
+  }
   return getQueue();
 }
 
 function remove(index) {
   if (index < 0 || index >= queue.length) return getQueue();
+  const wasCurrent = index === currentIndex;
+  const removedPos = shuffleEnabled ? shuffleOrder.indexOf(index) : -1;
   queue.splice(index, 1);
-  if (index < currentIndex) {
-    currentIndex -= 1;
-  } else if (index === currentIndex) {
-    // Keep pointing at "the track now at this index", clamped to bounds.
-    currentIndex = Math.min(currentIndex, queue.length - 1);
+
+  if (shuffleEnabled) {
+    // Drop the entry and re-map indices above it; every other track keeps
+    // its shuffled position (a full rebuild re-randomized "up next" and
+    // could put already-played tracks back in front).
+    shuffleOrder = shuffleOrder.filter((i) => i !== index).map((i) => (i > index ? i - 1 : i));
+    if (removedPos > -1 && removedPos < shufflePos) shufflePos -= 1;
   }
-  if (shuffleEnabled) rebuildShuffleOrder(false);
+
+  if (!queue.length) {
+    currentIndex = -1;
+    shufflePos = -1;
+    currentRemoved = false;
+    return getQueue();
+  }
+
+  if (wasCurrent) {
+    if (shuffleEnabled) {
+      if (shufflePos < shuffleOrder.length) {
+        currentIndex = shuffleOrder[shufflePos]; // next track in shuffle order slid in
+        currentRemoved = true;
+      } else {
+        shufflePos = shuffleOrder.length - 1;    // removed the last one — nothing slid in
+        currentIndex = shuffleOrder[shufflePos];
+        currentRemoved = false;
+      }
+    } else if (index < queue.length) {
+      currentIndex = index;                      // next track slid into the slot
+      currentRemoved = true;
+    } else {
+      currentIndex = queue.length - 1;           // removed the last one — nothing slid in
+      currentRemoved = false;
+    }
+  } else if (index < currentIndex) {
+    currentIndex -= 1;
+  }
   return getQueue();
 }
 
@@ -49,6 +95,7 @@ function clear() {
   currentIndex = -1;
   shuffleOrder = [];
   shufflePos = -1;
+  currentRemoved = false;
   return getQueue();
 }
 
@@ -73,6 +120,11 @@ function rebuildShuffleOrder(keepCurrentFirst) {
 function next() {
   if (!queue.length) return null;
 
+  if (currentRemoved) {
+    currentRemoved = false;
+    return queue[currentIndex] ?? null;
+  }
+
   if (repeatMode === 'one') {
     return queue[currentIndex] ?? null;
   }
@@ -83,6 +135,11 @@ function next() {
     if (shufflePos >= shuffleOrder.length) {
       if (repeatMode === 'all') {
         rebuildShuffleOrder(false);
+        // Don't open the new lap with the track that just finished.
+        if (shuffleOrder.length > 1 && shuffleOrder[0] === currentIndex) {
+          const swap = 1 + Math.floor(Math.random() * (shuffleOrder.length - 1));
+          [shuffleOrder[0], shuffleOrder[swap]] = [shuffleOrder[swap], shuffleOrder[0]];
+        }
         shufflePos = 0;
       } else {
         shufflePos = shuffleOrder.length - 1;
@@ -106,6 +163,7 @@ function next() {
 
 function previous() {
   if (!queue.length) return null;
+  currentRemoved = false;
 
   if (repeatMode === 'one') {
     return queue[currentIndex] ?? null;
@@ -132,6 +190,7 @@ function previous() {
 function jumpTo(index) {
   if (index < 0 || index >= queue.length) return null;
   currentIndex = index;
+  currentRemoved = false;
   if (shuffleEnabled) {
     const pos = shuffleOrder.indexOf(index);
     shufflePos = pos > -1 ? pos : 0;
@@ -142,6 +201,10 @@ function jumpTo(index) {
 // Drag-reorder support. Moves the track at fromIndex to toIndex, keeping
 // currentIndex pointed at the SAME TRACK (not the same position) — so
 // reordering the queue never changes what's actually playing.
+// Both indices are queue indices (what getQueue() calls queueIndex). With
+// shuffle on, the panel shows shuffleOrder, so the move happens there —
+// reordering the raw queue and then rebuilding the shuffle threw away
+// whatever the user just arranged.
 function move(fromIndex, toIndex) {
   if (
     fromIndex < 0 || fromIndex >= queue.length ||
@@ -151,15 +214,24 @@ function move(fromIndex, toIndex) {
     return getQueue();
   }
 
-  const currentTrack = currentIndex !== -1 ? queue[currentIndex] : null;
+  if (shuffleEnabled) {
+    const fromPos = shuffleOrder.indexOf(fromIndex);
+    const toPos = shuffleOrder.indexOf(toIndex);
+    if (fromPos === -1 || toPos === -1 || fromPos === toPos) return getQueue();
+    const [m] = shuffleOrder.splice(fromPos, 1);
+    shuffleOrder.splice(toPos, 0, m);
+    shufflePos = shuffleOrder.indexOf(currentIndex);
+    return getQueue();
+  }
 
   const [moved] = queue.splice(fromIndex, 1);
   queue.splice(toIndex, 0, moved);
 
-  if (currentTrack) {
-    currentIndex = queue.indexOf(currentTrack);
-  }
-  if (shuffleEnabled) rebuildShuffleOrder(true);
+  // Follow the current track by index math — queue.indexOf(track) breaks
+  // when the same track object is in the queue twice.
+  if (currentIndex === fromIndex) currentIndex = toIndex;
+  else if (fromIndex < currentIndex && currentIndex <= toIndex) currentIndex -= 1;
+  else if (toIndex <= currentIndex && currentIndex < fromIndex) currentIndex += 1;
 
   return getQueue();
 }

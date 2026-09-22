@@ -6,7 +6,7 @@
   left: calc(var(--sidebar-width-collapsed) + 32px);
   width: calc(100% - var(--sidebar-width-collapsed) - 48px);
   height: var(--player-bar-height);
-  z-index: 10000;
+  z-index: var(--z-player);
   background: var(--glass-bg-standard);
   /* Was hardcoded blur(18px) saturate(1.4) — now pulls the shared
      standard tier so this moves in lockstep with the rest of the app's
@@ -14,8 +14,9 @@
   backdrop-filter: blur(var(--glass-blur-standard)) saturate(var(--glass-saturate-standard)) contrast(1.05);
   -webkit-backdrop-filter: blur(var(--glass-blur-standard)) saturate(var(--glass-saturate-standard)) contrast(1.05);
   border: 1px solid var(--glass-border-color);
-  border-radius: 22px;
+  border-radius: var(--glass-radius);
   box-shadow:
+    var(--glass-edge-highlight),
     var(--player-shadow),
     0 0 60px -20px var(--color-accent-glow);
   overflow: hidden;
@@ -41,6 +42,21 @@ body.npf-open #now-playing-bar {
     opacity 0.22s var(--ease-out) 0.06s;
 }
 
+/* Shared specular/noise layer keeps this surface from reading as only
+   a translucent rectangle with blur behind it. */
+#now-playing-bar::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background-image: var(--glass-specular), var(--glass-noise);
+  background-size: cover, 140px 140px;
+  background-blend-mode: screen, soft-light;
+  opacity: 0.48;
+}
+
 /* Same clear-center/frosted-rim trick as the shared .glass-surface
    system (tokens.css) — its own heavier backdrop-filter, masked to a
    ring near the edge so the bar's center stays sharp (readable track
@@ -51,6 +67,7 @@ body.npf-open #now-playing-bar {
   content: "";
   position: absolute;
   inset: 0;
+  z-index: 0;
   border-radius: inherit;
   pointer-events: none;
   backdrop-filter: blur(calc(var(--glass-blur-standard) + 9px));
@@ -59,9 +76,15 @@ body.npf-open #now-playing-bar {
   mask-image: radial-gradient(140% 220% at 50% 50%, transparent 55%, black 92%);
 }
 
+#now-playing-bar > * {
+  position: relative;
+  z-index: 1;
+}
+
 #now-playing-bar:hover {
   border-color: color-mix(in srgb, var(--color-text) 16%, transparent);
   box-shadow:
+    var(--glass-edge-highlight),
     var(--player-shadow),
     0 0 80px -16px var(--color-accent-glow);
 }
@@ -82,7 +105,6 @@ body[data-active-view="now-playing"] #now-playing-bar {
   flex-shrink: 0;
 
   transform: translateZ(0);
-  will-change: contents;
   background: var(--color-bg-surface);
   box-shadow:
     0 0 0 1px rgba(255,255,255,0.06),
@@ -323,7 +345,6 @@ body[data-active-view="now-playing"] #now-playing-bar {
   max-width: 520px;
 
   transform: translateZ(0);
-  will-change: contents;
 }
 
 .pb-time {
