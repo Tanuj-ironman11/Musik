@@ -19,9 +19,12 @@
     "@fontsource/nunito": "^5.3.0",
     "@fontsource/space-mono": "^5.3.0",
     "dompurify": "^3.4.15",
+    "kuroshiro": "^1.2.0",
+    "kuroshiro-analyzer-kuromoji": "^1.1.0",
     "music-metadata": "11.15.0",
     "node-id3": "^0.2.9",
     "node-taglib-sharp": "^6.0.3",
+    "pinyin-pro": "^3.29.4",
     "three": "0.186.0"
   },
   "devDependencies": {
@@ -35,6 +38,10 @@
       "output": "dist",
       "buildResources": "build"
     },
+    "asarUnpack": [
+      "node_modules/kuromoji/dict/**/*",
+      "node_modules/kuroshiro-analyzer-kuromoji/node_modules/kuromoji/dict/**/*"
+    ],
     "files": [
       "main.js",
       "preload.js",

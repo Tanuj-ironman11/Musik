@@ -1,5 +1,9 @@
 # Musik
 
+<p align="center">
+  <img src="build/icon.png" alt="Musik logo" width="160">
+</p>
+
 Musik is a free, open-source desktop music player. It plays everything at full quality (FLAC, WAV, MP3, AIFF, OGG, OPUS, AAC, M4A, ALAC) with no compression or quality caps, and it has a real mod/theme system built into the core instead of bolted on as an afterthought — basically what Millennium does for Steam or Spicetify does for Spotify, but native from day one.
 
 No ads, no subscriptions, no telemetry. GPLv3 licensed — free and open, and any fork or redistribution has to stay that way too. Mods are a different story (see below).
@@ -17,6 +21,25 @@ This app was coded over many weeks with the help of Claude, and every update rol
 - Lyrics via LRCLIB, with a Lyrica fallback
 - Last.fm scrobbling
 - Miniplayer, fullscreen mode, customizable sidebar
+
+## Screenshots
+
+<!-- TODO: replace with real captures, drop image files in build/screenshots/ -->
+<p align="center">
+  <img src="build/screenshots/now-playing.png" alt="Now playing view" width="800"><br>
+  <em>Now playing</em>
+</p>
+
+<p align="center">
+  <img src="build/screenshots/library.png" alt="Library view" width="800"><br>
+  <em>Library</em>
+</p>
+
+<p align="center">
+  <img src="build/screenshots/miniplayer.png" alt="Miniplayer" width="400">&nbsp;&nbsp;
+  <img src="build/screenshots/mod-theme.png" alt="Custom mod theme" width="400"><br>
+  <em>Miniplayer (left) &nbsp;&middot;&nbsp; a custom mod theme (right)</em>
+</p>
 
 ## Installing (prebuilt)
 

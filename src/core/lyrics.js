@@ -16,6 +16,23 @@
 //
 // Musixmatch richsync was removed (gray-area ToS) — do not reintroduce.
 //
+// Track keys are now artist+title only (album dropped — it's the field
+// most likely to drift between reads and was silently orphaning manual
+// lyrics files; see legacyTrackKey/migration in getLyrics()). Flagging:
+// this also means the disk cache (not just manual) is keyed differently
+// than before — first play of any previously-cached track after this
+// change is a harmless one-time re-fetch, not a bug.
+//
+// romanize()/romanizeLines() are now async — Japanese (kuroshiro +
+// kuromoji) and Chinese (pinyin-pro) need it; every other script still
+// resolves synchronously but is wrapped in the same async shape so callers
+// don't need to branch. New optional deps, see the comment above
+// getKuroshiro(). ipcMain.handle() already supports async handlers with no
+// change needed on that side; window.Musik.lyrics.romanizeLines() was
+// already awaited at the call site (fullscreen.js), so this doesn't change
+// its usage there either — call it out anyway per house rules since it's a
+// return-type change on an existing API function.
+//
 // IPC wiring required in main.js + preload.js — NOT done here, see the
 // wiring snippets delivered alongside this file. New IPC surface:
 //   lyrics-get, lyrics-save-manual, lyrics-clear-manual, lyrics-romanize
@@ -74,7 +91,21 @@ function assertInit() {
 // the fingerprint/metadata matching elsewhere in the project.
 // ---------------------------------------------------------------------
 
-function trackKey({ artist, title, album }) {
+function trackKey({ artist, title }) {
+  const norm = (s) => (s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  const raw = `${norm(artist)}::${norm(title)}`;
+  return crypto.createHash('sha1').update(raw).digest('hex');
+}
+
+// Pre-fix key, included album — the tag field most likely to be blank on
+// one read and populated on the next (metadata enrichment, a re-scan, a
+// slightly different queue path). A manual lyrics file saved under this key
+// would silently stop resolving the moment album drifted, LOOKING like an
+// online fetch was "overriding" the manual override when really getLyrics()
+// was just hashing to a different, empty bucket. Kept only so pre-existing
+// manual files aren't orphaned by this change; see the one-time migration
+// in getLyrics() below. New saves always use the album-free key above.
+function legacyTrackKey({ artist, title, album }) {
   const norm = (s) => (s || '').trim().toLowerCase().replace(/\s+/g, ' ');
   const raw = `${norm(artist)}::${norm(title)}::${norm(album)}`;
   return crypto.createHash('sha1').update(raw).digest('hex');
@@ -279,6 +310,18 @@ async function getLyrics(track) {
   // 1. Manual override always wins
   if (fs.existsSync(manualPath(key))) {
     const manual = JSON.parse(fs.readFileSync(manualPath(key), 'utf8'));
+    return { ...manual, source: 'manual', key };
+  }
+
+  // 1b. One-time migration: a manual file saved under the old album-inclusive
+  // key (see legacyTrackKey above) would otherwise look permanently lost the
+  // moment album metadata drifted. Check once, adopt it under the new key,
+  // and it never has to happen again for this track.
+  const legacyKey = legacyTrackKey(track);
+  if (legacyKey !== key && fs.existsSync(manualPath(legacyKey))) {
+    const manual = JSON.parse(fs.readFileSync(manualPath(legacyKey), 'utf8'));
+    fs.writeFileSync(manualPath(key), JSON.stringify(manual), 'utf8');
+    fs.unlinkSync(manualPath(legacyKey));
     return { ...manual, source: 'manual', key };
   }
 
@@ -614,6 +657,15 @@ const romanizeGurmukhi = buildAbugidaRomanizer({
   addak: 'ੱ', // gemination mark — doubles the consonant right after it
 });
 
+// Kana (hiragana/katakana) presence is the signal used to tell Japanese
+// text apart from Chinese: both use CJK ideographs (\u4E00-\u9FFF), but
+// only Japanese mixes in kana. Pure-ideograph text with no kana is treated
+// as Chinese. This is a heuristic, not language detection — Japanese text
+// with zero kana on a given line (rare, but happens for a kanji-only title)
+// would misroute to pinyin. Good enough without real language metadata.
+const KANA_RE = /[\u3040-\u30FF]/;
+const CJK_IDEOGRAPH_RE = /[\u4E00-\u9FFF]/;
+
 function detectScript(text) {
   if (/[\uac00-\ud7a3]/.test(text)) return 'hangul';
   if (/[\u0400-\u04FF]/.test(text)) return 'cyrillic';
@@ -622,11 +674,92 @@ function detectScript(text) {
   if (/[\u0B80-\u0BFF]/.test(text)) return 'tamil';
   if (/[\u0C00-\u0C7F]/.test(text)) return 'telugu';
   if (/[\u0A00-\u0A7F]/.test(text)) return 'gurmukhi';
-  if (/[\u3040-\u30FF\u4E00-\u9FFF]/.test(text)) return 'cjk'; // unsupported for now (needs dictionary)
+  if (KANA_RE.test(text) || CJK_IDEOGRAPH_RE.test(text)) {
+    return KANA_RE.test(text) ? 'japanese' : 'chinese';
+  }
   return 'latin';
 }
 
-function romanize(text) {
+// ---------------------------------------------------------------------
+// Japanese (kuroshiro + kuromoji) and Chinese (pinyin-pro) — dictionary-
+// backed scripts, deliberately separate from the zero-dependency table
+// romanizers above. Both deps are optional at the package.json level on
+// purpose: if not installed, romanize() falls back to null for that
+// script exactly like before, and the UI keeps the toggle hidden — no
+// crash, no forced install.
+//
+//   npm install kuroshiro kuroshiro-analyzer-kuromoji pinyin-pro
+//
+// kuroshiro's kuromoji analyzer needs its dictionary directory on disk
+// (ships inside kuroshiro-analyzer-kuromoji/node_modules/kuromoji/dict) —
+// same asarUnpack concern as the WASAPI .node addon. Flagging as a
+// packaging change: add that dict path to electron-builder's asarUnpack.
+// ---------------------------------------------------------------------
+
+let kuroshiroInitPromise = null;
+let kuroshiroLoadFailed = false;
+
+function getKuroshiro() {
+  if (kuroshiroLoadFailed) return Promise.resolve(null);
+  if (!kuroshiroInitPromise) {
+    kuroshiroInitPromise = (async () => {
+      const Kuroshiro = require('kuroshiro').default || require('kuroshiro');
+      const KuromojiAnalyzer = require('kuroshiro-analyzer-kuromoji');
+      const instance = new Kuroshiro();
+      await instance.init(new KuromojiAnalyzer());
+      return instance;
+    })().catch((err) => {
+      console.warn('[Musik] lyrics: kuroshiro unavailable, Japanese romanization disabled.', err.message);
+      kuroshiroLoadFailed = true;
+      kuroshiroInitPromise = null;
+      return null;
+    });
+  }
+  return kuroshiroInitPromise;
+}
+
+let pinyinLoadFailed = false;
+
+function romanizeChinese(text) {
+  if (pinyinLoadFailed) return null;
+  try {
+    const { pinyin } = require('pinyin-pro');
+    // Source lines are often space-joined syllable/word tokens (e.g. from
+    // word-level synced lyrics), not real prose spacing. Spaces here break
+    // tone/word-boundary resolution the same way they break kuromoji below
+    // — strip them and let toneType/mode re-derive real word spacing.
+    return pinyin(text.replace(/\s+/g, ''), { toneType: 'none', type: 'string', nonZh: 'consecutive' });
+  } catch (err) {
+    console.warn('[Musik] lyrics: pinyin-pro unavailable, Chinese romanization disabled.', err.message);
+    pinyinLoadFailed = true;
+    return null;
+  }
+}
+
+async function romanizeJapanese(text) {
+  const kuroshiro = await getKuroshiro();
+  if (!kuroshiro) return null;
+  try {
+    // Same fix as romanizeChinese: word-level lyric sources join syllables
+    // with spaces (e.g. "大東京 狂 騒 歌っ て"), which breaks kuromoji's
+    // tokenizer — it sees each chunk in isolation with no sentence context,
+    // so single kanji like "騒" fail dictionary lookup and come back
+    // unconverted, and a failed lookup adjacent to another word can even
+    // surface as the literal string "undefined" concatenated onto it
+    // (e.g. "utauundefined"). Stripping spaces restores full-phrase context
+    // ("大東京狂騒歌って" → converts cleanly); mode: 'spaced' below re-adds
+    // proper word spacing on the output side.
+    return await kuroshiro.convert(text.replace(/\s+/g, ''), { to: 'romaji', mode: 'spaced' });
+  } catch (err) {
+    console.warn('[Musik] lyrics: kuroshiro conversion failed for a line, skipping it.', err.message);
+    return null;
+  }
+}
+
+// Async because Japanese needs the dictionary-backed kuroshiro path (every
+// other script resolves synchronously but is cheap to await too — one
+// shape for every caller, no branching by script at the call site).
+async function romanize(text) {
   if (!text) return null;
   switch (detectScript(text)) {
     case 'hangul': return romanizeHangul(text);
@@ -636,13 +769,17 @@ function romanize(text) {
     case 'tamil': return romanizeTamil(text);
     case 'telugu': return romanizeTelugu(text);
     case 'gurmukhi': return romanizeGurmukhi(text);
-    default: return null; // includes 'cjk' and 'latin' — nothing to do (dictionary needed)
+    case 'chinese': return romanizeChinese(text);
+    case 'japanese': return romanizeJapanese(text);
+    default: return null; // 'latin' — nothing to do
   }
 }
 
-function romanizeLines(lines) {
+async function romanizeLines(lines) {
   if (!Array.isArray(lines)) return null;
-  const out = lines.map((l) => ({ ...l, romanized: romanize(l.text) }));
+  const out = await Promise.all(
+    lines.map(async (l) => ({ ...l, romanized: await romanize(l.text) }))
+  );
   return out.some((l) => l.romanized) ? out : null;
 }
 

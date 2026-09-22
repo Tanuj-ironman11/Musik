@@ -324,7 +324,22 @@
     hasScrobbled = false;
     window.Musik.scrobble?.nowPlaying?.(track); // not awaited, shouldn't delay playback
 
-    await audioEl.play();
+    try {
+      await audioEl.play();
+    } catch (err) {
+      // For an unsupported codec (ALAC, some AAC/M4A), this rejects almost
+      // immediately with NotSupportedError — the 'error' listener above
+      // already catches that case, runs the fallback decode, and retries
+      // play() on the decoded blob (with its own try/catch). Without this
+      // guard, THIS rejection — not the fallback's — escapes up through
+      // loadTrack() as an unhandled promise rejection at the call site
+      // (e.g. home.js's track-click handler), even when the fallback goes
+      // on to succeed a moment later. Only swallow the case we already
+      // have a recovery path for; anything else should still surface.
+      if (err?.name !== 'NotSupportedError') {
+        console.error('[Musik] audioEl.play() failed:', err.message);
+      }
+    }
     startLoudnessMetering();
   }
 
