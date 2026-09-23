@@ -1,77 +1,89 @@
 /* component/shell.css — titlebar, window controls, app shell, modals */
 
-/* Titlebar */
+/* ─── Merged Integrated Titlebar & Window Controls ─── */
 #titlebar {
   position: fixed;
   top: 0;
   left: 0;
+  right: 0;
   width: 100%;
-  height: var(--titlebar-height);
-  background: rgba(8, 8, 8, 0.6);
-  backdrop-filter: blur(20px) saturate(1.8);
-  -webkit-backdrop-filter: blur(20px) saturate(1.8);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+  height: var(--titlebar-height, 40px);
+  z-index: var(--z-titlebar, 10300);
   display: flex;
   align-items: center;
-  z-index: var(--z-titlebar);
+  -webkit-app-region: drag;
+  background: color-mix(in srgb, var(--color-bg-surface, #111) 90%, transparent);
+  border-bottom: 1px solid var(--color-border, rgba(255, 255, 255, 0.07));
+  backdrop-filter: blur(22px) saturate(1.25);
+  -webkit-backdrop-filter: blur(22px) saturate(1.25);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
+  user-select: none;
   opacity: 1;
   transform: translateY(0);
-  transition:
-    transform 0.4s var(--ease-spring),
-    opacity 0.3s var(--ease-out);
+  transition: transform 0.4s var(--ease-spring), opacity 0.3s var(--ease-out);
 }
 
 body.npf-open #titlebar {
   transform: translateY(-120%);
   opacity: 0;
   pointer-events: none;
-  transition:
-    transform 0.34s var(--ease-out),
-    opacity 0.22s var(--ease-out);
+  transition: transform 0.34s var(--ease-out), opacity 0.22s var(--ease-out);
 }
 
 .titlebar-drag-region {
   position: absolute;
-  top: 0;
-  height: 100%;
+  inset: 0;
+  -webkit-app-region: drag;
 }
 
-#titlebar.platform-mac .window-controls {
-  flex-direction: row;
-  margin-right: auto;
-  padding-left: 20px;
-  padding-right: 0;
+#titlebar-app-name {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-text-dim);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  pointer-events: none;
 }
 
-#titlebar.platform-mac .titlebar-drag-region {
-  left: 100px;
-  width: calc(100% - 100px);
+#titlebar-app-name::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-accent, #3db8f5);
+  box-shadow: 0 0 6px 1px color-mix(in srgb, var(--color-accent, #3db8f5) 60%, transparent);
+  flex-shrink: 0;
 }
 
-#titlebar.platform-win .window-controls {
-  flex-direction: row;
-  margin-left: auto;
-  padding-right: 20px;
-  padding-left: 0;
+.window-controls {
+  position: relative;
+  display: flex;
+  align-items: center;
+  -webkit-app-region: no-drag;
+  z-index: var(--z-window-controls);
 }
 
-#titlebar.platform-win .titlebar-drag-region {
-  left: 0;
-  width: calc(100% - 130px);
+.control-dot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  transition: background 0.14s var(--ease-out, ease), transform 0.14s var(--ease-out, ease);
 }
 
-/* Mac DOM order: close, minimize, maximize. Flipped visually on Windows. */
-.control-dot.close     { order: 1; }
-
-.control-dot.minimize  { order: 2; }
-
-.control-dot.maximize  { order: 3; }
-
-#titlebar.platform-win .control-dot.minimize { order: 1; }
-
-#titlebar.platform-win .control-dot.maximize { order: 2; }
-
-#titlebar.platform-win .control-dot.close    { order: 3; }
+.control-icon {
+  width: 8px;
+  height: 8px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.12s var(--ease-out, ease);
+}
 
 /* Window controls */
 .window-controls {
@@ -79,6 +91,9 @@ body.npf-open #titlebar {
   align-items: center;
   gap: clamp(6px, 0.8vw, 9px);
   height: 100%;
+  margin-left: auto;
+  padding-right: 20px;
+  padding-left: 0;
   z-index: var(--z-window-controls);
   -webkit-app-region: no-drag;
 }

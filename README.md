@@ -24,25 +24,25 @@ This app was coded over many weeks with the help of Claude, and every update rol
 
 ## Screenshots
 
-<!-- TODO: replace with real captures, drop image files in build/screenshots/ -->
+<!-- Screenshots -->
 <p align="center">
-  <img src="build/screenshots/fullscreen-2d.png" alt="Fullscreen view" width="800"><br>
+  <img src="https://raw.githubusercontent.com/Tanuj-ironman11/Musik/main/build/screenshots/fullscreen-2d.png?raw=true" alt="Fullscreen view" width="800"><br>
   <em>2D Visualizer + Lyrics Romanization in Fullscreen mode</em>
 </p>
 
 <p align="center">
-  <img src="build/screenshots/fullscreen-3d.png" alt="Fullscreen view" width="800"><br>
+  <img src="https://raw.githubusercontent.com/Tanuj-ironman11/Musik/main/build/screenshots/fullscreen-3d.png?raw=true" alt="Fullscreen view" width="800"><br>
   <em>3D Visualizer + in Fullscreen mode</em>
 </p>
 
 <p align="center">
-  <img src="build/screenshots/library.png" alt="Library view" width="800"><br>
+  <img src="https://raw.githubusercontent.com/Tanuj-ironman11/Musik/main/build/screenshots/library.png?raw=true" alt="Library view" width="800"><br>
   <em>Library</em>
 </p>
 
 <p align="center">
-  <img src="build/screenshots/miniplayer.png" alt="Miniplayer" width="400">&nbsp;&nbsp;
-  <img src="build/screenshots/mod-theme.png" alt="Custom mod theme" width="400"><br>
+  <img src="https://raw.githubusercontent.com/Tanuj-ironman11/Musik/main/build/screenshots/miniplayer.png?raw=true" alt="Miniplayer" width="400">&nbsp;&nbsp;
+  <img src="https://raw.githubusercontent.com/Tanuj-ironman11/Musik/main/build/screenshots/mod-theme.png?raw=true" alt="Custom mod theme" width="400"><br>
   <em>Miniplayer (left) &nbsp;&middot;&nbsp; a custom mod theme (right)</em>
 </p>
 

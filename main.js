@@ -208,8 +208,8 @@ function createWindow() {
     icon: path.join(__dirname, 'build', 'icon.ico'),
     minWidth: 900,
     minHeight: 600,
-
-    backgroundColor: '#00000000',
+    show: false, // Prevents the initial black frame flash
+    backgroundColor: '#edecee',
     frame: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -217,6 +217,10 @@ function createWindow() {
       nodeIntegration: false,
       sandbox: false,
     },
+  });
+
+  mainWindow.once('ready-to-show', () => {
+    mainWindow.show();
   });
 
   mainWindow.loadFile('index.html');
@@ -575,3 +579,18 @@ ipcMain.handle('audio:decode-to-playable', async (_e, filePath) => {
     return { ok: false, error: err.message };
   }
 });
+/* ─── Boot Splash Screen: Light Canvas & Crisp Charcoal Text ─── */
+#boot-splash {
+  background: #ebeaee !important;
+  background-color: #ebeaee !important;
+}
+
+#boot-splash span {
+  color: #161618 !important;
+  opacity: 0.65 !important;
+}
+
+@keyframes boot-splash-pulse {
+  0%, 100% { opacity: 0.45; }
+  50% { opacity: 1; }
+}
