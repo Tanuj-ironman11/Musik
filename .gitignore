@@ -10,6 +10,11 @@ package-lock.json
 build/
 **/build/
 
+# Un-ignore the app icon and readme screenshots
+!build/icon.*
+!build/screenshots/
+!build/screenshots/**
+
 # Mods & local asset folders
 mods/
 
