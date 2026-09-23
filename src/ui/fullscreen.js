@@ -203,16 +203,48 @@
         artist: track.artist, title: track.title, album: track.album, duration: track.duration,
       });
       if (token !== lyricsLoadToken) return;
+      // A null result means the main-process lyrics module itself failed to
+      // load (safeRequire in main.js catches that and just returns null —
+      // check the terminal running `npm start` for a line like
+      // "[Musik] optional core module not loaded: ./src/core/lyrics (...)").
+      // Distinct message from "not found" so this doesn't look like the
+      // same generic failure.
+      if (!result) throw new Error('Lyrics module unavailable');
 
       lyricsState = { ...result, showRomanized: false };
+      // Button visibility no longer depends on whether romanization actually
+      // produced anything — it's shown for any track that has lyrics at all,
+      // and just does nothing if there's nothing to romanize (e.g. an
+      // English-only song). Previously it only appeared for songs where
+      // romanization succeeded, which made it look randomly missing.
+      translitBtn.hidden = !(result.synced?.length || result.plain);
 
-      if (result.synced && window.Musik?.lyrics?.romanizeLines) {
-        const romanized = await window.Musik.lyrics.romanizeLines(result.synced);
-        if (token !== lyricsLoadToken) return;
-        if (romanized) {
-          lyricsState.synced = romanized;
-          translitBtn.hidden = false;
+      if (window.Musik?.lyrics?.romanizeLines) {
+        if (result.synced) {
+          const romanized = await window.Musik.lyrics.romanizeLines(result.synced);
+          if (token !== lyricsLoadToken) return;
+          if (romanized) lyricsState.synced = romanized;
         }
+        // Word-level rich sync (manual imports, NetEase) needs its own
+        // per-word romanization pass, or toggling romanization on used to
+        // silently drop word-level highlighting entirely and fall back to
+        // the plain romanized line. Uses romanizeWords (not romanizeLines)
+        // so each word borrows its containing line's detected script —
+        // romanizing word-fragments independently was misrouting kanji-only
+        // words (no kana in that specific token) to the Chinese path.
+        if (result.words?.length && result.synced?.length && window.Musik?.lyrics?.romanizeWords) {
+          const romanizedWords = await window.Musik.lyrics.romanizeWords(result.words, result.synced);
+          if (token !== lyricsLoadToken) return;
+          if (romanizedWords) lyricsState.words = romanizedWords;
+        }
+      }
+      // Plain (unsynced) fallback text never got romanized at all before —
+      // that's the other half of why the button did nothing on tracks that
+      // only resolved plain lyrics.
+      if (!result.synced && result.plain && window.Musik?.lyrics?.romanize) {
+        const romanizedPlain = await window.Musik.lyrics.romanize(result.plain);
+        if (token !== lyricsLoadToken) return;
+        if (romanizedPlain) lyricsState.romanizedPlain = romanizedPlain;
       }
 
       renderLyrics();
@@ -234,27 +266,48 @@
   function renderLyrics() {
     const scroll = root?.querySelector('#npf-lyrics-scroll');
     if (!scroll || !lyricsState) return;
+    // Rebuilding innerHTML below wipes any npf-lyric-active/npf-lyric-past
+    // classes the tick loop already applied. Force it to recompute and
+    // reapply them on the next frame instead of waiting for the active
+    // line index to actually change (which, e.g. right after toggling
+    // romanization mid-song, could be a while).
+    lastActiveLyricIndex = -1;
 
     if (lyricsState.synced?.length) {
       const words = lyricsState.words;
       scroll.innerHTML = lyricsState.synced.map((line, i) => {
         const text = lyricsState.showRomanized && line.romanized ? line.romanized : line.text;
-        const lineWords = words && !lyricsState.showRomanized ? wordsForLine(words, lyricsState.synced, i) : null;
-        const inner = lineWords?.length
-          ? lineWords.map((w) => `<span class="npf-lyric-word" data-start="${w.startMs}" data-end="${w.endMs}">${escapeHtml(w.text)}</span>`).join(' ')
-          : escapeHtml(text);
+        const lineWords = words ? wordsForLine(words, lyricsState.synced, i) : null;
+        let inner;
+        if (lineWords?.length) {
+          const isCollapsed = lyricsState.showRomanized && lineWords.length > 1 && lineWords[0].romanized && !lineWords[1].romanized;
+          if (isCollapsed) {
+            // Span the full line duration: starts at word 0, ends when the last word finishes
+            const start = lineWords[0].startMs;
+            const end = lineWords[lineWords.length - 1].endMs;
+            inner = `<span class="npf-lyric-word" data-start="${start}" data-end="${end}">${escapeHtml(lineWords[0].romanized)}</span>`;
+          } else {
+            inner = lineWords.map((w) => {
+              const wText = lyricsState.showRomanized && typeof w.romanized === 'string' ? w.romanized : w.text;
+              return `<span class="npf-lyric-word" data-start="${w.startMs}" data-end="${w.endMs}">${escapeHtml(wText)}</span>`;
+            }).join(' ');
+          }
+        } else {
+          inner = escapeHtml(text);
+        }
         return `<p class="npf-lyric-line" data-index="${i}" data-time="${line.time}">${inner}</p>`;
       }).join('');
     } else if (lyricsState.plain) {
       const cls = lyricsState.source === 'manual' ? '' : ' npf-lyric-unsynced';
-      scroll.innerHTML = `<p class="npf-lyric-plain${cls}">${escapeHtml(lyricsState.plain).replace(/\n/g, '<br>')}</p>`;
+      const text = lyricsState.showRomanized && lyricsState.romanizedPlain ? lyricsState.romanizedPlain : lyricsState.plain;
+      scroll.innerHTML = `<p class="npf-lyric-plain${cls}">${escapeHtml(text).replace(/\n/g, '<br>')}</p>`;
     } else {
       scroll.innerHTML = `<p class="npf-lyrics-status">No lyrics found. Add them yourself?</p>`;
     }
   }
 
   function toggleRomanization() {
-    if (!lyricsState?.synced) return;
+    if (!lyricsState?.synced && !lyricsState?.plain) return;
     lyricsState.showRomanized = !lyricsState.showRomanized;
     root?.querySelector('#npf-lyrics-translit')?.classList.toggle('active', lyricsState.showRomanized);
     renderLyrics();
@@ -304,6 +357,13 @@
         const el = scroll.querySelector(`.npf-lyric-line[data-index="${idx}"]`);
         el?.classList.add('npf-lyric-active');
         el?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      }
+
+      // Past vs. upcoming — recomputed as a full pass rather than adding
+      // one/removing one, so seeking (either direction) always lands on
+      // the correct state instead of drifting from incremental bookkeeping.
+      for (const lineEl of scroll.querySelectorAll('.npf-lyric-line')) {
+        lineEl.classList.toggle('npf-lyric-past', Number(lineEl.dataset.index) < idx);
       }
     }
 

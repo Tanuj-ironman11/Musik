@@ -26,8 +26,13 @@ This app was coded over many weeks with the help of Claude, and every update rol
 
 <!-- TODO: replace with real captures, drop image files in build/screenshots/ -->
 <p align="center">
-  <img src="build/screenshots/now-playing.png" alt="Now playing view" width="800"><br>
-  <em>Now playing</em>
+  <img src="build/screenshots/fullscreen-2d.png" alt="Fullscreen view" width="800"><br>
+  <em>2D Visualizer + Lyrics Romanization in Fullscreen mode</em>
+</p>
+
+<p align="center">
+  <img src="build/screenshots/fullscreen-3d.png" alt="Fullscreen view" width="800"><br>
+  <em>3D Visualizer + in Fullscreen mode</em>
 </p>
 
 <p align="center">

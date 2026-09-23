@@ -46,7 +46,9 @@
     </div>
 
     <div class="pb-progress-row">
-      <div id="mp-progress" class="mp-progress-track"></div>
+      <span id="mp-time-current" class="pb-time">0:00</span>
+      <input type="range" id="mp-progress" class="pb-progress" min="0" max="100" step="0.1" value="0" />
+      <span id="mp-time-duration" class="pb-time">0:00</span>
     </div>
 
     <div id="mp-queue-panel" class="mp-queue-panel" hidden>

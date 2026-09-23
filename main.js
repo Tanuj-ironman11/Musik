@@ -438,7 +438,9 @@ ipcMain.handle('art:fetch-online', async (_e, trackMeta) => ArtProvider?.fetchOn
 ipcMain.handle('lyrics:get', async (_e, trackMeta) => Lyrics?.get?.(trackMeta) ?? null);
 ipcMain.handle('lyrics:save-manual', async (_e, trackMeta, payload) => Lyrics?.saveManual?.(trackMeta, payload) ?? null);
 ipcMain.handle('lyrics:clear-manual', async (_e, trackMeta) => Lyrics?.clearManual?.(trackMeta) ?? null);
-ipcMain.handle('lyrics:romanize-lines', async (_e, lines) => Lyrics?.romanizeLines?.(lines) ?? null);
+ipcMain.handle('lyrics:romanize-lines', async (_e, lines, words) => Lyrics?.romanizeLines?.(lines, words) ?? null);
+ipcMain.handle('lyrics:romanize', async (_e, text) => Lyrics?.romanize?.(text) ?? null);
+ipcMain.handle('lyrics:romanize-words', async (_e, words, lines) => Lyrics?.romanizeWords?.(words, lines) ?? null);
 
 ipcMain.handle('scrobble:get-settings', async () => Scrobbler?.getSettings?.() ?? null);
 ipcMain.handle('scrobble:set-credentials', async (_e, creds) => Scrobbler?.setCredentials?.(creds));

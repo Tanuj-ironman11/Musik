@@ -2,7 +2,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 // ---------------------------------------------------------------------------
 // Internal event bus — shared by window.Musik.events and the legacy
-// window.Aurelius.events shim so both surfaces stay in sync.
+// window.Musik.events shim so both surfaces stay in sync.
 // Events: trackupdate, play, pause, seek, artupdate, viewchange, queueupdate, duckupdate, duckdebug, fullscreenchange, libraryupdate
 // ---------------------------------------------------------------------------
 const listeners = new Map(); // eventName -> Set<callback>
@@ -83,6 +83,18 @@ const Musik = {
     saveManual: (trackMeta, payload) => ipcRenderer.invoke('lyrics:save-manual', trackMeta, payload),
     clearManual: (trackMeta) => ipcRenderer.invoke('lyrics:clear-manual', trackMeta),
     romanizeLines: (lines) => ipcRenderer.invoke('lyrics:romanize-lines', lines),
+    // NEW — romanizes a single plain-text block (the unsynced-lyrics
+    // fallback isn't an array of lines, so romanizeLines doesn't fit it).
+    // Needs a matching ipcMain.handle('lyrics:romanize', ...) in main.js —
+    // not added here since I don't have that file; mirror whatever your
+    // existing 'lyrics:romanize-lines' handler does, just calling
+    // Lyrics.romanize(text) instead of Lyrics.romanizeLines(lines).
+    romanize: (text) => ipcRenderer.invoke('lyrics:romanize', text),
+    // NEW — word-level tokens romanized against their containing line's
+    // script instead of their own (a lone kanji-only word looks identical
+    // to Chinese by itself). Needs ipcMain.handle('lyrics:romanize-words',
+    // (_e, words, lines) => Lyrics.romanizeWords(words, lines)) in main.js.
+    romanizeWords: (words, lines) => ipcRenderer.invoke('lyrics:romanize-words', words, lines),
   },
 
   art: {
@@ -210,7 +222,7 @@ const Musik = {
 };
 
 // ---------------------------------------------------------------------------
-// window.Aurelius — legacy shim for backward compatibility with older mods.
+// window.Musik — legacy shim for backward compatibility with older mods.
 // Only wraps what old mods actually used; new mods should target window.Musik.
 // Never remove or rename keys here without flagging it first.
 // ---------------------------------------------------------------------------

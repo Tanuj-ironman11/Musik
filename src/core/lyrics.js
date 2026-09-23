@@ -1,42 +1,22 @@
 // src/core/lyrics.js
 //
-// Main-process lyrics resolution. CommonJS, follows the same
-// init(userDataPath) + disk-cache pattern as library.js.
+// Main-process lyrics resolution. CommonJS, same init(userDataPath) +
+// disk-cache pattern as library.js.
 //
-// Resolution order per track:
-//   1. Manual override (user-entered, always wins, never overwritten by
-//      a later network fetch unless the user clears it)
-//   2. Disk cache (previous successful fetch)
-//   3. NetEase Cloud Music klyric — word-level, no auth
-//   4. LRCLIB (https://lrclib.net) — synced + plain, no API key
-//   5. Lyrica (https://github.com/Wilooper/Lyrica) — prehosted, HF Space
-//      primary with Render as failover — see the known Mac/Windows
-//      discrepancy in the project brief (200 OK on Windows, not
-//      confirmed working on Mac)
+// Resolution order per track: manual override > disk cache > NetEase
+// klyric (word-level) > LRCLIB (synced+plain) > Lyrica (prehosted
+// fallback, see Mac/Windows discrepancy note in the project brief).
+// Musixmatch richsync was removed (ToS) — do not reintroduce.
 //
-// Musixmatch richsync was removed (gray-area ToS) — do not reintroduce.
+// Track keys are artist+title only (album dropped — it drifted between
+// reads and orphaned manual files; see legacyTrackKey/migration below).
 //
-// Track keys are now artist+title only (album dropped — it's the field
-// most likely to drift between reads and was silently orphaning manual
-// lyrics files; see legacyTrackKey/migration in getLyrics()). Flagging:
-// this also means the disk cache (not just manual) is keyed differently
-// than before — first play of any previously-cached track after this
-// change is a harmless one-time re-fetch, not a bug.
+// romanize()/romanizeLines() are async (Japanese/Chinese need dictionary
+// lookups; every other script is sync but wrapped the same way so callers
+// don't branch).
 //
-// romanize()/romanizeLines() are now async — Japanese (kuroshiro +
-// kuromoji) and Chinese (pinyin-pro) need it; every other script still
-// resolves synchronously but is wrapped in the same async shape so callers
-// don't need to branch. New optional deps, see the comment above
-// getKuroshiro(). ipcMain.handle() already supports async handlers with no
-// change needed on that side; window.Musik.lyrics.romanizeLines() was
-// already awaited at the call site (fullscreen.js), so this doesn't change
-// its usage there either — call it out anyway per house rules since it's a
-// return-type change on an existing API function.
-//
-// IPC wiring required in main.js + preload.js — NOT done here, see the
-// wiring snippets delivered alongside this file. New IPC surface:
-//   lyrics-get, lyrics-save-manual, lyrics-clear-manual, lyrics-romanize
-// Flagging per house rules: this is a new API-surface addition.
+// IPC wiring (main.js + preload.js) is NOT in this file — new surface:
+// lyrics-get, lyrics-save-manual, lyrics-clear-manual, lyrics-romanize.
 
 'use strict';
 
@@ -97,14 +77,9 @@ function trackKey({ artist, title }) {
   return crypto.createHash('sha1').update(raw).digest('hex');
 }
 
-// Pre-fix key, included album — the tag field most likely to be blank on
-// one read and populated on the next (metadata enrichment, a re-scan, a
-// slightly different queue path). A manual lyrics file saved under this key
-// would silently stop resolving the moment album drifted, LOOKING like an
-// online fetch was "overriding" the manual override when really getLyrics()
-// was just hashing to a different, empty bucket. Kept only so pre-existing
-// manual files aren't orphaned by this change; see the one-time migration
-// in getLyrics() below. New saves always use the album-free key above.
+// Old key format (artist+title+album), kept only so pre-existing manual
+// files get migrated once in getLyrics() instead of orphaned. New saves
+// always use the album-free key above.
 function legacyTrackKey({ artist, title, album }) {
   const norm = (s) => (s || '').trim().toLowerCase().replace(/\s+/g, ' ');
   const raw = `${norm(artist)}::${norm(title)}::${norm(album)}`;
@@ -233,11 +208,7 @@ async function fetchFromLyrica({ artist, title }) {
         plain: d.plain_lyrics || d.lyrics || null,
       };
     } catch (_) {
-      // this base is down/cold/rate-limited — try the next one. If both
-      // fail we fall through and return null below (caller treats as
-      // "not found", gets cached briefly, retried on a later play).
-      // Mac build note from the project brief lives here if you're
-      // chasing that bug: a rejection on this line is where it'd surface.
+      // this base is down/cold/rate-limited — try the next one
     }
   }
   return null;
@@ -245,10 +216,8 @@ async function fetchFromLyrica({ artist, title }) {
 
 // ---------------------------------------------------------------------
 // Source: NetEase Cloud Music klyric (word-level). No auth needed.
-// Format for each klyric line: [lineStartMs,lineDurationMs]word(offsetMs,durationMs)word(...)...
-// This is best-effort parsing based on the commonly-documented format —
-// verify against a couple of real tracks and adjust the regex below if
-// NetEase has since changed their response shape.
+// Format: [lineStartMs,lineDurationMs]word(offsetMs,durationMs)word(...)...
+// Best-effort parsing of the commonly-documented format.
 // ---------------------------------------------------------------------
 
 const NETEASE_SEARCH = 'https://music.163.com/api/search/get/web';
@@ -265,7 +234,6 @@ async function fetchFromNetease({ artist, title }) {
     const lyricParams = new URLSearchParams({ os: 'pc', id: String(songId), lv: '-1', kv: '-1', tv: '-1' });
     const lyricData = await httpGetJson(`${NETEASE_LYRIC}?${lyricParams.toString()}`, neteaseHeaders);
     const klyric = lyricData?.klyric?.lyric;
-    console.log(`[Musik] netease for "${title}": songId=${songId}, klyric=${klyric ? 'found' : 'none'}`);
     if (!klyric) return null;
 
     const words = [];
@@ -313,10 +281,7 @@ async function getLyrics(track) {
     return { ...manual, source: 'manual', key };
   }
 
-  // 1b. One-time migration: a manual file saved under the old album-inclusive
-  // key (see legacyTrackKey above) would otherwise look permanently lost the
-  // moment album metadata drifted. Check once, adopt it under the new key,
-  // and it never has to happen again for this track.
+  // 1b. One-time migration from the old album-inclusive key.
   const legacyKey = legacyTrackKey(track);
   if (legacyKey !== key && fs.existsSync(manualPath(legacyKey))) {
     const manual = JSON.parse(fs.readFileSync(manualPath(legacyKey), 'utf8'));
@@ -343,9 +308,8 @@ async function getLyrics(track) {
     result = { source: 'none', synced: null, plain: null, words: null };
   }
 
-  // Cache even "not found" so we don't hammer both APIs every play —
-  // but with a short-lived marker so it gets retried eventually rather
-  // than permanently giving up on a track that just wasn't indexed yet.
+  // Cache "not found" too, so we're not hammering every source on every
+  // play, but it'll still get retried on a later play (see cachedAt).
   const toCache = { ...result, cachedAt: Date.now() };
   fs.writeFileSync(cachePath(key), JSON.stringify(toCache), 'utf8');
 
@@ -358,16 +322,11 @@ async function getLyrics(track) {
 
 function saveManualLyrics(track, { plain, synced, words }) {
   assertInit();
-  // manualDir is only created once in init(); if it's deleted mid-session
-  // (e.g. someone manually clearing all manual lyrics via the filesystem),
-  // writeFileSync below would throw ENOENT with no recovery. Cheap check,
-  // avoids that class of bug entirely.
   if (!fs.existsSync(manualDir)) fs.mkdirSync(manualDir, { recursive: true });
   const key = trackKey(track);
   const parsedSynced = typeof synced === 'string' ? parseLrc(synced) : (synced || null);
-  // words: optional word-level rich sync, [{ text, startMs, endMs }, ...].
-  // Same flat shape fetchFromNetease already returns, so the UI needs no
-  // format branching based on where the data came from.
+  // words: optional word-level rich sync, [{ text, startMs, endMs }, ...] —
+  // same shape fetchFromNetease returns, so the UI doesn't branch by source.
   const payload = { plain: plain || null, synced: parsedSynced, words: words || null, savedAt: Date.now() };
   fs.writeFileSync(manualPath(key), JSON.stringify(payload), 'utf8');
   return { ...payload, source: 'manual', key };
@@ -382,15 +341,11 @@ function clearManualLyrics(track) {
 }
 
 // ---------------------------------------------------------------------
-// Romanization — pluggable per-script. Algorithmic (zero external
-// dictionary) transforms are wired in for: Hangul, Cyrillic, Greek,
-// and now the three Indic abugidas (Devanagari/Hindi, Tamil, Telugu)
-// via a shared consonant+matra engine, since all three are phonetic
-// scripts and need no dictionary. Japanese (kanji) and Chinese (hanzi)
-// still need a dictionary-backed library (kuroshiro+kuromoji ~15MB,
-// pinyin-pro ~2MB) — deliberately NOT pulled in without a decision on
-// install size. Call romanize() anyway; unsupported scripts just
-// return null and the UI should hide the toggle in that case.
+// Romanization — pluggable per-script. Hangul, Cyrillic, Greek, and the
+// Indic abugidas (Devanagari/Tamil/Telugu/Gurmukhi) are algorithmic, no
+// dictionary needed. Japanese/Chinese need a dictionary lib (kuroshiro+
+// kuromoji, pinyin-pro) — optional deps, see getKuroshiro(). Unsupported
+// scripts just return null; the UI hides the toggle in that case.
 // ---------------------------------------------------------------------
 
 const HANGUL_BASE = 0xac00;
@@ -456,14 +411,11 @@ function romanizeGreek(text) {
   return out;
 }
 
-// -- Indic abugidas (Devanagari, Tamil, Telugu) --------------------------
+// -- Indic abugidas (Devanagari, Tamil, Telugu, Gurmukhi) ----------------
 //
-// All three are phonetic: consonants carry an inherent "a" that gets
-// replaced by a following vowel sign (matra), or dropped entirely when
-// followed by a virama/pulli. Independent vowel letters (used word-
-// initially) are mapped separately. This is table + lookahead only —
-// no dictionary, unlike Chinese/Japanese which need one for logographic
-// characters.
+// Phonetic: consonants carry an inherent "a" that a following vowel sign
+// (matra) replaces, or that drops entirely before a virama/pulli.
+// Table + lookahead only, no dictionary needed.
 
 function buildAbugidaRomanizer({ consonants, vowels, matras, virama, anusvara, anusvaraMap, visarga, nasal, nukta, nuktaMap, addak }) {
   const anusvaraChars = Array.isArray(anusvara) ? anusvara : (anusvara ? [anusvara] : []);
@@ -478,10 +430,8 @@ function buildAbugidaRomanizer({ consonants, vowels, matras, virama, anusvara, a
       if (addak && ch === addak) { pendingGeminate = true; continue; }
 
       if (Object.prototype.hasOwnProperty.call(consonants, ch)) {
-        // Nukta: a combining dot that swaps a Devanagari consonant's sound
-        // for a Persian/Arabic-borrowed one (ज+nukta -> ज़ "za", फ+nukta ->
-        // फ़ "fa", etc). Must resolve BEFORE virama/matra lookahead, since
-        // the nukta sits between the base consonant and whatever follows it.
+        // Nukta (combining dot, swaps a consonant for a borrowed sound e.g.
+        // ज+nukta -> ज़ "za") must resolve before virama/matra lookahead.
         let base = consonants[ch];
         if (nukta && next === nukta && nuktaMap && Object.prototype.hasOwnProperty.call(nuktaMap, ch)) {
           base = nuktaMap[ch];
@@ -507,10 +457,8 @@ function buildAbugidaRomanizer({ consonants, vowels, matras, virama, anusvara, a
         continue;
       }
       if (anusvaraChars.includes(ch)) {
-        // Nasalization's actual sound depends on the consonant right after
-        // it (labial -> m, dental/alveolar -> n, velar -> ng). Hardcoding
-        // 'm' broke anything not followed by a labial consonant — e.g.
-        // ज़िंदा ("zindaa") was coming out "zimdaa" since द (d) follows.
+        // Nasalization sound depends on the following consonant (labial ->
+        // m, dental/alveolar -> n, velar -> ng) — not a flat 'm'.
         const followingChar = chars[i + 1];
         out += (anusvaraMap && followingChar && anusvaraMap[followingChar]) || 'n';
         continue;
@@ -616,15 +564,10 @@ const romanizeTelugu = buildAbugidaRomanizer({
   visarga: 'ః',
 });
 
-// Gurmukhi (Punjabi)
-// Confidence note: consonant/vowel/matra codepoints follow the same
-// structural offset pattern as Devanagari (Gurmukhi block is U+0A00-U+0A7F,
-// mirroring U+0900-U+097F), a well-documented Unicode design choice, so
-// those are solid — sanity-checked by codepoint below before shipping. The
-// nukta-derived letters (ਖ਼ ਗ਼ ਜ਼ ਫ਼) are typically encoded as their own
-// precomposed codepoints in real-world text rather than built from
-// base+combining-nukta, so they're listed directly in `consonants` rather
-// than run through the nuktaMap mechanism used for Devanagari.
+// Gurmukhi (Punjabi) — same structural layout as Devanagari (Unicode block
+// mirrors it: U+0A00-U+0A7F vs U+0900-U+097F). Nukta-derived letters (ਖ਼ ਗ਼
+// ਜ਼ ਫ਼) are listed directly in `consonants` since real-world text uses
+// their precomposed codepoints rather than base+combining-nukta.
 const romanizeGurmukhi = buildAbugidaRomanizer({
   consonants: {
     ਕ: 'k', ਖ: 'kh', ਗ: 'g', ਘ: 'gh', ਙ: 'ng',
@@ -657,12 +600,9 @@ const romanizeGurmukhi = buildAbugidaRomanizer({
   addak: 'ੱ', // gemination mark — doubles the consonant right after it
 });
 
-// Kana (hiragana/katakana) presence is the signal used to tell Japanese
-// text apart from Chinese: both use CJK ideographs (\u4E00-\u9FFF), but
-// only Japanese mixes in kana. Pure-ideograph text with no kana is treated
-// as Chinese. This is a heuristic, not language detection — Japanese text
-// with zero kana on a given line (rare, but happens for a kanji-only title)
-// would misroute to pinyin. Good enough without real language metadata.
+// Kana presence tells Japanese apart from Chinese (both use CJK ideographs,
+// only Japanese mixes in kana). Heuristic, not real language detection — a
+// kanji-only line with zero kana would misroute to pinyin. Good enough.
 const KANA_RE = /[\u3040-\u30FF]/;
 const CJK_IDEOGRAPH_RE = /[\u4E00-\u9FFF]/;
 
@@ -682,25 +622,25 @@ function detectScript(text) {
 
 // ---------------------------------------------------------------------
 // Japanese (kuroshiro + kuromoji) and Chinese (pinyin-pro) — dictionary-
-// backed scripts, deliberately separate from the zero-dependency table
-// romanizers above. Both deps are optional at the package.json level on
-// purpose: if not installed, romanize() falls back to null for that
-// script exactly like before, and the UI keeps the toggle hidden — no
-// crash, no forced install.
+// backed, optional deps (npm install kuroshiro kuroshiro-analyzer-kuromoji
+// pinyin-pro). Not installed = romanize() returns null for that script,
+// UI hides the toggle, no crash.
 //
-//   npm install kuroshiro kuroshiro-analyzer-kuromoji pinyin-pro
-//
-// kuroshiro's kuromoji analyzer needs its dictionary directory on disk
-// (ships inside kuroshiro-analyzer-kuromoji/node_modules/kuromoji/dict) —
-// same asarUnpack concern as the WASAPI .node addon. Flagging as a
-// packaging change: add that dict path to electron-builder's asarUnpack.
+// PACKAGING TODO (not done here): kuromoji's dict directory needs
+// electron-builder asarUnpack, same concern as the WASAPI .node addon —
+// if that's not set up yet, JP romanization will silently fail in a
+// packaged build even though it works fine in dev.
 // ---------------------------------------------------------------------
 
 let kuroshiroInitPromise = null;
-let kuroshiroLoadFailed = false;
 
-function getKuroshiro() {
-  if (kuroshiroLoadFailed) return Promise.resolve(null);
+// NOTE: no sticky "give up forever" flag here anymore. A previous version
+// cached init failure permanently for the whole app session, so one bad
+// init (cold start, dict path race, whatever) silently killed JP
+// romanization for every song after it — this is almost certainly what
+// caused the "romanize button works sometimes" reports. Now every call
+// with no live instance just retries.
+async function getKuroshiro() {
   if (!kuroshiroInitPromise) {
     kuroshiroInitPromise = (async () => {
       const Kuroshiro = require('kuroshiro').default || require('kuroshiro');
@@ -709,8 +649,7 @@ function getKuroshiro() {
       await instance.init(new KuromojiAnalyzer());
       return instance;
     })().catch((err) => {
-      console.warn('[Musik] lyrics: kuroshiro unavailable, Japanese romanization disabled.', err.message);
-      kuroshiroLoadFailed = true;
+      console.warn('[Musik] lyrics: kuroshiro init failed, will retry next call.', err.message);
       kuroshiroInitPromise = null;
       return null;
     });
@@ -718,20 +657,15 @@ function getKuroshiro() {
   return kuroshiroInitPromise;
 }
 
-let pinyinLoadFailed = false;
-
 function romanizeChinese(text) {
-  if (pinyinLoadFailed) return null;
   try {
     const { pinyin } = require('pinyin-pro');
-    // Source lines are often space-joined syllable/word tokens (e.g. from
-    // word-level synced lyrics), not real prose spacing. Spaces here break
-    // tone/word-boundary resolution the same way they break kuromoji below
-    // — strip them and let toneType/mode re-derive real word spacing.
+    // Word-level lyric sources are often space-joined syllable tokens, not
+    // real prose spacing — strip spaces so tone/word-boundary resolution
+    // works, then let toneType/mode re-derive real spacing on output.
     return pinyin(text.replace(/\s+/g, ''), { toneType: 'none', type: 'string', nonZh: 'consecutive' });
   } catch (err) {
     console.warn('[Musik] lyrics: pinyin-pro unavailable, Chinese romanization disabled.', err.message);
-    pinyinLoadFailed = true;
     return null;
   }
 }
@@ -740,15 +674,10 @@ async function romanizeJapanese(text) {
   const kuroshiro = await getKuroshiro();
   if (!kuroshiro) return null;
   try {
-    // Same fix as romanizeChinese: word-level lyric sources join syllables
-    // with spaces (e.g. "大東京 狂 騒 歌っ て"), which breaks kuromoji's
-    // tokenizer — it sees each chunk in isolation with no sentence context,
-    // so single kanji like "騒" fail dictionary lookup and come back
-    // unconverted, and a failed lookup adjacent to another word can even
-    // surface as the literal string "undefined" concatenated onto it
-    // (e.g. "utauundefined"). Stripping spaces restores full-phrase context
-    // ("大東京狂騒歌って" → converts cleanly); mode: 'spaced' below re-adds
-    // proper word spacing on the output side.
+    // Word-level sources join syllables with spaces, which breaks
+    // kuromoji's tokenizer (each chunk loses sentence context, single
+    // kanji fail lookup). Strip spaces for conversion, mode:'spaced'
+    // re-adds proper word spacing on the output.
     return await kuroshiro.convert(text.replace(/\s+/g, ''), { to: 'romaji', mode: 'spaced' });
   } catch (err) {
     console.warn('[Musik] lyrics: kuroshiro conversion failed for a line, skipping it.', err.message);
@@ -756,12 +685,15 @@ async function romanizeJapanese(text) {
   }
 }
 
-// Async because Japanese needs the dictionary-backed kuroshiro path (every
-// other script resolves synchronously but is cheap to await too — one
-// shape for every caller, no branching by script at the call site).
-async function romanize(text) {
+// Async so every script shares one call shape (only JP actually needs it).
+// scriptHint, if given, skips detectScript entirely — used by
+// romanizeWords() below so word-level tokens inherit their containing
+// line's script instead of getting misdetected on their own tiny fragment
+// (a kanji-only word with no kana in it, e.g. "渦巻" split out from
+// "渦巻いて", looks identical to Chinese by the kana heuristic alone).
+async function romanize(text, scriptHint) {
   if (!text) return null;
-  switch (detectScript(text)) {
+  switch (scriptHint || detectScript(text)) {
     case 'hangul': return romanizeHangul(text);
     case 'cyrillic': return romanizeCyrillic(text);
     case 'greek': return romanizeGreek(text);
@@ -783,6 +715,65 @@ async function romanizeLines(lines) {
   return out.some((l) => l.romanized) ? out : null;
 }
 
+// Word-level rich sync needs a different pairing than romanizeLines: each
+// word gets matched to its containing line (by timing). Japanese lines get
+// romanized as a whole (see below) instead of per word — this source
+// segments below real word/mora boundaries, so there's no reliable way to
+// split a shared reading across word tokens. Every other script romanizes
+// each word independently against the line's pinned script (those don't
+// suffer Japanese's isolation/segmentation problem).
+async function romanizeWords(words, lines) {
+  if (!Array.isArray(words) || !Array.isArray(lines) || !lines.length) return null;
+
+  // Bucket each word into the line it chronologically falls under. The old
+  // ±25ms tolerance windows left a small gap between consecutive lines'
+  // windows that a word could fall through, returning -1 — and the -1
+  // fallback then used just that ONE orphaned word as "lineText" instead
+  // of its real line, wiping out sentence context and recreating the
+  // exact isolated-kanji bug (that's what 騒/濡/喰 showing up raw actually
+  // was). Never returning -1 removes the gap: every word lands under the
+  // last line whose start time it's at or past.
+  const lineIndexForWord = words.map((w) => {
+    let li = 0;
+    for (let i = 0; i < lines.length; i++) {
+      if (w.startMs >= lines[i].time * 1000) li = i;
+      else break;
+    }
+    return li;
+  });
+
+  const byLine = new Map(); // lineIndex -> [wordIndex, ...], in original order
+  lineIndexForWord.forEach((li, wi) => {
+    if (!byLine.has(li)) byLine.set(li, []);
+    byLine.get(li).push(wi);
+  });
+
+  const romanized = new Array(words.length).fill(null);
+
+  for (const [li, wordIdxs] of byLine) {
+    const lineText = lines[li].text;
+    const script = detectScript(lineText);
+
+    if (script === 'japanese') {
+      // Per-word splitting for Japanese doesn't work here — this source
+      // segments lyrics close to per-syllable, well below real word/mora
+      // boundaries, so there's no reliable way to divide a shared
+      // reading across word tokens. Romanize the whole line at once
+      // instead (same proven path romanizeLines() uses) and surface it
+      // once, on the line's first word, in sync with the line's start.
+      const lineRomanized = await romanizeJapanese(lineText);
+      wordIdxs.forEach((wi, k) => { romanized[wi] = k === 0 ? lineRomanized : ''; });
+    } else {
+      for (const wi of wordIdxs) {
+        romanized[wi] = await romanize(words[wi].text, script);
+      }
+    }
+  }
+
+  const out = words.map((w, i) => ({ ...w, romanized: romanized[i] }));
+  return out.some((w) => w.romanized) ? out : null;
+}
+
 module.exports = {
   init,
   get: getLyrics,
@@ -790,6 +781,7 @@ module.exports = {
   clearManual: clearManualLyrics,
   romanize,
   romanizeLines,
+  romanizeWords,
   // exported for tests/debugging, not part of the public IPC surface
   _parseLrc: parseLrc,
   _trackKey: trackKey,

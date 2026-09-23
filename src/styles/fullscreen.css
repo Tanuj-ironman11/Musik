@@ -427,6 +427,13 @@
   text-shadow: 0 0 12px rgba(var(--color-accent-rgb), 0.5), 0 0 30px rgba(var(--color-accent-rgb), 0.22);
 }
 
+/* Already-sung lines fade further than upcoming ones, so the eye reads
+   "behind" vs. "ahead" at a glance instead of every non-active line
+   looking the same. */
+.npf-lyric-line.npf-lyric-past {
+  color: rgba(255, 255, 255, 0.1);
+}
+
 .npf-lyric-word { display: inline-block; }
 
 /* Words not yet reached in the active line stay at the same dim tone as

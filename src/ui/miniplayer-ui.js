@@ -63,12 +63,13 @@
   // HEIGHT threshold (it's the thing competing with controls for vertical
   // space); title/artist hide below a WIDTH threshold (they're the thing
   // competing for horizontal space when the window's thin). -------------
-  const ART_HIDE_HEIGHT = 150;
-  const TEXT_HIDE_WIDTH = 200;
-
   function updateLayout(width, height) {
-    root.classList.toggle('mp-no-art', height < ART_HIDE_HEIGHT);
-    root.classList.toggle('mp-no-text', width < TEXT_HIDE_WIDTH);
+    // Wide banner (ratio >= 1.75) OR slim window (height <= 170) -> Horizontal
+    // Square or tall window -> Vertical Card
+    const isHorizontal = !queueOpen && ((width / height >= 1.75) || height <= 170);
+    root.classList.toggle('mp-horizontal', isHorizontal);
+    root.classList.toggle('mp-no-art', !isHorizontal && height < 120);
+    root.classList.toggle('mp-no-text', isHorizontal && width < 240);
   }
 
   new ResizeObserver((entries) => {
@@ -220,6 +221,7 @@
   async function toggleQueue() {
     kickQueueBtn();
     queueOpen = !queueOpen;
+    root.classList.toggle('mp-has-queue', queueOpen);
     queueToggleBtn.setAttribute('aria-pressed', String(queueOpen));
     queuePanel.hidden = !queueOpen;
     if (queueOpen) await renderQueue();
@@ -232,10 +234,25 @@
   });
 
   // --- State from the main window (all pushed, so this fires live) -------
+  function fmtTime(seconds) {
+    if (!isFinite(seconds) || seconds < 0) return '0:00';
+    const m = Math.floor(seconds / 60);
+    const s = Math.floor(seconds % 60).toString().padStart(2, '0');
+    return `${m}:${s}`;
+  }
+
+  const timeCurrentEl = document.getElementById('mp-time-current');
+  const timeDurationEl = document.getElementById('mp-time-duration');
+
   window.Musik.events.on('trackupdate', (track) => {
     titleEl.textContent = track?.title || 'Nothing playing';
     artistEl.textContent = track?.artist || '';
     knownDuration = track?.duration || 0;
+    if (timeDurationEl) timeDurationEl.textContent = fmtTime(knownDuration);
+    if (timeCurrentEl) timeCurrentEl.textContent = '0:00';
+    progressEl.value = 0;
+    progressEl.max = knownDuration || 100;
+    progressEl.style.setProperty('--progress', '0%');
     currentFilePath = track?.filePath || null;
     if (queueOpen) renderQueue();
   });
@@ -256,40 +273,35 @@
 
   let userIsScrubbing = false;
 
+  function syncProgress(current, total) {
+    const dur = Math.max(Math.round(total || 0), 1);
+    const cur = Math.max(0, Math.min(Math.round(current || 0), dur));
+    progressEl.max = dur;
+    progressEl.value = cur;
+    const pct = (cur / dur) * 100;
+    progressEl.style.setProperty('--progress', `${pct}%`);
+    if (timeCurrentEl) timeCurrentEl.textContent = fmtTime(cur);
+    if (timeDurationEl && total) timeDurationEl.textContent = fmtTime(dur);
+  }
+
+  progressEl.addEventListener('input', () => {
+    userIsScrubbing = true;
+    const val = Number(progressEl.value);
+    const max = Number(progressEl.max) || 1;
+    const pct = (val / max) * 100;
+    progressEl.style.setProperty('--progress', `${pct}%`);
+    if (timeCurrentEl) timeCurrentEl.textContent = fmtTime(val);
+  });
+
+  progressEl.addEventListener('change', () => {
+    command('seek', { seconds: Number(progressEl.value) });
+    userIsScrubbing = false;
+  });
+
   window.Musik.events.on('progress', ({ currentTime, duration }) => {
     if (duration) knownDuration = duration;
     if (userIsScrubbing || !knownDuration) return;
-    const pct = Math.min(100, (currentTime / knownDuration) * 100);
-    progressEl.style.setProperty('--progress', `${pct}%`);
-  });
-
-  // Click/drag-to-seek — progressEl is a plain div, so this is pointer math
-  // against its own bounding box, same approach as player-bar.js's absolute
-  // seek-bar click-to-jump.
-  function pctFromEvent(e) {
-    const rect = progressEl.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    return Math.max(0, Math.min(1, x / rect.width));
-  }
-
-  function scrubTo(e) {
-    if (!knownDuration) return;
-    const pct = pctFromEvent(e);
-    progressEl.style.setProperty('--progress', `${pct * 100}%`);
-    command('seek', { seconds: pct * knownDuration });
-  }
-
-  progressEl.addEventListener('mousedown', (e) => {
-    userIsScrubbing = true;
-    scrubTo(e);
-    const onMove = (ev) => scrubTo(ev);
-    const onUp = () => {
-      userIsScrubbing = false;
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
-    };
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
+    syncProgress(currentTime, knownDuration);
   });
 
   // Ask the main window what's already playing, since we missed any

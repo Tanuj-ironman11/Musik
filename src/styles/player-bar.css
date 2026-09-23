@@ -607,33 +607,36 @@ body[data-active-view="now-playing"] #now-playing-bar {
   letter-spacing: 0.3px;
 }
 
-html,
+html:has(body[data-window="miniplayer"]),
 body[data-window="miniplayer"] {
   margin: 0;
   width: 100%;
   height: 100%;
-  background: transparent;
-  border-radius: 18px;
+  background: transparent !important;
   overflow: hidden;
+}
+
+/* Kills the opaque square gradient & noise from tokens.css outside the rounded corners */
+body[data-window="miniplayer"]::before,
+body[data-window="miniplayer"]::after {
+  display: none !important;
 }
 
 #mp-root {
   width: calc(100% - 4px);
   height: calc(100% - 4px);
   margin: 2px;
-  padding: 12px 14px;
+  padding: 14px 16px;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
+  justify-content: space-between;
   gap: 8px;
   border-radius: 18px;
-  background:
-    linear-gradient(180deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0) 40%),
-    color-mix(in srgb, var(--color-bg-elevated) 86%, transparent);
+  /* Completely solid, opaque background — stops desktop bleed-through */
+  background: var(--color-bg-elevated, #141414);
   border: 1px solid var(--glass-border-color);
-  box-shadow:
-    0 8px 32px -8px rgba(0, 0, 0, 0.6),
-    0 0 0 1px rgba(255, 255, 255, 0.03) inset;
+  box-shadow: 0 8px 32px -8px rgba(0, 0, 0, 0.7);
   overflow: hidden;
   -webkit-app-region: drag;
 }
@@ -645,31 +648,31 @@ body[data-window="miniplayer"] {
   -webkit-app-region: no-drag;
 }
 
+/* Vertical Card Mode: Album art expands dynamically up to 60% of available height */
 .mp-art-frame {
   flex: 1 1 auto;
-  min-height: 0;
+  min-height: 60px;
   display: flex;
   align-items: center;
   justify-content: center;
+  width: 100%;
 }
 
 #mp-root .pb-art-wrap {
   width: auto;
   height: 100%;
-  max-width: 100%;
+  max-height: 100%;
   aspect-ratio: 1 / 1;
+  max-width: min(100%, 340px);
+  border-radius: var(--radius-md, 10px);
+  overflow: hidden;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
 }
 
 #mp-root .pb-art {
+  width: 100%;
+  height: 100%;
   object-fit: cover;
-}
-
-#mp-root .pb-art-wrap {
-  background: transparent;
-}
-
-#mp-root .pb-art-wrap {
-  box-shadow: none;
 }
 
 #mp-root .pb-text,
@@ -682,17 +685,115 @@ body[data-window="miniplayer"] {
   text-align: center;
 }
 
-.mp-progress-track {
+#mp-root .pb-progress-row {
   width: 100%;
-  height: 4px;
-  border-radius: 2px;
-  background: linear-gradient(
-    to right,
-    var(--color-accent) 0%,
-    var(--color-accent) var(--progress, 0%),
-    color-mix(in srgb, var(--color-text) 12%, transparent) var(--progress, 0%),
-    color-mix(in srgb, var(--color-text) 12%, transparent) 100%
-  );
+  max-width: 100%;
+  gap: 8px;
+}
+
+/* Removes the 1s delay on the background fill so it locks 1:1 with the thumb */
+#mp-root .pb-progress {
+  transition: height 0.15s var(--ease-out);
+}
+
+/* ─── Fluid Spotify-Style Horizontal Mode ─── */
+#mp-root.mp-horizontal {
+  display: grid;
+  grid-template-areas:
+    "art text controls"
+    "progress progress progress";
+  grid-template-columns: auto minmax(180px, 1fr) auto;
+  grid-template-rows: 1fr auto;
+  align-items: center;
+  gap: clamp(8px, 1.5vw, 14px) clamp(12px, 2vw, 24px);
+  padding: clamp(10px, 1.8vw, 18px) clamp(14px, 2.2vw, 24px);
+}
+
+/* Album art dynamically fills the available bar height */
+#mp-root.mp-horizontal .mp-art-frame {
+  grid-area: art;
+  width: auto;
+  height: 100%;
+  max-height: 100%;
+  justify-content: flex-start;
+}
+
+#mp-root.mp-horizontal .pb-art-wrap {
+  height: 100%;
+  max-height: 100%;
+  width: auto;
+  aspect-ratio: 1 / 1;
+  max-width: 140px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+
+/* Dynamically scaled text: fills ultra-wide emptiness */
+#mp-root.mp-horizontal .pb-text {
+  grid-area: text;
+  text-align: left;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+}
+
+#mp-root.mp-horizontal .pb-title {
+  font-size: clamp(15px, 2.2vw, 26px);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+}
+
+#mp-root.mp-horizontal .pb-artist {
+  font-size: clamp(12px, 1.6vw, 17px);
+  color: var(--color-text-secondary);
+}
+
+/* Dynamically scaled controls with comfortable spacing */
+#mp-root.mp-horizontal .pb-controls {
+  grid-area: controls;
+  gap: clamp(8px, 1.4vw, 16px);
+}
+
+#mp-root.mp-horizontal .pb-btn {
+  width: clamp(32px, 2.4vw, 40px);
+  height: clamp(32px, 2.4vw, 40px);
+}
+
+#mp-root.mp-horizontal .pb-btn svg {
+  width: clamp(16px, 1.3vw, 20px);
+  height: clamp(16px, 1.3vw, 20px);
+}
+
+#mp-root.mp-horizontal .pb-btn-play {
+  width: clamp(38px, 3.2vw, 48px);
+  height: clamp(38px, 3.2vw, 48px);
+}
+
+#mp-root.mp-horizontal .pb-btn-play svg {
+  width: clamp(18px, 1.6vw, 24px);
+  height: clamp(18px, 1.6vw, 24px);
+}
+
+#mp-root.mp-horizontal .pb-progress-row {
+  grid-area: progress;
+  gap: 10px;
+}
+
+#mp-root.mp-horizontal .pb-time {
+  font-size: clamp(11px, 1.2vw, 13px);
+}
+
+/* Queue active sizing */
+#mp-root.mp-has-queue .mp-art-frame {
+  flex: 0 0 auto;
+  max-height: 80px;
+}
+
+#mp-root.mp-has-queue .pb-art-wrap {
+  width: 80px;
+  height: 80px;
 }
 
 .mp-queue-panel {
