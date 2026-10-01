@@ -350,3 +350,46 @@
   60%  { transform: translateX(calc(var(--dir) * 1.5px)); }
   100% { transform: translateX(0); }
 }
+
+/* ─── Profile page (profile.css) ───
+   Card/row/chip entrances, the top-list bar fill, and the stats-source
+   toggle's icon kicks (local: laptop drops in; Last.fm: EQ bars re-bounce).
+   Triggers + stagger delays live in profile.css. The toggle thumb itself
+   reuses settings-view-thumb-squash above. */
+
+@keyframes profile-card-rise {
+  0%   { opacity: 0; transform: translateY(14px) scale(0.97); }
+  60%  { opacity: 1; transform: translateY(-2px) scale(1.01); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes profile-row-rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes profile-bar-grow {
+  from { transform: scaleX(0); }
+  to   { transform: scaleX(1); }
+}
+
+@keyframes profile-src-drop {
+  0%   { transform: translateY(-4px); }
+  60%  { transform: translateY(1px); }
+  100% { transform: translateY(0); }
+}
+
+@keyframes profile-src-eq {
+  0%   { transform: scaleY(0.3); }
+  60%  { transform: scaleY(1.15); }
+  100% { transform: scaleY(1); }
+}
+
+/* ─── Settings: layout mock hint ───
+   Looping nudge on the layout preview's edge marker. Was inline in
+   settings.css — moved here per this file's one-place rule. */
+
+@keyframes layout-hint-pulse {
+  0%, 100% { opacity: 0.25; transform: translateY(-50%) translateX(0); }
+  50%      { opacity: 0.85; transform: translateY(-50%) translateX(3px); }
+}

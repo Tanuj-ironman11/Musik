@@ -529,6 +529,16 @@ window.MusikViews['settings'] = async function renderSettings(main) {
             <span id="settings-rescan-status" class="settings-row-value"></span>
           </div>
         </div>
+        <div class="settings-row">
+          <div class="settings-row-label">
+            <span class="settings-row-name">Reset library</span>
+            <span class="settings-row-desc">Removes every track, playlist and watched folder from Musik. Your audio files are never touched.</span>
+          </div>
+          <div class="settings-row-control">
+            <button type="button" id="settings-library-reset" class="btn btn--danger">Reset library</button>
+            <span id="settings-library-reset-status" class="settings-row-value"></span>
+          </div>
+        </div>
       </section>
 
       <section class="settings-section" id="settings-mods">
@@ -749,6 +759,34 @@ window.MusikViews['settings'] = async function renderSettings(main) {
     } finally {
       rescanNowBtn.disabled = false;
       setTimeout(() => { rescanStatus.textContent = ''; }, 3000);
+    }
+  });
+
+  // Demo reset — wipes tracks, playlists and watched folders (never files on
+  // disk). Backend: library.clear -> 'library:clear', which also broadcasts
+  // libraryupdate { cleared: true } so open views refresh themselves.
+  const libraryResetBtn = document.getElementById('settings-library-reset');
+  const libraryResetStatus = document.getElementById('settings-library-reset-status');
+  libraryResetBtn?.addEventListener('click', async () => {
+    if (typeof window.Musik?.library?.clear !== 'function') {
+      libraryResetStatus.textContent = 'Unavailable';
+      return;
+    }
+    const ok = await window.MusikDialog?.confirm?.(
+      'Reset your library? This removes every track, playlist and watched folder from Musik. Your audio files stay on your computer.'
+    );
+    if (!ok) return;
+    libraryResetBtn.disabled = true;
+    libraryResetStatus.textContent = 'Resetting…';
+    try {
+      const done = await window.Musik.library.clear();
+      libraryResetStatus.textContent = done ? 'Library cleared' : 'Failed';
+    } catch (err) {
+      libraryResetStatus.textContent = 'Failed';
+      console.warn('[Musik] library reset failed:', err);
+    } finally {
+      libraryResetBtn.disabled = false;
+      setTimeout(() => { libraryResetStatus.textContent = ''; }, 3000);
     }
   });
 

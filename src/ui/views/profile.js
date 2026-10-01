@@ -62,10 +62,10 @@ function splitArtists(raw) {
 // differently across tracks — "A;B" and "A;C" both get folded into "A"
 // (the primary/first-listed artist), instead of showing as two separate
 // rows that split what should be one person's play count. Grouped by a
-// normalized key: lowercased, punctuation stripped, first two words of
-// the primary artist — catches "DJ Snake" vs "dj  snake" too, not just the
-// collab-splitting case.
-// Two bugs fixed here: (1) the old key kept only the FIRST TWO WORDS, so
+// normalized key: lowercased, punctuation stripped, whitespace collapsed,
+// on the primary artist's WHOLE name — catches "DJ Snake" vs "dj  snake"
+// too, not just the collab-splitting case.
+// Two bugs fixed here: (1) the old key kept only the first two words, so
 // "The Kid LAROI" and "The Kid Cudi" merged into one row; the whole
 // normalized name is the key now. (2) the old [^a-z0-9] strip erased every
 // non-Latin character, so Japanese/Korean/Chinese/Cyrillic artists
@@ -107,54 +107,151 @@ function dedupeTopArtists(topArtists) {
   return [...merged.values()].sort((a, b) => b.count - a.count);
 }
 
-function topListHTML(items, emptyLabel) {
-  if (!items || !items.length) {
-    return `<div class="profile-top-empty">${escapeHTML(emptyLabel)}</div>`;
-  }
-  return `
-    <ol class="profile-top-list">
-      ${items.slice(0, 5).map((item) => {
-        const label = item.key.includes('::') ? item.key.split('::').slice(1).join('::') || item.key : item.key;
-        return `
-          <li class="profile-top-row">
-            <span class="profile-top-name">${escapeHTML(label)}</span>
-            <span class="profile-top-count">${item.count}</span>
-          </li>
-        `;
-      }).join('')}
-    </ol>
-  `;
+// In-app dialog instead of the native alert() (which can steal input focus
+// in Electron). Falls back to alert only if MusikDialog isn't loaded.
+function notify(message) {
+  if (window.MusikDialog?.alert) return window.MusikDialog.alert(message);
+  alert(message);
 }
 
+// ── Motion helpers ──────────────────────────────────────────────────
+// Numbers are rendered at their final value in the HTML (so nothing breaks
+// without JS), then countUp() rewinds to 0 and eases up to it.
+function prefersReducedMotion() {
+  return !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+}
+
+function fmtCount(n) {
+  return Math.round(n).toLocaleString();
+}
+
+function numHTML(value, fmt = 'num') {
+  const v = Number(value) || 0;
+  const shown = fmt === 'dur' ? fmtDuration(v) : fmtCount(v);
+  return `<span class="profile-stat-num" data-count="${v}" data-fmt="${fmt}">${shown}</span>`;
+}
+
+function countUp(el) {
+  const target = Number(el.dataset.count) || 0;
+  const fmt = el.dataset.fmt === 'dur' ? fmtDuration : fmtCount;
+  if (prefersReducedMotion() || target <= 0) { el.textContent = fmt(target); return; }
+  const start = performance.now();
+  const DURATION = 750;
+  el.textContent = fmt(0);
+  const tick = (now) => {
+    const p = Math.min(1, (now - start) / DURATION);
+    el.textContent = fmt(target * (1 - Math.pow(1 - p, 3)));
+    if (p < 1 && el.isConnected) requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}
+
+function runCountUps(root) {
+  root.querySelectorAll('[data-count]').forEach(countUp);
+}
+
+// Restarts a one-shot CSS animation class (same pattern as settings.js).
+function kick(el) {
+  if (!el) return;
+  el.classList.remove('is-kick');
+  void el.getBoundingClientRect();
+  el.classList.add('is-kick');
+  el.addEventListener('animationend', () => el.classList.remove('is-kick'), { once: true });
+}
+
+// ── Top lists ──────────────────────────────────────────────────────
+// key format for albums/tracks is "artist::name" (see libraryStatsHTML too).
+// Two separate maps — a track titled the same as its album (very common for
+// singles / self-titled releases) used to share one key and could hand the
+// track row the wrong art.
+function buildArtLookup(tracks) {
+  const album = new Map();
+  const track = new Map();
+  for (const t of tracks || []) {
+    const artist = t.artist || '';
+    if (t.album && !album.has(`${artist}::${t.album}`)) album.set(`${artist}::${t.album}`, t);
+    if (t.title && !track.has(`${artist}::${t.title}`)) track.set(`${artist}::${t.title}`, t);
+  }
+  return { album, track };
+}
+
+const NOTE_GLYPH = `<svg class="profile-top-thumb-glyph" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V5l11-2v13"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="17.5" cy="16" r="2.5"/></svg>`;
+
+function topThumbHTML(kind, label, key, artLookup) {
+  if (kind === 'artist') {
+    const initial = Array.from(label)[0]?.toUpperCase() || '?';
+    return `<span class="profile-top-thumb profile-top-thumb--artist">${escapeHTML(initial)}</span>`;
+  }
+  let src = '';
+  try {
+    const t = artLookup?.[kind]?.get(key);
+    src = (t && window.MusikCards?.artSrc?.(t)) || '';
+  } catch { src = ''; }
+  // Glyph sits underneath; a failed <img> is removed (wired after insert —
+  // inline onerror would trip the CSP) and the glyph shows through.
+  return `<span class="profile-top-thumb">${NOTE_GLYPH}${src ? `<img src="${escapeHTML(src)}" alt="" loading="lazy">` : ''}</span>`;
+}
+
+function topListHTML(items, emptyLabel, kind, artLookup) {
+  if (!items?.length) return `<div class="profile-top-empty">${escapeHTML(emptyLabel)}</div>`;
+  const rows = items.slice(0, 5);
+  const max = Math.max(...rows.map((r) => r.count), 1);
+  return `<ol class="profile-top-list">${rows.map((item, i) => {
+    const hasPrefix = item.key.includes('::');
+    const parts = item.key.split('::');
+    const name = hasPrefix ? (parts.slice(1).join('::') || item.key) : item.key;
+    const sub = hasPrefix ? parts[0] : '';
+    const pct = Math.max(6, Math.round((item.count / max) * 100));
+    return `
+      <li class="profile-top-row${i === 0 ? ' is-first' : ''}" style="--i:${i}; --pct:${pct}%">
+        <span class="profile-top-bar" aria-hidden="true"></span>
+        <span class="profile-top-rank">${i + 1}</span>
+        ${topThumbHTML(kind, name, item.key, artLookup)}
+        <span class="profile-top-text">
+          <span class="profile-top-name">${escapeHTML(name)}</span>
+          ${sub ? `<span class="profile-top-sub">${escapeHTML(sub)}</span>` : ''}
+        </span>
+        <span class="profile-top-count">${fmtCount(item.count)}</span>
+      </li>`;
+  }).join('')}</ol>`;
+}
+
+// ── Library stats (collapsible card, independent of the stats source) ──
 function libraryStatsHTML(tracks) {
-  if (!tracks.length) {
-    return `<div class="profile-lib-empty">No tracks in your library yet.</div>`;
-  }
+  if (!tracks.length) return `<div class="profile-lib-empty">No tracks in your library yet.</div>`;
 
-  const artists = new Set();
-  const albums = new Set();
-  const formats = {};
-  let totalSeconds = 0;
+  const artists = new Set(tracks.map((t) => (t.artist || '').trim().toLowerCase()).filter(Boolean));
+  const albums = new Set(tracks.filter((t) => t.album).map((t) => `${(t.artist || '').toLowerCase()}::${t.album.toLowerCase()}`));
+  const totalSeconds = tracks.reduce((sum, t) => sum + (t.duration || 0), 0);
 
+  const formatCounts = {};
   for (const t of tracks) {
-    if (t.artist) artists.add(t.artist);
-    if (t.album) albums.add(`${t.artist || ''}::${t.album}`);
-    totalSeconds += t.duration || 0;
-    const ext = (t.filePath.split('.').pop() || '?').toUpperCase();
-    formats[ext] = (formats[ext] || 0) + 1;
+    const ext = (t.filePath?.split('.').pop() || 'other').toLowerCase();
+    formatCounts[ext] = (formatCounts[ext] || 0) + 1;
   }
+  const formats = Object.entries(formatCounts).sort((a, b) => b[1] - a[1]);
 
-  const formatEntries = Object.entries(formats).sort((a, b) => b[1] - a[1]);
+  const stat = (value, label, fmt) => `
+    <div class="profile-lib-stat">
+      <span class="profile-lib-num">${numHTML(value, fmt)}</span>
+      <span class="profile-lib-label">${label}</span>
+    </div>`;
 
   return `
     <div class="profile-lib-grid">
-      <div class="profile-lib-stat"><span class="profile-lib-num">${tracks.length}</span><span class="profile-lib-label">Tracks</span></div>
-      <div class="profile-lib-stat"><span class="profile-lib-num">${artists.size}</span><span class="profile-lib-label">Artists</span></div>
-      <div class="profile-lib-stat"><span class="profile-lib-num">${albums.size}</span><span class="profile-lib-label">Albums</span></div>
-      <div class="profile-lib-stat"><span class="profile-lib-num">${fmtDuration(totalSeconds)}</span><span class="profile-lib-label">Total length</span></div>
+      ${stat(tracks.length, 'Tracks')}
+      ${stat(artists.size, 'Artists')}
+      ${stat(albums.size, 'Albums')}
+      ${stat(totalSeconds, 'Total length', 'dur')}
+    </div>
+    <div class="profile-fmt-bar" aria-hidden="true">
+      ${formats.map(([, count], i) => `<span class="profile-fmt-seg" style="--k:${Math.min(i, 5)}; flex:${count}"></span>`).join('')}
     </div>
     <div class="profile-lib-formats">
-      ${formatEntries.map(([ext, count]) => `<span class="profile-lib-format-pill">${escapeHTML(ext)} · ${count}</span>`).join('')}
+      ${formats.map(([ext, count], i) => `
+        <span class="profile-lib-format-pill" style="--k:${Math.min(i, 5)}">
+          <i class="profile-lib-format-dot"></i>${escapeHTML(ext.toUpperCase())} · ${fmtCount(count)}
+        </span>`).join('')}
     </div>
   `;
 }
@@ -258,7 +355,7 @@ function openAvatarCropper(file) {
     // onload — without this the modal sat open on an empty circle forever.
     img.onerror = () => {
       cleanup();
-      alert("Couldn't read that image — try a JPG or PNG.");
+      notify("Couldn't read that image — try a JPG or PNG.");
       resolve(null);
     };
     img.src = objectUrl;
@@ -339,38 +436,49 @@ function openAvatarCropper(file) {
   });
 }
 
+// Filled in once stats load; renderProfileHeader repaints the chips from it
+// so an avatar/name change never has to wait on (or re-fetch) the stats.
+let heroInfo = null;
+
+function paintHeroChips() {
+  const el = document.getElementById('profile-chips');
+  if (!el) return;
+  if (!heroInfo) { el.innerHTML = ''; return; }
+  const chips = [];
+  if (heroInfo.since) chips.push(`<span class="profile-chip">Listening since ${escapeHTML(fmtDate(heroInfo.since))}</span>`);
+  chips.push(`<span class="profile-chip">${fmtCount(heroInfo.trackCount)} track${heroInfo.trackCount === 1 ? '' : 's'}</span>`);
+  if (heroInfo.lastfm) chips.push(`<span class="profile-chip profile-chip--live"><i class="profile-chip-dot"></i>Last.fm connected</span>`);
+  el.innerHTML = chips.join('');
+}
+
 function renderProfileHeader(container) {
-  const savedAvatar = getSavedAvatar();
   const savedName = getSavedUsername();
+  const savedAvatar = getSavedAvatar();
 
   container.innerHTML = `
-    <div class="profile-header-card">
+    <div class="profile-hero">
       <div class="profile-avatar-wrap" id="profile-avatar-wrap" title="Click to change photo" role="button" tabindex="0" aria-label="Change profile photo">
         ${savedAvatar
-          ? `<img class="profile-avatar-img" id="profile-avatar-img" src="${savedAvatar}" alt="">`
+          ? `<img class="profile-avatar-img" id="profile-avatar-img" src="${savedAvatar}" alt="Profile photo">`
           : `<div class="profile-avatar-fallback" id="profile-avatar-fallback">${avatarFallbackHTML(savedName)}</div>`}
         <div class="profile-avatar-overlay">
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>
         </div>
         <input type="file" id="profile-avatar-input" accept="image/*" hidden>
       </div>
       <div class="profile-identity">
-        <input
-          type="text"
-          id="profile-username-input"
-          class="profile-username-input"
-          placeholder="Add a name"
-          maxlength="40"
-          value="${escapeHTML(savedName)}"
-        >
-        <div class="profile-identity-sub">Musik profile · stored on this device</div>
+        <input type="text" class="profile-username-input" id="profile-username-input"
+               placeholder="Your name" maxlength="32" value="${escapeHTML(savedName)}" spellcheck="false" aria-label="Username">
+        <div class="profile-identity-sub">Your Musik profile · saved on this device</div>
+        <div class="profile-chips" id="profile-chips"></div>
       </div>
     </div>
   `;
+  paintHeroChips();
 
-  const avatarWrap = document.getElementById('profile-avatar-wrap');
-  const avatarInput = document.getElementById('profile-avatar-input');
-  const usernameInput = document.getElementById('profile-username-input');
+  const avatarWrap = container.querySelector('#profile-avatar-wrap');
+  const avatarInput = container.querySelector('#profile-avatar-input');
+  const usernameInput = container.querySelector('#profile-username-input');
 
   // e.target guard: the hidden <input> lives inside the wrap, so its own
   // synthetic click bubbles back up here — ignore that re-entry.
@@ -387,45 +495,50 @@ function renderProfileHeader(container) {
 
   avatarInput?.addEventListener('change', async () => {
     const file = avatarInput.files?.[0];
-    avatarInput.value = ''; // allow re-selecting the same file next time
+    avatarInput.value = '';
     if (!file) return;
-    if (!file.type.startsWith('image/')) return;
-    if (file.size > MAX_AVATAR_SOURCE_BYTES) {
-      alert('That image is a bit large — try one under 8MB.');
-      return;
-    }
-
+    if (!file.type.startsWith('image/')) { notify('Please choose an image file.'); return; }
+    if (file.size > MAX_AVATAR_SOURCE_BYTES) { notify('That image is over 8MB — try a smaller one.'); return; }
     const cropped = await openAvatarCropper(file);
-    if (!cropped) return; // user cancelled
-
-    try {
-      localStorage.setItem(AVATAR_KEY, cropped);
-    } catch (err) {
-      console.warn('[Musik] profile: failed to save avatar to localStorage:', err.message);
-      alert("Couldn't save that image — try a smaller crop or a different photo.");
-      return;
-    }
-    renderProfileHeader(container); // re-render just the header
+    if (!cropped) return;
+    try { localStorage.setItem(AVATAR_KEY, cropped); } catch { notify("Couldn't save that photo (storage full?)."); return; }
+    renderProfileHeader(container);
   });
 
-  let usernameDebounce = null;
+  let nameTimer = null;
   usernameInput?.addEventListener('input', () => {
-    clearTimeout(usernameDebounce);
-    usernameDebounce = setTimeout(() => {
+    clearTimeout(nameTimer);
+    nameTimer = setTimeout(() => {
       try { localStorage.setItem(USERNAME_KEY, usernameInput.value.trim()); } catch {}
-      // Fallback avatar shows initials from the name — refresh it live if
-      // there's no photo set.
-      const fallback = document.getElementById('profile-avatar-fallback');
-      if (fallback) fallback.innerHTML = avatarFallbackHTML(usernameInput.value);
     }, 300);
+    const fallback = document.getElementById('profile-avatar-fallback');
+    if (fallback) fallback.innerHTML = avatarFallbackHTML(usernameInput.value);
   });
 }
 
-// ── Stats section (session / lifetime / top / library) ──────────────
-// Rendered separately from the header so toggling Local <-> Last.fm only
-// re-renders this part.
+// ── Source toggle ──────────────────────────────────────────────────
+// Same construction as settings.js's layout toggle (sliding thumb on
+// `translate`, squash kick, icon kick on the newly selected option) — but
+// text + icon options, and the toggle is updated IN PLACE: it lives outside
+// the re-rendered content, so the thumb really slides instead of being
+// recreated at its destination.
+function sourceToggleHTML(source) {
+  const opt = (id, label, icon) => `
+    <button type="button" class="profile-source-btn" data-source="${id}" aria-pressed="${source === id}">
+      ${icon}<span>${label}</span>
+    </button>`;
+  const localIcon = `<svg class="profile-src-icon profile-src-icon--local" viewBox="0 0 16 16" aria-hidden="true"><rect x="3" y="3" width="10" height="7" rx="1.6"/><path d="M1.5 13h13"/></svg>`;
+  const fmIcon = `<svg class="profile-src-icon profile-src-icon--fm" viewBox="0 0 16 16" aria-hidden="true"><rect class="fm-bar" style="--i:0" x="2" y="7" width="2.6" height="7" rx="1.1"/><rect class="fm-bar" style="--i:1" x="6.7" y="2" width="2.6" height="12" rx="1.1"/><rect class="fm-bar" style="--i:2" x="11.4" y="5" width="2.6" height="9" rx="1.1"/></svg>`;
+  return `
+    <div class="profile-source-toggle" id="profile-source-toggle" role="group" aria-label="Stats source" data-source="${source}">
+      <span class="profile-source-thumb" aria-hidden="true"></span>
+      ${opt('local', 'Local', localIcon)}
+      ${opt('lastfm', 'Last.fm', fmIcon)}
+    </div>`;
+}
 
-function renderStatsSection(container, { source, session, localLifetime, lastfmLifetime, connected, tracks, libOpen = false, animateFrom = null }) {
+// ── Stats content (session + lifetime + top lists) ─────────────────
+function renderStatsContent(content, { source, session, localLifetime, lastfmLifetime, artLookup }) {
   const usingLastfm = source === 'lastfm' && !!lastfmLifetime;
   const lifetime = usingLastfm ? lastfmLifetime : localLifetime;
 
@@ -441,125 +554,130 @@ function renderStatsSection(container, { source, session, localLifetime, lastfmL
   }
   const footnoteHTML = footnoteParts.length ? `<div class="profile-footnote">${footnoteParts.join(' ')}</div>` : '';
 
-  // The section re-renders wholesale on a source switch, which would make
-  // the thumb teleport. So when animateFrom is set, the NEW toggle is drawn
-  // in the OLD state first and flipped to the new one two frames later —
-  // the CSS transition then plays as a real slide (see the rAF block below).
-  const shown = animateFrom || source;
-  const toggleHTML = connected ? `
-    <div class="profile-source-toggle" id="profile-source-toggle" role="tablist" aria-label="Stats source" data-source="${shown}">
-      <span class="profile-source-thumb"></span>
-      <button type="button" role="tab" aria-selected="${shown === 'local'}" class="profile-source-btn ${shown === 'local' ? 'is-active' : ''}" data-source="local">Local</button>
-      <button type="button" role="tab" aria-selected="${shown === 'lastfm'}" class="profile-source-btn ${shown === 'lastfm' ? 'is-active' : ''}" data-source="lastfm">Last.fm</button>
-    </div>
-  ` : '';
+  const topArtists = dedupeTopArtists(lifetime?.topArtists);
 
-  container.innerHTML = `
-    <div class="profile-lifetime-header">
-      <div class="profile-card-label" style="margin-bottom:0;">Stats source</div>
-      ${toggleHTML || `<span class="profile-source-tag">local</span>`}
-    </div>
-
+  content.innerHTML = `
     <div class="profile-grid">
-      <div class="profile-card">
-        <div class="profile-card-label">This Session</div>
+      <section class="profile-card">
+        <div class="profile-card-label">This session</div>
         <div class="profile-card-main">
-          <div class="profile-stat"><span class="profile-stat-num">${session?.plays ?? 0}</span><span class="profile-stat-label">Plays</span></div>
-          <div class="profile-stat"><span class="profile-stat-num">${fmtDuration(session?.seconds)}</span><span class="profile-stat-label">Listened</span></div>
+          <div class="profile-stat">${numHTML(session?.plays ?? 0)}<span class="profile-stat-label">Plays</span></div>
+          <div class="profile-stat">${numHTML(session?.seconds ?? session?.totalSeconds ?? 0, 'dur')}<span class="profile-stat-label">Listened</span></div>
         </div>
-      </div>
-
-      <div class="profile-card">
-        <div class="profile-card-label">
-          Lifetime
-          <span class="profile-source-tag">${usingLastfm ? 'via Last.fm' : 'local'}</span>
-        </div>
+      </section>
+      <section class="profile-card">
+        <div class="profile-card-label">Lifetime <span class="profile-source-tag">${usingLastfm ? 'Last.fm' : 'local'}</span></div>
         <div class="profile-card-main">
-          <div class="profile-stat"><span class="profile-stat-num">${lifetime?.totalPlays ?? 0}</span><span class="profile-stat-label">Plays</span></div>
-          <div class="profile-stat"><span class="profile-stat-num">${fmtDuration(localLifetime?.totalSeconds)}</span><span class="profile-stat-label">Listened</span></div>
+          <div class="profile-stat">${numHTML(lifetime?.totalPlays ?? 0)}<span class="profile-stat-label">Plays</span></div>
+          <div class="profile-stat">${numHTML(localLifetime?.totalSeconds ?? 0, 'dur')}<span class="profile-stat-label">Listened</span></div>
         </div>
         ${footnoteHTML}
-      </div>
+      </section>
     </div>
 
     <div class="profile-top-grid">
-      <div class="profile-card">
-        <div class="profile-card-label">Top Artists</div>
-        ${topListHTML(dedupeTopArtists(lifetime?.topArtists), 'Play something to see your top artists.')}
-      </div>
-      <div class="profile-card">
-        <div class="profile-card-label">Top Albums</div>
-        ${topListHTML(lifetime?.topAlbums, 'Play something to see your top albums.')}
-      </div>
-      <div class="profile-card">
-        <div class="profile-card-label">Top Tracks</div>
-        ${topListHTML(lifetime?.topTracks, 'Play something to see your top tracks.')}
-      </div>
-    </div>
-
-    <div class="profile-card profile-lib-card">
-      <button class="profile-card-label profile-lib-toggle ${libOpen ? 'is-open' : ''}" id="profile-lib-toggle" aria-expanded="${libOpen}">
-        Library Stats
-        <svg class="profile-lib-chevron" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
-      </button>
-      <div class="profile-lib-content ${libOpen ? 'is-open' : ''}" id="profile-lib-content">
-        ${libraryStatsHTML(tracks || [])}
-      </div>
+      <section class="profile-card">
+        <div class="profile-card-label">Top artists</div>
+        ${topListHTML(topArtists, 'Play some music to see your top artists.', 'artist', artLookup)}
+      </section>
+      <section class="profile-card">
+        <div class="profile-card-label">Top albums</div>
+        ${topListHTML(lifetime?.topAlbums, 'No albums yet.', 'album', artLookup)}
+      </section>
+      <section class="profile-card">
+        <div class="profile-card-label">Top tracks</div>
+        ${topListHTML(lifetime?.topTracks, 'No tracks yet.', 'track', artLookup)}
+      </section>
     </div>
   `;
 
-  if (animateFrom && animateFrom !== source) {
-    const toggle = document.getElementById('profile-source-toggle');
-    if (toggle) {
-      requestAnimationFrame(() => requestAnimationFrame(() => {
-        toggle.dataset.source = source;
-        toggle.querySelectorAll('.profile-source-btn').forEach((b) => {
-          const on = b.dataset.source === source;
-          b.classList.toggle('is-active', on);
-          b.setAttribute('aria-selected', String(on));
-        });
-        const thumb = toggle.querySelector('.profile-source-thumb');
-        if (thumb) {
-          thumb.classList.add('is-kick');
-          thumb.addEventListener('animationend', () => thumb.classList.remove('is-kick'), { once: true });
-        }
-      }));
-    }
-  }
+  content.querySelectorAll('.profile-card').forEach((card, i) => card.style.setProperty('--i', i));
+  content.querySelectorAll('.profile-top-thumb img').forEach((img) => {
+    img.addEventListener('error', () => img.remove(), { once: true });
+  });
+  runCountUps(content);
+}
 
-  document.getElementById('profile-source-toggle')?.addEventListener('click', (e) => {
+function renderStatsSection(container, { source: initialSource, session, localLifetime, lastfmLifetime, connected, tracks }) {
+  let source = initialSource;
+  const artLookup = buildArtLookup(tracks);
+
+  const toggleHTML = connected
+    ? sourceToggleHTML(source)
+    : `<div class="profile-source-hint"><span class="profile-source-tag">local</span><span>Connect Last.fm in <a href="#/settings">Settings</a> for all-time totals.</span></div>`;
+
+  container.innerHTML = `
+    <div class="profile-toolbar">
+      <h2 class="profile-section-title">Your stats</h2>
+      ${toggleHTML}
+    </div>
+    <div id="profile-stats-content"></div>
+    <section class="profile-card profile-lib-card" style="--i:5">
+      <button type="button" class="profile-card-label profile-lib-toggle" id="profile-lib-toggle" aria-expanded="false">
+        <span>Library stats</span>
+        <svg class="profile-lib-chevron" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+      </button>
+      <div class="profile-lib-content" id="profile-lib-content">
+        ${libraryStatsHTML(tracks || [])}
+      </div>
+    </section>
+  `;
+
+  const content = container.querySelector('#profile-stats-content');
+  const paint = () => renderStatsContent(content, { source, session, localLifetime, lastfmLifetime, artLookup });
+  paint();
+
+  const toggle = container.querySelector('#profile-source-toggle');
+  toggle?.addEventListener('click', (e) => {
     const btn = e.target.closest('.profile-source-btn');
     if (!btn) return;
-    const newSource = btn.dataset.source;
-    if (newSource === source) return;
-    try { localStorage.setItem('musik.profile.statsSource', newSource); } catch {}
-    // Carry the Library Stats open/closed state across the re-render —
-    // switching source used to slam an open section shut.
-    const libOpenNow = !!document.getElementById('profile-lib-toggle')?.classList.contains('is-open');
-    renderStatsSection(container, { source: newSource, session, localLifetime, lastfmLifetime, connected, tracks, libOpen: libOpenNow, animateFrom: source });
+    const next = btn.dataset.source;
+    if (next === source) return;
+    source = next;
+    try { localStorage.setItem('musik.profile.statsSource', next); } catch {}
+
+    toggle.dataset.source = next;
+    toggle.querySelectorAll('.profile-source-btn').forEach((b) => b.setAttribute('aria-pressed', String(b === btn)));
+    kick(toggle.querySelector('.profile-source-thumb'));
+    kick(btn.querySelector('.profile-src-icon'));
+
+    paint();
   });
 
-  const libToggle = document.getElementById('profile-lib-toggle');
-  const libContent = document.getElementById('profile-lib-content');
+  const libToggle = container.querySelector('#profile-lib-toggle');
+  const libContent = container.querySelector('#profile-lib-content');
+  let libCounted = false;
   libToggle?.addEventListener('click', () => {
     const open = libToggle.classList.toggle('is-open');
     libContent?.classList.toggle('is-open', open);
     libToggle.setAttribute('aria-expanded', String(open));
+    // Count the numbers up the first time the card is actually seen.
+    if (open && !libCounted && libContent) { libCounted = true; runCountUps(libContent); }
   });
+}
+
+// Feeds the hover spotlight in profile.css (.profile-card::after) — same
+// cursor-tracking trick as settings.js.
+function trackSpotlight(e) {
+  const card = e.target.closest?.('.profile-card, .profile-hero');
+  if (!card) return;
+  const r = card.getBoundingClientRect();
+  card.style.setProperty('--mx', `${e.clientX - r.left}px`);
+  card.style.setProperty('--my', `${e.clientY - r.top}px`);
 }
 
 window.MusikViews.profile = async function renderProfile(main) {
   main.innerHTML = `
     <div class="home-wrap profile-wrap">
-      <div class="home-topbar">
-        <h1 class="view-title">Profile</h1>
-      </div>
+      <div class="home-topbar"><h1 class="view-title">Profile</h1></div>
       <div id="profile-header"></div>
       <div id="profile-body" class="profile-loading">Loading stats...</div>
     </div>
   `;
+  main.querySelector('.profile-wrap')?.addEventListener('pointermove', trackSpotlight, { passive: true });
 
-  renderProfileHeader(document.getElementById('profile-header'));
+  heroInfo = null;
+  renderProfileHeader(main.querySelector('#profile-header'));
 
   let session = null, localLifetime = null, scrobbleSettings = null, tracks = [];
   try {
@@ -588,27 +706,22 @@ window.MusikViews.profile = async function renderProfile(main) {
     }
   }
 
-  // Default source: user's last explicit choice if still valid (e.g. they
-  // picked Last.fm before, still connected), otherwise Last.fm once
-  // connected (richer, cross-device), otherwise local. Never silently
-  // override an explicit choice the way the old auto-preference did.
-  let savedSource = null;
-  try { savedSource = localStorage.getItem('musik.profile.statsSource'); } catch {}
-  const initialSource = (savedSource === 'local' || savedSource === 'lastfm') && (savedSource !== 'lastfm' || connected)
-    ? savedSource
-    : (connected && lastfmLifetime ? 'lastfm' : 'local');
-
   // The user may have navigated away while the awaits above were pending —
   // the view is gone, so bail instead of throwing on a null element.
   const body = main.querySelector('#profile-body');
   if (!body) return;
   body.className = '';
-  renderStatsSection(body, {
-    source: initialSource,
-    session,
-    localLifetime,
-    lastfmLifetime,
-    connected: connected && !!lastfmLifetime,
-    tracks,
-  });
+
+  heroInfo = {
+    since: localLifetime?.firstTrackedAt || null,
+    trackCount: tracks.length,
+    lastfm: connected && !!lastfmLifetime,
+  };
+  paintHeroChips();
+
+  let savedSource = 'local';
+  try { savedSource = localStorage.getItem('musik.profile.statsSource') || 'local'; } catch {}
+  const source = connected && lastfmLifetime && savedSource === 'lastfm' ? 'lastfm' : 'local';
+
+  renderStatsSection(body, { source, session, localLifetime, lastfmLifetime, connected: connected && !!lastfmLifetime, tracks });
 };

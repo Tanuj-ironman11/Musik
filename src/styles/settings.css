@@ -728,10 +728,7 @@
   opacity: 0.6;
   animation: layout-hint-pulse 1.8s ease-in-out infinite;
 }
-@keyframes layout-hint-pulse {
-  0%, 100% { opacity: 0.25; transform: translateY(-50%) translateX(0); }
-  50% { opacity: 0.85; transform: translateY(-50%) translateX(3px); }
-}
+/* Keyframes (layout-hint-pulse): animations.css. */
 
 .layout-mock-content {
   flex: 1;
