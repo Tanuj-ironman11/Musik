@@ -144,9 +144,15 @@
     // disk — the confirm text says so because "delete" reads scarier than it is.
     menu.querySelector('[data-remove-from-library]')?.addEventListener('click', async () => {
       closeMenu();
+      // Fail loudly if the bridge method is missing — optional chaining alone
+      // would let the user confirm, remove nothing, and still fire onChange.
+      if (typeof window.Musik?.library?.removeTracks !== 'function') {
+        window.MusikDialog?.alert?.('Remove from Library isn\'t available in this build.');
+        return;
+      }
       const ok = await window.MusikDialog?.confirm?.(`Remove "${track.title}" from Musik? The file stays on your computer.`);
       if (!ok) return;
-      await window.Musik?.library?.removeTracks?.([track.filePath]);
+      await window.Musik.library.removeTracks([track.filePath]);
       opts.onChange?.();
     });
   }

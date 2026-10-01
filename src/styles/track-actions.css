@@ -1,7 +1,8 @@
 /* src/styles/track-actions.css
  *
- * Visual treatment for context-menu.js's right-click "Add to Playlist"
- * menu, and library-view.js's "Add tracks" picker modal. New file, same
+ * Visual treatment for context-menu.js's right-click track/playlist menus
+ * (add to playlist, remove, delete), and library-view.js's "Add tracks"
+ * picker modal. New file, same
  * reasoning as playlist-edit.css/settings.css — cleanly scoped to their
  * own selectors, kept out of library.css/components.css directly.
  *
@@ -71,6 +72,18 @@
 
 .ctx-menu-item--new:hover,
 .ctx-menu-item--new:focus-visible { background: var(--color-accent-dim); }
+
+/* Destructive rows: "Remove from Library", "Delete Playlist". */
+.ctx-menu-item--danger { color: var(--color-danger, #ff6b6b); }
+
+.ctx-menu-item--danger:hover,
+.ctx-menu-item--danger:focus-visible {
+  background: color-mix(in srgb, var(--color-danger, #ff6b6b) 14%, transparent);
+}
+
+.ctx-menu-item--danger:active {
+  background: color-mix(in srgb, var(--color-danger, #ff6b6b) 24%, transparent);
+}
 
 .ctx-menu-item:disabled {
   opacity: 0.4;
