@@ -23,7 +23,7 @@ const Lyrics = safeRequire('./src/core/lyrics');
 const Scrobbler = safeRequire('./src/core/scrobbler');
 const GameDuck = safeRequire('./src/core/game-duck');
 const Stats = safeRequire('./src/core/stats');
-const NetDownload = safeRequire('./src/core/net-download');
+const RemoteImport = safeRequire('./src/core/remote-import');
 
 let mainWindow = null;
 let miniplayerWindow = null;
@@ -404,8 +404,8 @@ ipcMain.handle('miniplayer:resize-for-queue', (_e, open) => {
   return true;
 });
 
-// NEW — 'net:download' (mods: download an attachment to a temp file, see net-download.js)
-NetDownload?.register?.(ipcMain, app);
+// 'import:fetch' + legacy 'net:download' — download a remote file to disk, see remote-import.js
+RemoteImport?.register?.(ipcMain, app);
 
 // Main-process network proxy for mods (bypasses CORS, supports custom headers/User-Agent)
 ipcMain.handle('net:fetch', async (_e, { url, method = 'GET', headers = {}, body, timeout = 20000 }) => {
