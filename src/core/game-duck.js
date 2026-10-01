@@ -11,9 +11,11 @@
 //                    kicking in. Lower = ducks on quieter sounds.
 //   duckCeiling     0..1 — level treated as "fully loud" for ramp
 //                    purposes. Must be > sensitivity. Default 0.4.
-//   maxDuck         0..1 — floor multiplier when fully ducked (e.g. 0.3
-//                    means volume never drops below 30% no matter how
-//                    loud the target app gets)
+//   maxDuck         0..1 — AMOUNT removed when fully ducked (e.g. 0.7
+//                    means volume drops by 70%, to 30% of normal, at
+//                    peak system audio; 1.0 = ducks to silence, 0 = no
+//                    ducking). Was a floor multiplier before the
+//                    maxDuckIsAmount migration — see loadSettingsFromDisk.
 //   manualOverride  — Ctrl+Shift+D in player-ui.js. When true, ducking is
 //                    forced off (multiplier always 1.0) regardless of
 //                    `enabled` or live level. Not persisted — resets to
@@ -21,7 +23,7 @@
 //
 // Multiplier curve: below effective sensitivity, multiplier is 1.0 (no
 // duck). From effective sensitivity to effective duckCeiling, multiplier
-// ramps linearly down to maxDuck. At/above ceiling, pinned to maxDuck.
+// ramps linearly down to (1 - maxDuck). At/above ceiling, pinned there.
 // Smoothed with time-based attack/release plus a release hold (see the
 // ballistics constants) so it doesn't snap or pump on bursty audio.
 //
@@ -62,7 +64,8 @@ const DEFAULTS = {
   enabled: false,
   sensitivity: 0.15,
   duckCeiling: 0.4,
-  maxDuck: 0.35,
+  maxDuck: 0.65,
+  maxDuckIsAmount: true, // migration marker: absent on old files where maxDuck was a floor
   // Process names (not PIDs — PIDs change every relaunch) that should
   // never count toward ducking, e.g. a notch-widget visualizer that has
   // its own active audio session but isn't something to duck for.
@@ -182,6 +185,13 @@ function loadSettingsFromDisk() {
   try {
     const disk = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'));
     settings = { ...DEFAULTS, ...disk };
+    // One-time migration: old files stored maxDuck as a floor multiplier
+    // (0.35 = duck TO 35%). It's now the amount removed, so flip it.
+    if (!disk.maxDuckIsAmount && typeof disk.maxDuck === 'number') {
+      settings.maxDuck = Math.max(0, Math.min(1, 1 - disk.maxDuck));
+      settings.maxDuckIsAmount = true;
+      saveSettingsToDisk();
+    }
   } catch (err) {
     console.warn('[Musik] game-duck: failed to read settings, using defaults:', err.message);
   }
@@ -216,7 +226,7 @@ function computeTargetMultiplier(level) {
   const range = effectiveCeiling - effectiveSensitivity;
   const over = range > 0 ? (level - effectiveSensitivity) / range : 1.0;
   const clamped = Math.max(0, Math.min(1, over));
-  return 1.0 - clamped * (1.0 - settings.maxDuck);
+  return 1.0 - clamped * settings.maxDuck;
 }
 
 let lastTickAt = 0;

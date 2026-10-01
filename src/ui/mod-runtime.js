@@ -26,17 +26,25 @@
   // ---------------------------------------------------------------------
   function sanitizeCss(css) {
     if (typeof css !== 'string') return '';
-    return css.replace(/url\(\s*(['"]?)(https?:)?\/\/[^)]*\1\s*\)/gi, 'url()');
+    return css
+      .replace(/@import\s+[^;]+;/gi, '') // Block remote @import sheets
+      .replace(/url\(\s*(['"]?)(https?:)?\/\/[^)]*\1\s*\)/gi, 'url()');
   }
 
-  function handleInjectCss(css) {
+  function handleInjectCss(payload) {
+    const rawCss = typeof payload === 'string' ? payload : payload?.css;
+    const cleanCss = sanitizeCss(rawCss);
+    if (!cleanCss) return;
+
     const target = document.getElementById(CSS_TARGET_ID);
-    if (!target) {
-      console.warn('[Musik] mod-runtime: #' + CSS_TARGET_ID + ' not found in DOM');
-      return;
+    if (target) {
+      target.textContent += '\n' + cleanCss + '\n';
     }
-    // Append rather than clobber — multiple mods may inject CSS independently.
-    target.textContent += '\n' + sanitizeCss(css) + '\n';
+  }
+
+  function handleRemoveCss(modId) {
+    if (!modId) return;
+    document.getElementById('mod-css-' + modId)?.remove();
   }
 
   // ---------------------------------------------------------------------
@@ -62,17 +70,19 @@
   }
 
   function resolveTarget(targetSelector) {
-    if (!targetSelector) return document.getElementById(MOD_ROOT_ID);
-    // Mods only get to target inside #mod-root — never arbitrary app
-    // chrome (sidebar, player bar, etc). Selector must resolve to a node
-    // that IS #mod-root or a descendant of it.
     const modRoot = document.getElementById(MOD_ROOT_ID);
     if (!modRoot) return null;
-    const candidate = modRoot.querySelector(targetSelector);
-    return candidate || modRoot;
+    if (!targetSelector) return modRoot;
+
+    try {
+      return modRoot.querySelector(targetSelector) || null;
+    } catch (err) {
+      console.warn('[Musik] Invalid CSS selector:', targetSelector);
+      return null;
+    }
   }
 
-  function handleInjectElement({ html, targetSelector } = {}) {
+  function handleInjectElement({ html, targetSelector, id } = {}) {
     const target = resolveTarget(targetSelector);
     if (!target) {
       console.warn('[Musik] mod-runtime: injection target not found for selector', targetSelector);
@@ -86,7 +96,14 @@
     wrapper.className = 'mod-injected-element';
     wrapper.innerHTML = clean; // safe: `clean` is DOMPurify output, not raw mod input
 
-    const elementId = 'mod-el-' + nextElementId++;
+    // NEW — optional mod-supplied id turns injection into an upsert: the same
+    // id replaces the previous node, and removeElement(id) works without the
+    // mod ever needing a return value (the event bus drops it). Ids shaped
+    // like the auto ones (mod-el-N) are rejected so a mod can't collide with
+    // or remove another element's auto id.
+    const validId = typeof id === 'string' && /^[\w:.-]{1,64}$/.test(id) && !/^mod-el-\d+$/.test(id);
+    const elementId = validId ? id : 'mod-el-' + nextElementId++;
+    if (injectedElements.has(elementId)) handleRemoveElement(elementId);
     wrapper.dataset.modElementId = elementId;
 
     target.appendChild(wrapper);
@@ -103,9 +120,55 @@
   }
 
   // ---------------------------------------------------------------------
+  // NEW — return channel. DOMPurify strips inline handlers, so injected HTML
+  // can't react to the user on its own. Mods mark elements with
+  // data-mod-action="<name>" and this ONE delegated listener forwards the
+  // interaction over the events bus as 'mod-ui-event'. Payload is plain data
+  // only (strings/booleans) — never DOM nodes.
+  //   click on  [data-mod-action]        -> fires (inputs/selects/textareas excluded)
+  //   Enter in  input[data-mod-action]   -> fires
+  // `fields` = name -> value for every named input/select/textarea inside the
+  // nearest [data-mod-scope] (falling back to the injected wrapper), so an
+  // action carries the current form state with it.
+  // ---------------------------------------------------------------------
+  function collectFields(fromEl) {
+    const scope = fromEl.closest('[data-mod-scope]') || fromEl.closest('.mod-injected-element');
+    const fields = {};
+    if (!scope) return fields;
+    scope.querySelectorAll('input[name], select[name], textarea[name]').forEach((f) => {
+      fields[f.name] = f.type === 'checkbox' ? f.checked : f.value;
+    });
+    return fields;
+  }
+
+  function forwardModEvent(actionEl) {
+    const modRoot = document.getElementById(MOD_ROOT_ID);
+    if (!modRoot || !modRoot.contains(actionEl)) return;
+    const wrapper = actionEl.closest('.mod-injected-element');
+    window.Musik?.events?.emit?.('mod-ui-event', {
+      action: actionEl.dataset.modAction,
+      data: { ...actionEl.dataset },
+      fields: collectFields(actionEl),
+      elementId: wrapper?.dataset.modElementId ?? null,
+    });
+  }
+
+  document.addEventListener('click', (e) => {
+    const el = e.target?.closest?.('[data-mod-action]');
+    if (el && !el.matches('input, textarea, select')) forwardModEvent(el);
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    const el = e.target?.closest?.('input[data-mod-action]');
+    if (el) forwardModEvent(el);
+  });
+
+  // ---------------------------------------------------------------------
   // Wire up to the shared event bus (see preload.js listeners map).
   // ---------------------------------------------------------------------
   window.Musik?.events?.on('inject-css', handleInjectCss);
+  window.Musik?.events?.on('remove-css', handleRemoveCss);
   window.Musik?.events?.on('inject-element', handleInjectElement);
   window.Musik?.events?.on('remove-element', handleRemoveElement);
 })();

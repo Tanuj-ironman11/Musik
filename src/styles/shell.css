@@ -89,7 +89,7 @@ body.npf-open #titlebar {
 .window-controls {
   display: flex;
   align-items: center;
-  gap: clamp(6px, 0.8vw, 9px);
+  gap: 5px;
   height: 100%;
   margin-left: auto;
   padding-right: 20px;
@@ -133,6 +133,10 @@ body.npf-open #titlebar {
 .window-controls .control-dot:hover .control-icon {
   opacity: 1;
 }
+
+.window-controls .control-dot.minimize { order: 1; background: color-mix(in srgb, #f2b236 25%, rgba(255, 255, 255, 0.22)); }
+.window-controls .control-dot.maximize { order: 2; background: color-mix(in srgb, #27c93f 25%, rgba(255, 255, 255, 0.22)); }
+.window-controls .control-dot.close    { order: 3; background: color-mix(in srgb, #df5b72 25%, rgba(255, 255, 255, 0.22)); }
 
 .window-controls .control-dot.close:hover {
   height: clamp(18px, 1.8vw, 24px);
@@ -327,6 +331,16 @@ body.layout-topbar #now-playing-bar {
 }
 
 .ctx-separator { height: 1px; background: rgba(255,255,255,0.05); margin: 3px 4px; }
+
+/* Destructive menu actions (Remove from Library, Delete Playlist). Higher
+   specificity than the base .ctx-menu-item rules so load order can't
+   flatten it back to a normal-looking item. */
+.ctx-menu .ctx-menu-item--danger { color: var(--color-danger, #ff6b6b); }
+.ctx-menu .ctx-menu-item--danger:hover,
+.ctx-menu .ctx-menu-item--danger:focus-visible {
+  color: var(--color-danger, #ff6b6b);
+  background: color-mix(in srgb, var(--color-danger, #ff6b6b) 16%, transparent);
+}
 
 .metadata-modal-overlay,
 .meta-fix-modal {
@@ -556,3 +570,19 @@ body.layout-topbar #now-playing-bar {
 }
 
 .scan-status.hidden { display: none; }
+
+/* Mod root injection container: floats above the now-playing bar */
+#mod-root {
+  position: fixed;
+  bottom: calc(var(--player-bar-height, 80px) + 16px);
+  right: 24px;
+  z-index: 10200;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  pointer-events: none;
+}
+
+#mod-root > * {
+  pointer-events: auto;
+}

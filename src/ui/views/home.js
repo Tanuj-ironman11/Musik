@@ -153,7 +153,7 @@ window.MusikViews.home = async function renderHome(main) {
       if (t && window.MusikPlayerUI) await window.MusikPlayerUI.loadTrack(t);
     });
 
-    if (t) window.MusikContextMenu?.attachTrack?.(el, t);
+    if (t) window.MusikContextMenu?.attachTrack?.(el, t, { onChange: () => renderHome(main) });
 
     el.querySelector('[data-track-options]')?.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -170,7 +170,7 @@ window.MusikViews.home = async function renderHome(main) {
     });
   });
 
-  window.MusikCards.wirePlaylistCards(body, playlists, tracks);
+  window.MusikCards.wirePlaylistCards(body, playlists, tracks, () => renderHome(main));
 };
 
 function trackCardHTML(track) {
@@ -253,7 +253,7 @@ function artSrc(track) {
 
 window.MusikCards = { trackCardHTML, playlistCardHTML, artSrc, escapeHTML, escapeAttr, wirePlaylistCards };
 
-function wirePlaylistCards(container, playlists, tracks) {
+function wirePlaylistCards(container, playlists, tracks, onChange) {
   container.querySelectorAll('.home-playlist-card').forEach((card) => {
     const id = card.dataset.playlistId;
     const playlist = playlists.find((p) => p.id === id);
@@ -280,6 +280,8 @@ function wirePlaylistCards(container, playlists, tracks) {
     card.addEventListener('click', () => {
       location.hash = `#/library/${encodeURIComponent(id)}`;
     });
+
+    if (playlist) window.MusikContextMenu?.attachPlaylist?.(card, playlist, { onChange });
   });
 }
 

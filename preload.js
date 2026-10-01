@@ -73,6 +73,11 @@ const Musik = {
     // NEW — bulk-adds files (not folders) straight to the library. Backs
     // the "Add from Computer" option in the Add Tracks modal.
     addFiles: (filePaths) => ipcRenderer.invoke('library:add-files', filePaths),
+    // NEW — removes tracks from the library entirely (all playlists too),
+    // never from disk. Takes an array of filePaths.
+    removeTracks: (filePaths) => ipcRenderer.invoke('library:remove-tracks', filePaths),
+    // NEW — wipes all tracks, playlists and watched folders (demo reset).
+    clear: () => ipcRenderer.invoke('library:clear'),
     rescanAll: () => ipcRenderer.invoke('library:rescan-all'),
     getRescanSettings: () => ipcRenderer.invoke('library:get-rescan-settings'),
     setRescanInterval: (minutes) => ipcRenderer.invoke('library:set-rescan-interval', minutes),
@@ -150,11 +155,25 @@ const Musik = {
 
   ui: {
     injectCSS: (css) => ipcRenderer.invoke('ui:inject-css', css),
-    injectElement: (html, targetSelector) =>
-      ipcRenderer.invoke('ui:inject-element', html, targetSelector),
+    // NEW — optional third arg `id`: makes injection an upsert (same id
+    // replaces the previous node; removeElement(id) then works). Backward
+    // compatible: omit it and behavior is unchanged.
+    injectElement: (html, targetSelector, id) =>
+      ipcRenderer.invoke('ui:inject-element', html, targetSelector, id),
     removeElement: (elementId) => ipcRenderer.invoke('ui:remove-element', elementId),
     getView: () => ipcRenderer.invoke('ui:get-view'),
     onViewChange: (callback) => on('viewchange', callback),
+  },
+
+  // NEW — exposes main.js's existing 'net:fetch' proxy (bypasses CORS, allows
+  // User-Agent/auth headers). Takes ONE object: { url, method, headers, body,
+  // timeout }. Resolves { ok, status, statusText, headers, text, error } —
+  // NOT a fetch Response (no .json()); parse `text` yourself.
+  net: {
+    fetch: (opts) => ipcRenderer.invoke('net:fetch', opts),
+    // NEW — downloads { url, headers, key } to a temp file via main. Resolves
+    // { ok, path, fileUrl, error }. Backs search-stream's download-then-play.
+    download: (opts) => ipcRenderer.invoke('net:download', opts),
   },
 
   theme: {

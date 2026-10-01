@@ -303,6 +303,7 @@
 
   async function loadTrack(track) {
     // track: { filePath, title, artist, album, duration, artData, sampleRate }
+    // Remote tracks carry streamUrl (http/https) instead of filePath.
     // sampleRate is used by createAudioGraph() to avoid forced resampling —
     // see the comment there. If tag reading doesn't populate it yet, this
     // silently falls back to the old (resampling) behavior rather than
@@ -311,9 +312,18 @@
     currentTrack = track;
     window.Musik?.gameDuck?.setTrackLoudness?.(null); // clear old track's boost immediately
 
+    // NEW — remote stream (e.g. search-stream mod): track.streamUrl is used
+    // as-is, http(s) only so a mod can't aim the element at file:/ or other
+    // schemes. Everything else keeps the original path below untouched.
+    // NOTE: audioEl.crossOrigin = 'anonymous', so the stream host must send
+    // CORS headers or the element errors out immediately.
+    const isRemote = typeof track.streamUrl === 'string' && /^https?:\/\//i.test(track.streamUrl);
+
     // file: URL, no transcoding. encodeURI leaves # unescaped (valid URI char)
     // so it's replaced separately — # is common in real filenames.
-    audioEl.src = 'file:///' + encodeURI(track.filePath.replace(/\\/g, '/')).replace(/#/g, '%23');
+    audioEl.src = isRemote
+      ? track.streamUrl
+      : 'file:///' + encodeURI(track.filePath.replace(/\\/g, '/')).replace(/#/g, '%23');
 
     window.Musik.events.push('trackupdate', track);
     if (track.artData) {
@@ -517,6 +527,15 @@
       volume: currentVolume,
       effectiveVolume: audioEl?.volume ?? 1,
     });
+  });
+
+  // NEW — remote-stream handoff from mods (search-stream). MusikPlayerUI isn't
+  // reachable from a sandboxed mod, so the bus is the bridge. Payload is a
+  // track-shaped object with streamUrl and NO filePath — anything downstream
+  // that assumes filePath (stats.recordPlay, etc.) needs to tolerate that.
+  window.Musik?.events?.on('mod-play-stream', (track) => {
+    if (!track || typeof track.streamUrl !== 'string') return;
+    loadTrack(track);
   });
 
   window.MusikPlayerUI = {

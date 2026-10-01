@@ -234,15 +234,12 @@ body.sidebar-pinned .sidebar-pin-btn {
    width to 0 at rest removes that phantom space so the logo lines up with
    the icon column beneath it. Restored to full width on hover/pinned,
    where the buttons are actually visible and usable. */
-#sidebar:not(:hover) .sidebar-collapse-btn,
 #sidebar:not(:hover) .sidebar-pin-btn {
   width: 0;
   margin-left: 0;
 }
 
-#sidebar:hover .sidebar-collapse-btn,
 #sidebar:hover .sidebar-pin-btn,
-body.sidebar-pinned .sidebar-collapse-btn,
 body.sidebar-pinned .sidebar-pin-btn {
   width: 26px;
 }
@@ -282,8 +279,8 @@ body.sidebar-pinned .nav-text { opacity: 1; width: auto; }
 .sidebar-resize-handle {
   position: absolute;
   top: 0;
-  right: -3px;
-  width: 6px;
+  right: 0; /* was -3px: #sidebar has overflow:hidden, so half the handle was clipped */
+  width: 8px;
   height: 100%;
   cursor: ew-resize;
   z-index: 2;
@@ -397,48 +394,75 @@ body.layout-topbar .nav-hidden-toggle {
   padding: 4px 8px;
 }
 
-/* ── Icon-only collapse toggle button ────────────────────────────
-   Sits next to the pin button; hidden entirely in topbar mode, which is
-   already icon-only by design (see body.layout-topbar rules below). */
+/* ── Icon-only collapse toggle ───────────────────────────────────
+   Lives in #sidebar-footer at the bottom of the rail (moved out of the
+   header row). Same shape logic as .nav-link: 44px square at rest,
+   full-width row with a label when the rail is expanded. Always visible —
+   it used to fade in on hover only, which made it easy to miss.
+   Hidden in topbar mode, which is already icon-only by design. */
+#sidebar-footer {
+  flex-shrink: 0;
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  margin-top: 8px;
+}
+
 .sidebar-collapse-btn {
+  appearance: none;
+  -webkit-appearance: none;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
-  border-radius: var(--radius-sm);
+  width: 44px;
+  height: 36px;
+  padding: 0;
+  margin: 0;
+  box-sizing: border-box;
+  border: 1px solid transparent;
+  border-radius: 14px;
+  background: transparent;
+  font: inherit;
   color: var(--color-text-dim);
+  cursor: pointer;
+  overflow: hidden;
+  white-space: nowrap;
   flex-shrink: 0;
-  opacity: 0;
-  transform: scale(0.9);
-  pointer-events: none;
   transition:
-    opacity 0.2s var(--ease-out) 0.05s,
-    transform 0.2s var(--ease-out) 0.05s,
+    width 0.28s var(--ease-spring),
+    border-radius 0.24s var(--ease-out),
+    padding-left 0.24s var(--ease-out),
+    gap 0.24s var(--ease-out),
+    color 0.15s var(--ease-out),
     background 0.15s var(--ease-out),
-    color 0.15s var(--ease-out);
+    border-color 0.15s var(--ease-out),
+    transform 0.18s var(--ease-spring);
 }
 
 #sidebar:hover .sidebar-collapse-btn,
 body.sidebar-pinned .sidebar-collapse-btn {
-  opacity: 1;
-  transform: scale(1);
-  pointer-events: auto;
+  width: 100%;
+  border-radius: var(--radius-md);
+  justify-content: flex-start;
+  padding-left: 14px;
+  gap: 14px;
 }
 
 .sidebar-collapse-btn:hover {
   color: var(--color-text);
   background: var(--color-accent-dim);
+  border-color: var(--color-accent-subtle);
 }
 
 .sidebar-collapse-btn:active {
-  transform: scale(0.88);
+  transform: scale(0.97);
   background: var(--color-accent-subtle);
 }
 
 .sidebar-collapse-btn svg {
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
   transition: transform 0.2s var(--ease-out);
 }
 
@@ -450,7 +474,7 @@ body.sidebar-pinned .sidebar-collapse-btn {
   transform: rotate(180deg);
 }
 
-body.layout-topbar .sidebar-collapse-btn {
+body.layout-topbar #sidebar-footer {
   display: none;
 }
 
@@ -466,10 +490,13 @@ body.layout-topbar .sidebar-collapse-btn {
    unclickable the moment you turned icon-only mode on. Widening by a
    fixed 40px here (room for the button + gap, nav icons stay 44px/
    centered same as before) keeps the toggle reachable without
-   reintroducing the full expanded-width nav labels. */
+   reintroducing the full expanded-width nav labels.
+   UPDATE: the collapse button now lives in the bottom footer instead of
+   the header row, so nothing needs the extra 40px anymore. Icon-only means
+   icon-only: hover no longer widens the rail at all. */
 body.sidebar-icon-only #sidebar:hover,
 body.sidebar-icon-only.sidebar-pinned #sidebar {
-  width: calc(var(--sidebar-width-collapsed) + 40px);
+  width: var(--sidebar-width-collapsed);
   align-items: center;
 }
 
@@ -487,12 +514,43 @@ body.sidebar-icon-only .nav-hidden-toggle {
 }
 
 body.sidebar-icon-only #sidebar:hover .nav-link,
-body.sidebar-icon-only.sidebar-pinned .nav-link {
+body.sidebar-icon-only.sidebar-pinned .nav-link,
+body.sidebar-icon-only #sidebar:hover .sidebar-collapse-btn,
+body.sidebar-icon-only.sidebar-pinned .sidebar-collapse-btn {
   width: 44px;
   border-radius: 14px;
   justify-content: center;
   padding-left: 0;
   gap: 0;
+}
+
+/* Hover/pin must not nudge anything in icon-only: active dot stays at the
+   44px icon's true center (expanded value is 24px), and the logo keeps its
+   full size (the .73 shrink only exists to make room for the wordmark). */
+body.sidebar-icon-only #sidebar:hover .nav-link.active::before,
+body.sidebar-icon-only.sidebar-pinned .nav-link.active::before {
+  left: 22px;
+}
+
+body.sidebar-icon-only #sidebar:hover #sidebar-logo,
+body.sidebar-icon-only.sidebar-pinned #sidebar-logo {
+  transform: none;
+}
+
+body.sidebar-icon-only #sidebar:hover #sidebar-logo:hover {
+  transform: scale(var(--anim-lift));
+}
+
+/* Pinned + icon-only: the rail is narrow, so content and the player bar
+   reflow to the collapsed width instead of the full expanded width. Sits
+   before the topbar guard rules below, which still win for stale state. */
+body.sidebar-icon-only.sidebar-pinned #main {
+  padding-left: calc(var(--sidebar-width-collapsed) + clamp(24px, 2.8vw, 36px));
+}
+
+body.sidebar-icon-only.sidebar-pinned #now-playing-bar {
+  left: calc(var(--sidebar-width-collapsed) + 32px);
+  width: calc(100% - var(--sidebar-width-collapsed) - 48px);
 }
 
 /* SIDE EFFECT NOTE: app.js now wraps the three .nav-link anchors in
@@ -882,6 +940,19 @@ body.sidebar-pinned #sidebar #app-name {
   padding-left: 8px;
   padding-right: 6px;
   gap: 10px;
+}
+
+/* Icon-only: header is just the logo, so it stays centered on hover/pin too
+   (same specificity as the pinned rule above, so it must come after it). */
+body.sidebar-icon-only #sidebar #app-name {
+  justify-content: center;
+  padding-left: 0;
+  padding-right: 0;
+  gap: 0;
+}
+
+body.sidebar-icon-only .logo-text-wrap {
+  margin-left: 0;
 }
 /* ─── Sidebar/topbar nav icons: click-kick ───
    Moved in from animations.css — trigger/selector rules belong here per

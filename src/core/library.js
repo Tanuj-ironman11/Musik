@@ -43,6 +43,17 @@ let rescanIntervalMinutes = 60; // 0 = disabled; user-adjustable via Settings
 // later re-scan/re-import of the same folder works normally afterward.
 let recentlyDeletedFolderPaths = new Set();
 
+// File paths the user deleted from the library on purpose (removeTracks).
+// Persisted, and skipped by scanFolder — otherwise the very next rescan
+// (3s after launch, then every rescanIntervalMinutes) finds the file still
+// sitting in a watched folder and quietly puts it back. addFiles() clears
+// an entry when the user explicitly re-adds that file.
+let removedPaths = new Set();
+
+// Bumped by clear(). A scan/rescan that started before a wipe checks this
+// and bails instead of repopulating the library it just watched get emptied.
+let scanEpoch = 0;
+
 // ── Persistence ────────────────────────────────────────────────────
 let storagePath = null;
 let saveScheduled = false;
@@ -63,6 +74,7 @@ function load() {
       tracks = Array.isArray(data.tracks) ? data.tracks : [];
       playlists = Array.isArray(data.playlists) ? data.playlists : [];
       watchedFolders = Array.isArray(data.watchedFolders) ? data.watchedFolders : [];
+      removedPaths = new Set(Array.isArray(data.removedPaths) ? data.removedPaths : []);
       if (Number.isFinite(data.rescanIntervalMinutes) && data.rescanIntervalMinutes >= 0) {
         rescanIntervalMinutes = data.rescanIntervalMinutes;
       }
@@ -84,7 +96,7 @@ function load() {
 function save() {
   if (!storagePath) return;
   try {
-    fs.writeFileSync(storagePath, JSON.stringify({ tracks, playlists, watchedFolders, rescanIntervalMinutes }));
+    fs.writeFileSync(storagePath, JSON.stringify({ tracks, playlists, watchedFolders, rescanIntervalMinutes, removedPaths: Array.from(removedPaths) }));
   } catch (err) {
     console.warn('[Musik] library: failed to save library:', err.message);
   }
@@ -193,6 +205,7 @@ async function addFiles(filePaths) {
       console.warn(`[Musik] addFiles: skipping directory ${filePath} — use scanFolder/Import Folder for folders`);
       continue;
     }
+    removedPaths.delete(filePath); // explicit add overrides an earlier removeTracks()
     if (knownPaths.has(filePath)) continue; // already in the library, nothing to do
 
     const tags = await readTags(filePath);
@@ -221,6 +234,7 @@ async function scanFolder(folderPath) {
 
   const allFound = [];
   let sinceYield = 0;
+  const epoch = scanEpoch;
   const knownPaths = new Set(tracks.map((t) => t.filePath));
 
   if (!watchedFolders.includes(folderPath)) {
@@ -228,6 +242,7 @@ async function scanFolder(folderPath) {
   }
 
   async function walk(dirPath) {
+    if (epoch !== scanEpoch) return; // library was wiped mid-scan
     let entries;
     try {
       entries = await fsp.readdir(dirPath, { withFileTypes: true });
@@ -239,6 +254,7 @@ async function scanFolder(folderPath) {
     const directTrackPaths = [];
 
     for (const entry of entries) {
+      if (epoch !== scanEpoch) return;
       const fullPath = path.join(dirPath, entry.name);
 
       if (entry.isDirectory()) {
@@ -249,6 +265,7 @@ async function scanFolder(folderPath) {
 
       const ext = path.extname(entry.name).toLowerCase();
       if (!AUDIO_EXTENSIONS.has(ext)) continue;
+      if (removedPaths.has(fullPath)) continue; // user deleted this from the library
 
       if (knownPaths.has(fullPath)) {
         directTrackPaths.push(fullPath);
@@ -268,7 +285,7 @@ async function scanFolder(folderPath) {
       directTrackPaths.push(fullPath);
     }
 
-    if (directTrackPaths.length) {
+    if (directTrackPaths.length && epoch === scanEpoch) {
       if (recentlyDeletedFolderPaths.has(dirPath)) {
         // Swallow exactly one resurrection attempt — see the Set's
         // declaration comment above. Track files themselves are still
@@ -287,13 +304,14 @@ async function scanFolder(folderPath) {
           playlists.push(playlist);
         }
         for (const fp of directTrackPaths) {
-          if (!playlist.trackIds.includes(fp)) playlist.trackIds.push(fp);
+          if (!removedPaths.has(fp) && !playlist.trackIds.includes(fp)) playlist.trackIds.push(fp);
         }
       }
     }
   }
 
   await walk(folderPath);
+  if (epoch !== scanEpoch) return [];
 
   console.log(`[Musik] scanFolder: found ${allFound.length} new track(s) in "${folderPath}"`);
 
@@ -306,7 +324,9 @@ async function rescanAll() {
   pruneMissingTracks();
 
   const results = [];
+  const epoch = scanEpoch;
   for (const folderPath of watchedFolders) {
+    if (epoch !== scanEpoch) break;
     if (!fs.existsSync(folderPath)) continue;
     const found = await scanFolder(folderPath);
     results.push({ folderPath, foundCount: found.length });
@@ -446,6 +466,57 @@ function reorderPlaylistTracks(id, fromIndex, toIndex) {
   return playlist;
 }
 
+// Removes tracks from the library entirely — and from every playlist —
+// unlike removeTrackFromPlaylist, which only unlinks one playlist. Never
+// touches the audio files on disk. Paths still on disk go into
+// removedPaths so a rescan of a watched folder doesn't re-import them.
+function removeTracks(filePaths) {
+  const wanted = new Set(
+    (Array.isArray(filePaths) ? filePaths : [filePaths]).filter((p) => typeof p === 'string')
+  );
+  const affected = new Set();
+  if (!wanted.size) return { removed: [] };
+
+  tracks = tracks.filter((t) => {
+    if (!wanted.has(t.filePath)) return true;
+    affected.add(t.filePath);
+    return false;
+  });
+
+  for (const p of playlists) {
+    p.trackIds = p.trackIds.filter((fp) => {
+      if (!wanted.has(fp)) return true;
+      affected.add(fp);
+      return false;
+    });
+  }
+
+  // Only remember paths that still exist — a file already gone from disk
+  // can't be rescanned back in, and this keeps the list from growing forever.
+  for (const fp of affected) {
+    if (fs.existsSync(fp)) removedPaths.add(fp);
+  }
+
+  // Immediate write, same reasoning as deletePlaylist: deliberate and rare,
+  // and must survive a quit inside the debounce window.
+  if (affected.size) flush();
+  return { removed: Array.from(affected) };
+}
+
+// Wipes every track, playlist, watched folder and removed-path entry.
+// Watched folders go too, or the next rescan would just re-import
+// everything. Audio files on disk are never touched.
+function clear() {
+  scanEpoch += 1;
+  tracks = [];
+  playlists = [];
+  watchedFolders = [];
+  removedPaths = new Set();
+  recentlyDeletedFolderPaths = new Set();
+  flush();
+  return true;
+}
+
 module.exports = {
   init,
   flush,
@@ -462,6 +533,8 @@ module.exports = {
   createPlaylist,
   renamePlaylist,
   deletePlaylist,
+  removeTracks,
+  clear,
   addTrackToPlaylist,
   removeTrackFromPlaylist,
   reorderPlaylistTracks,

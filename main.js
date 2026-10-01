@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, shell, screen, nativeImage } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, screen, nativeImage, session } = require('electron');
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 
 app.commandLine.appendSwitch('force_high_performance_gpu');
@@ -23,6 +23,7 @@ const Lyrics = safeRequire('./src/core/lyrics');
 const Scrobbler = safeRequire('./src/core/scrobbler');
 const GameDuck = safeRequire('./src/core/game-duck');
 const Stats = safeRequire('./src/core/stats');
+const NetDownload = safeRequire('./src/core/net-download');
 
 let mainWindow = null;
 let miniplayerWindow = null;
@@ -266,6 +267,18 @@ function restartRescanTimer() {
 }
 
 function boot() {
+  // Remote streams loaded through <audio crossOrigin="anonymous"> need CORS
+  // headers or the Web Audio graph silences them.
+  if (session && session.defaultSession) {
+    session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+      const responseHeaders = { ...details.responseHeaders };
+      responseHeaders['access-control-allow-origin'] = ['*'];
+      responseHeaders['access-control-allow-headers'] = ['*'];
+      responseHeaders['access-control-allow-methods'] = ['GET, HEAD, OPTIONS'];
+      callback({ responseHeaders });
+    });
+  }
+
   createWindow();
   ModLoader?.init?.(app.getPath('userData'));
   Library?.init?.(app.getPath('userData'));
@@ -391,10 +404,71 @@ ipcMain.handle('miniplayer:resize-for-queue', (_e, open) => {
   return true;
 });
 
-ipcMain.handle('player:play', async (_e, trackId) => AudioEngine?.play?.(trackId));
-ipcMain.handle('player:pause', async () => AudioEngine?.pause?.());
-ipcMain.handle('player:seek', async (_e, seconds) => AudioEngine?.seek?.(seconds));
-ipcMain.handle('player:set-volume', async (_e, value) => AudioEngine?.setVolume?.(value));
+// NEW — 'net:download' (mods: download an attachment to a temp file, see net-download.js)
+NetDownload?.register?.(ipcMain, app);
+
+// Main-process network proxy for mods (bypasses CORS, supports custom headers/User-Agent)
+ipcMain.handle('net:fetch', async (_e, { url, method = 'GET', headers = {}, body, timeout = 20000 }) => {
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), Math.max(1000, timeout));
+
+    const fetchOptions = {
+      method,
+      headers: { ...headers },
+      signal: controller.signal,
+    };
+
+    if (body && method !== 'GET' && method !== 'HEAD') {
+      fetchOptions.body = typeof body === 'object' ? JSON.stringify(body) : String(body);
+    }
+
+    const res = await fetch(url, fetchOptions);
+    clearTimeout(timer);
+
+    const resHeaders = {};
+    res.headers.forEach((val, key) => { resHeaders[key] = val; });
+    const text = await res.text();
+
+    return {
+      ok: res.ok,
+      status: res.status,
+      statusText: res.statusText,
+      headers: resHeaders,
+      text,
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      status: 0,
+      statusText: err.name === 'AbortError' ? 'Timeout' : err.message,
+      headers: {},
+      text: '',
+      error: err.message,
+    };
+  }
+});
+
+ipcMain.handle('player:play', async (_e, trackOrId) => {
+  const res = AudioEngine?.play?.(trackOrId);
+  emitToRenderer('player-command', { action: 'play', track: trackOrId });
+  return res;
+});
+ipcMain.handle('player:pause', async () => {
+  const res = AudioEngine?.pause?.();
+  emitToRenderer('player-command', { action: 'pause' });
+  return res;
+});
+ipcMain.handle('player:seek', async (_e, seconds) => {
+  const res = AudioEngine?.seek?.(seconds);
+  emitToRenderer('player-command', { action: 'seek', seconds });
+  return res;
+});
+ipcMain.handle('player:set-volume', async (_e, value) => {
+  const res = AudioEngine?.setVolume?.(value);
+  emitToRenderer('player-command', { action: 'setVolume', value });
+  return res;
+});
 ipcMain.handle('player:get-state', async () => AudioEngine?.getState?.() ?? null);
 ipcMain.handle('player:get-current-track', async () => AudioEngine?.getCurrentTrack?.() ?? null);
 
@@ -435,6 +509,22 @@ ipcMain.handle('library:remove-track', async (_e, id, filePath) => Library?.remo
 ipcMain.handle('library:reorder-tracks', async (_e, id, fromIndex, toIndex) => Library?.reorderPlaylistTracks?.(id, fromIndex, toIndex) ?? null);
 
 ipcMain.handle('library:add-files', async (_e, filePaths) => Library?.addFiles?.(filePaths) ?? []);
+
+// Removes tracks from the library entirely (not just one playlist). Never
+// deletes audio files on disk. `results: []` keeps the libraryupdate payload
+// shape existing listeners already expect.
+ipcMain.handle('library:remove-tracks', async (_e, filePaths) => {
+  const result = Library?.removeTracks?.(filePaths) ?? { removed: [] };
+  if (result.removed.length) emitLibraryUpdate({ results: [], removed: result.removed });
+  return result;
+});
+
+// Wipes all tracks, playlists and watched folders (demo reset).
+ipcMain.handle('library:clear', async () => {
+  const ok = Library?.clear?.() ?? false;
+  if (ok) emitLibraryUpdate({ results: [], cleared: true });
+  return ok;
+});
 
 ipcMain.handle('art:extract', async (_e, filePath) => ArtProvider?.extract?.(filePath) ?? null);
 ipcMain.handle('art:fetch-online', async (_e, trackMeta) => ArtProvider?.fetchOnline?.(trackMeta) ?? null);
@@ -500,8 +590,8 @@ ipcMain.handle('ui:inject-css', async (_e, css) => {
   emitToRenderer('inject-css', css);
   return true;
 });
-ipcMain.handle('ui:inject-element', async (_e, html, targetSelector) => {
-  emitToRenderer('inject-element', { html, targetSelector });
+ipcMain.handle('ui:inject-element', async (_e, html, targetSelector, id) => {
+  emitToRenderer('inject-element', { html, targetSelector, id });
   return true;
 });
 ipcMain.handle('ui:remove-element', async (_e, elementId) => {
@@ -567,11 +657,92 @@ function encodeWavFloat32(channelData, sampleRate) {
   return buffer;
 }
 
+// NEW — AIFF/AIFC fallback. Chromium can't play AIFF at all (canPlayType says
+// "no"), and @audio/decode-aac "succeeds" on it with an empty result, so AIFF
+// files had no working path. Parses FORM/COMM/SSND directly and converts to
+// float channel data for the same WAV wrapper as above. Handles big-endian PCM
+// (8/16/24/32-bit), AIFC 'sowt' (little-endian PCM) and 'fl32'/'fl64' float.
+// Float32 holds 24 bits exactly, so 16/24-bit sources are converted losslessly.
+function readExtended80(buf, off) {
+  // 80-bit IEEE extended: 1 sign, 15 exponent, 64-bit mantissa (explicit lead bit).
+  const exp = ((buf[off] & 0x7f) << 8) | buf[off + 1];
+  const hi = buf.readUInt32BE(off + 2);
+  const lo = buf.readUInt32BE(off + 6);
+  if (exp === 0 && hi === 0 && lo === 0) return 0;
+  return (hi * 2 ** 32 + lo) * 2 ** (exp - 16383 - 63);
+}
+
+function decodeAiff(buf) {
+  if (buf.length < 12 || buf.toString('latin1', 0, 4) !== 'FORM') throw new Error('not an AIFF file');
+  const formType = buf.toString('latin1', 8, 12);
+  if (formType !== 'AIFF' && formType !== 'AIFC') throw new Error('not an AIFF file');
+
+  let comm = null;
+  let ssnd = null;
+  let pos = 12;
+  while (pos + 8 <= buf.length) {
+    const id = buf.toString('latin1', pos, pos + 4);
+    const size = buf.readUInt32BE(pos + 4);
+    const body = pos + 8;
+    if (id === 'COMM') {
+      comm = {
+        channels: buf.readUInt16BE(body),
+        frames: buf.readUInt32BE(body + 2),
+        bits: buf.readUInt16BE(body + 6),
+        sampleRate: Math.round(readExtended80(buf, body + 8)),
+        compression: formType === 'AIFC' ? buf.toString('latin1', body + 18, body + 22) : 'NONE',
+      };
+    } else if (id === 'SSND') {
+      const dataOffset = buf.readUInt32BE(body);
+      ssnd = { start: body + 8 + dataOffset, end: Math.min(buf.length, body + size) };
+    }
+    pos = body + size + (size & 1); // chunks are padded to even length
+  }
+  if (!comm || !ssnd) throw new Error('AIFF is missing COMM or SSND chunk');
+
+  const { channels, bits, compression } = comm;
+  const isFloat = compression === 'fl32' || compression === 'FL32' || compression === 'fl64' || compression === 'FL64';
+  const littleEndian = compression === 'sowt';
+  if (!isFloat && compression !== 'NONE' && compression !== 'none' && !littleEndian) {
+    throw new Error(`unsupported AIFC compression "${compression}"`);
+  }
+  const bytes = isFloat ? (bits === 64 ? 8 : 4) : Math.ceil(bits / 8);
+  const frames = Math.min(comm.frames, Math.floor((ssnd.end - ssnd.start) / (bytes * channels)));
+  const channelData = Array.from({ length: channels }, () => new Float32Array(frames));
+
+  let o = ssnd.start;
+  for (let i = 0; i < frames; i++) {
+    for (let ch = 0; ch < channels; ch++) {
+      let v;
+      if (isFloat) {
+        v = bytes === 8 ? buf.readDoubleBE(o) : buf.readFloatBE(o);
+      } else if (bytes === 1) {
+        v = buf.readInt8(o) / 128;
+      } else if (bytes === 2) {
+        v = (littleEndian ? buf.readInt16LE(o) : buf.readInt16BE(o)) / 32768;
+      } else if (bytes === 3) {
+        v = (littleEndian ? buf.readIntLE(o, 3) : buf.readIntBE(o, 3)) / 8388608;
+      } else {
+        v = (littleEndian ? buf.readInt32LE(o) : buf.readInt32BE(o)) / 2147483648;
+      }
+      channelData[ch][i] = v;
+      o += bytes;
+    }
+  }
+  return { channelData, sampleRate: comm.sampleRate };
+}
+
 ipcMain.handle('audio:decode-to-playable', async (_e, filePath) => {
   try {
-    const { default: decode } = await import('@audio/decode-aac');
     const fileBuffer = await fs.promises.readFile(filePath);
-    const { channelData, sampleRate } = await decode(new Uint8Array(fileBuffer));
+    const ext = path.extname(filePath).toLowerCase();
+    let channelData, sampleRate;
+    if (ext === '.aiff' || ext === '.aif' || ext === '.aifc') {
+      ({ channelData, sampleRate } = decodeAiff(fileBuffer));
+    } else {
+      const { default: decode } = await import('@audio/decode-aac');
+      ({ channelData, sampleRate } = await decode(new Uint8Array(fileBuffer)));
+    }
     const wavBuffer = encodeWavFloat32(channelData, sampleRate);
     return { ok: true, wav: new Uint8Array(wavBuffer), sampleRate };
   } catch (err) {
@@ -579,18 +750,3 @@ ipcMain.handle('audio:decode-to-playable', async (_e, filePath) => {
     return { ok: false, error: err.message };
   }
 });
-/* ─── Boot Splash Screen: Light Canvas & Crisp Charcoal Text ─── */
-#boot-splash {
-  background: #ebeaee !important;
-  background-color: #ebeaee !important;
-}
-
-#boot-splash span {
-  color: #161618 !important;
-  opacity: 0.65 !important;
-}
-
-@keyframes boot-splash-pulse {
-  0%, 100% { opacity: 0.45; }
-  50% { opacity: 1; }
-}

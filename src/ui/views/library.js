@@ -65,7 +65,7 @@ function renderPlaylistGrid(main, tracks, playlists) {
     </div>
   `;
 
-  window.MusikCards.wirePlaylistCards(body, playlists, tracks);
+  window.MusikCards.wirePlaylistCards(body, playlists, tracks, () => window.MusikViews.library(main));
 }
 
 function renderPlaylistDetail(main, id, tracks, playlists) {
@@ -206,7 +206,10 @@ function renderPlaylistDetail(main, id, tracks, playlists) {
       if (t && window.MusikPlayerUI) await window.MusikPlayerUI.loadTrack(t);
     });
 
-    if (t) window.MusikContextMenu?.attachTrack?.(row, t);
+    if (t) window.MusikContextMenu?.attachTrack?.(row, t, {
+      playlistId: playlist.id,
+      onChange: () => window.MusikViews.library(main, playlist.id),
+    });
 
     row.querySelector('[data-remove-track]')?.addEventListener('click', async (e) => {
       e.stopPropagation();

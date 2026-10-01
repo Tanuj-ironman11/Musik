@@ -10,14 +10,14 @@
  */
 
 /* ── Right-click context menu ──────────────────────────────────── */
+/* Container (position, z-index, blur, noise) is owned by shell.css. z-index
+   used to be redeclared here as 1000, which — depending on load order —
+   dropped the menu under the sidebar (10050) and player bar (9000). */
 .ctx-menu {
-  position: fixed;
-  z-index: 1000;
   min-width: 200px;
   max-width: 260px;
   padding: 6px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--color-border, rgba(255, 255, 255, 0.08));
+  border: 1px solid var(--color-border-strong);
   box-shadow: 0 16px 40px -8px rgba(0, 0, 0, 0.55);
   font-size: 13px;
 }
@@ -31,31 +31,57 @@
   color: var(--color-text-dim);
 }
 
+.ctx-menu-label,
+.ctx-menu-item,
+.ctx-menu-divider,
+.ctx-menu-empty {
+  position: relative; /* sit above shell.css's ::before noise layer */
+  z-index: 1;
+}
+
 .ctx-menu-item {
   display: flex;
   align-items: center;
   gap: 8px;
   width: 100%;
-  padding: 8px 10px;
+  min-height: 32px;
+  padding: 7px 10px;
   border: none;
   background: transparent;
   color: var(--color-text);
+  font: inherit;
   border-radius: var(--radius-sm);
   cursor: pointer;
   text-align: left;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  transition: background 0.12s var(--ease-out), color 0.12s var(--ease-out);
 }
 
-.ctx-menu-item:hover { background: var(--color-bg-hover, rgba(255, 255, 255, 0.06)); }
+.ctx-menu-item:hover,
+.ctx-menu-item:focus-visible {
+  outline: none;
+  background: color-mix(in srgb, var(--color-text) 8%, transparent);
+}
+
+.ctx-menu-item:active { background: var(--color-accent-subtle); }
 
 .ctx-menu-item--new { color: var(--color-accent); }
 
+.ctx-menu-item--new:hover,
+.ctx-menu-item--new:focus-visible { background: var(--color-accent-dim); }
+
+.ctx-menu-item:disabled {
+  opacity: 0.4;
+  cursor: default;
+  background: transparent;
+}
+
 .ctx-menu-divider {
   height: 1px;
-  margin: 6px 4px;
-  background: var(--color-border, rgba(255, 255, 255, 0.08));
+  margin: 5px 6px;
+  background: var(--color-border-strong);
 }
 
 .ctx-menu-empty {
@@ -68,7 +94,7 @@
 .add-tracks-overlay {
   position: fixed;
   inset: 0;
-  z-index: 1000;
+  z-index: var(--z-modal-elevated); /* was 1000 — sat behind the sidebar and player bar */
   display: flex;
   align-items: center;
   justify-content: center;

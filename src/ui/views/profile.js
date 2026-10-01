@@ -14,9 +14,10 @@
 // single-machine local profile; if you want this synced/backed up or
 // available to main-process code later, it needs an actual IPC channel +
 // storage.js field, flagging that as a real follow-up rather than doing it
-// silently. Avatar is capped client-side at ~1.5MB source file size before
-// reading, to keep localStorage (5-10MB browser-enforced quota) from
-// filling up on one image.
+// silently. Avatar source files are capped client-side at 8MB before
+// reading, and the saved image is a re-encoded 320px JPEG crop (tens of
+// KB), which is what actually keeps localStorage (5-10MB browser-enforced
+// quota) from filling up.
 //
 // LIFETIME STATS SOURCE:
 // Total LISTENING TIME (minutes) always comes from the local tally
@@ -44,10 +45,14 @@ function fmtDate(ms) {
   return new Date(ms).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
 }
 
-// Splits a raw artist tag on common multi-artist separators — same
-// pattern as search.js's splitArtists, kept independent here since this
-// file doesn't load search.js and the logic is a few lines either way.
-const ARTIST_SPLIT_RE = /\s*[,;/&]\s*|\s+(?:feat\.?|ft\.?|x)\s+/gi;
+// Splits a raw artist tag on UNAMBIGUOUS multi-artist separators only:
+// ";" and feat./ft./featuring/x. Deliberately NOT "," "&" or "/" — those
+// are part of real names (AC/DC, Earth, Wind & Fire, Simon & Garfunkel,
+// Tyler, The Creator), and splitting on them showed "AC", "Earth", "Simon"
+// and "Tyler" as the artist. Kept independent of search.js's splitArtists
+// since this file doesn't load search.js (search.js's copy still has the
+// old, greedier pattern — flagged separately).
+const ARTIST_SPLIT_RE = /\s*;\s*|\s+(?:feat\.?|ft\.?|featuring|x)\s+/gi;
 function splitArtists(raw) {
   if (!raw) return [];
   return raw.split(ARTIST_SPLIT_RE).map((s) => s.trim()).filter(Boolean);
@@ -58,16 +63,21 @@ function splitArtists(raw) {
 // (the primary/first-listed artist), instead of showing as two separate
 // rows that split what should be one person's play count. Grouped by a
 // normalized key: lowercased, punctuation stripped, first two words of
-// the primary artist only — catches "DJ Snake" vs "dj  snake" too, not
-// just the collab-splitting case.
+// the primary artist — catches "DJ Snake" vs "dj  snake" too, not just the
+// collab-splitting case.
+// Two bugs fixed here: (1) the old key kept only the FIRST TWO WORDS, so
+// "The Kid LAROI" and "The Kid Cudi" merged into one row; the whole
+// normalized name is the key now. (2) the old [^a-z0-9] strip erased every
+// non-Latin character, so Japanese/Korean/Chinese/Cyrillic artists
+// normalized to "" and were silently dropped from Top Artists. \p{L}/\p{N}
+// keeps letters and digits in any script.
 function normalizeArtistKey(name) {
   const primary = splitArtists(name)[0] || name || '';
   return primary
     .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, '')
+    .replace(/[^\p{L}\p{N}\s]/gu, '')
     .trim()
     .split(/\s+/)
-    .slice(0, 2)
     .join(' ');
 }
 
@@ -158,6 +168,7 @@ const USERNAME_KEY = 'musik.profile.username';
 const MAX_AVATAR_SOURCE_BYTES = 8 * 1024 * 1024; // source file cap — generous, since we re-encode a small crop anyway
 const CROP_VIEWPORT = 260; // on-screen crop circle size, px
 const CROP_OUTPUT = 320;   // saved image resolution, px (square, displayed via circular clip in CSS)
+const LASTFM_TIMEOUT_MS = 6000; // don't leave "Loading stats..." up forever if Last.fm is slow/offline
 
 function getSavedAvatar() {
   try { return localStorage.getItem(AVATAR_KEY) || null; } catch { return null; }
@@ -166,10 +177,21 @@ function getSavedUsername() {
   try { return localStorage.getItem(USERNAME_KEY) || ''; } catch { return ''; }
 }
 
+// Array.from splits by code point, so an emoji or non-BMP character isn't
+// cut in half the way parts[0][0] (a UTF-16 unit) would.
 function initials(name) {
   const parts = name.trim().split(/\s+/).filter(Boolean);
   if (!parts.length) return '';
-  return (parts[0][0] + (parts[1]?.[0] || '')).toUpperCase();
+  const first = (p) => Array.from(p || '')[0] || '';
+  return (first(parts[0]) + first(parts[1])).toUpperCase();
+}
+
+// Initials when there's a name, a generic person glyph when there isn't —
+// an empty circle gave no hint that it's clickable.
+function avatarFallbackHTML(name) {
+  const i = initials(name);
+  if (i) return escapeHTML(i);
+  return `<svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7"/></svg>`;
 }
 
 // Drag-to-pan, wheel/slider-to-zoom crop modal. Appended to document.body
@@ -192,7 +214,7 @@ function openAvatarCropper(file) {
         <input type="range" id="avatar-crop-zoom" class="avatar-crop-zoom" min="100" max="300" value="100">
         <div class="avatar-crop-actions">
           <button type="button" class="avatar-crop-btn avatar-crop-btn--cancel" id="avatar-crop-cancel">Cancel</button>
-          <button type="button" class="avatar-crop-btn avatar-crop-btn--save" id="avatar-crop-save">Save photo</button>
+          <button type="button" class="avatar-crop-btn avatar-crop-btn--save" id="avatar-crop-save" disabled>Save photo</button>
         </div>
       </div>
     `;
@@ -230,6 +252,14 @@ function openAvatarCropper(file) {
       offsetX = 0;
       offsetY = 0;
       clampAndApply();
+      saveBtn.disabled = false; // saving before decode gave a blank image
+    };
+    // Files the browser can't decode (HEIC, corrupt, mislabeled) never fire
+    // onload — without this the modal sat open on an empty circle forever.
+    img.onerror = () => {
+      cleanup();
+      alert("Couldn't read that image — try a JPG or PNG.");
+      resolve(null);
     };
     img.src = objectUrl;
 
@@ -267,7 +297,13 @@ function openAvatarCropper(file) {
       clampAndApply();
     });
 
+    const onKey = (e) => {
+      if (e.key === 'Escape') { cleanup(); resolve(null); }
+    };
+    document.addEventListener('keydown', onKey, true);
+
     function cleanup() {
+      document.removeEventListener('keydown', onKey, true);
       backdrop.classList.remove('avatar-crop-backdrop--visible');
       setTimeout(() => {
         backdrop.remove();
@@ -309,10 +345,10 @@ function renderProfileHeader(container) {
 
   container.innerHTML = `
     <div class="profile-header-card">
-      <div class="profile-avatar-wrap" id="profile-avatar-wrap" title="Click to change photo">
+      <div class="profile-avatar-wrap" id="profile-avatar-wrap" title="Click to change photo" role="button" tabindex="0" aria-label="Change profile photo">
         ${savedAvatar
           ? `<img class="profile-avatar-img" id="profile-avatar-img" src="${savedAvatar}" alt="">`
-          : `<div class="profile-avatar-fallback" id="profile-avatar-fallback">${escapeHTML(initials(savedName) || '')}</div>`}
+          : `<div class="profile-avatar-fallback" id="profile-avatar-fallback">${avatarFallbackHTML(savedName)}</div>`}
         <div class="profile-avatar-overlay">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
         </div>
@@ -336,7 +372,18 @@ function renderProfileHeader(container) {
   const avatarInput = document.getElementById('profile-avatar-input');
   const usernameInput = document.getElementById('profile-username-input');
 
-  avatarWrap?.addEventListener('click', () => avatarInput?.click());
+  // e.target guard: the hidden <input> lives inside the wrap, so its own
+  // synthetic click bubbles back up here — ignore that re-entry.
+  avatarWrap?.addEventListener('click', (e) => {
+    if (e.target === avatarInput) return;
+    avatarInput?.click();
+  });
+  avatarWrap?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      avatarInput?.click();
+    }
+  });
 
   avatarInput?.addEventListener('change', async () => {
     const file = avatarInput.files?.[0];
@@ -369,7 +416,7 @@ function renderProfileHeader(container) {
       // Fallback avatar shows initials from the name — refresh it live if
       // there's no photo set.
       const fallback = document.getElementById('profile-avatar-fallback');
-      if (fallback) fallback.textContent = initials(usernameInput.value);
+      if (fallback) fallback.innerHTML = avatarFallbackHTML(usernameInput.value);
     }, 300);
   });
 }
@@ -378,26 +425,32 @@ function renderProfileHeader(container) {
 // Rendered separately from the header so toggling Local <-> Last.fm only
 // re-renders this part.
 
-function renderStatsSection(container, { source, session, localLifetime, lastfmLifetime, connected, tracks }) {
+function renderStatsSection(container, { source, session, localLifetime, lastfmLifetime, connected, tracks, libOpen = false, animateFrom = null }) {
   const usingLastfm = source === 'lastfm' && !!lastfmLifetime;
   const lifetime = usingLastfm ? lastfmLifetime : localLifetime;
 
-  const preConnectFootnote = (() => {
-    if (!usingLastfm || !localLifetime?.lastfmConnectedAt || !localLifetime?.firstTrackedAt) return '';
-    if (localLifetime.firstTrackedAt >= localLifetime.lastfmConnectedAt) return '';
-    return `
-      <div class="profile-footnote">
-        Musik also tracked ${localLifetime.totalPlays} play${localLifetime.totalPlays === 1 ? '' : 's'} locally
-        starting ${escapeHTML(fmtDate(localLifetime.firstTrackedAt))}, before you connected Last.fm on
-        ${escapeHTML(fmtDate(localLifetime.lastfmConnectedAt))}.
-      </div>
-    `;
-  })();
+  // Lifetime "Plays" switches with the source but "Listened" never does
+  // (Last.fm has no duration), so with Last.fm selected the two numbers come
+  // from different places — say so instead of leaving it looking like a bug.
+  const footnoteParts = [];
+  if (usingLastfm) {
+    footnoteParts.push(`Play counts come from Last.fm. Listening time is tracked by Musik on this device, since Last.fm doesn't provide it.`);
+    if (localLifetime?.lastfmConnectedAt && localLifetime?.firstTrackedAt && localLifetime.firstTrackedAt < localLifetime.lastfmConnectedAt) {
+      footnoteParts.push(`Musik also tracked ${localLifetime.totalPlays} play${localLifetime.totalPlays === 1 ? '' : 's'} locally starting ${escapeHTML(fmtDate(localLifetime.firstTrackedAt))}, before you connected Last.fm on ${escapeHTML(fmtDate(localLifetime.lastfmConnectedAt))}.`);
+    }
+  }
+  const footnoteHTML = footnoteParts.length ? `<div class="profile-footnote">${footnoteParts.join(' ')}</div>` : '';
 
+  // The section re-renders wholesale on a source switch, which would make
+  // the thumb teleport. So when animateFrom is set, the NEW toggle is drawn
+  // in the OLD state first and flipped to the new one two frames later —
+  // the CSS transition then plays as a real slide (see the rAF block below).
+  const shown = animateFrom || source;
   const toggleHTML = connected ? `
-    <div class="profile-source-toggle" id="profile-source-toggle" role="tablist">
-      <button type="button" class="profile-source-btn ${source === 'local' ? 'is-active' : ''}" data-source="local">Local</button>
-      <button type="button" class="profile-source-btn ${source === 'lastfm' ? 'is-active' : ''}" data-source="lastfm">Last.fm</button>
+    <div class="profile-source-toggle" id="profile-source-toggle" role="tablist" aria-label="Stats source" data-source="${shown}">
+      <span class="profile-source-thumb"></span>
+      <button type="button" role="tab" aria-selected="${shown === 'local'}" class="profile-source-btn ${shown === 'local' ? 'is-active' : ''}" data-source="local">Local</button>
+      <button type="button" role="tab" aria-selected="${shown === 'lastfm'}" class="profile-source-btn ${shown === 'lastfm' ? 'is-active' : ''}" data-source="lastfm">Last.fm</button>
     </div>
   ` : '';
 
@@ -425,7 +478,7 @@ function renderStatsSection(container, { source, session, localLifetime, lastfmL
           <div class="profile-stat"><span class="profile-stat-num">${lifetime?.totalPlays ?? 0}</span><span class="profile-stat-label">Plays</span></div>
           <div class="profile-stat"><span class="profile-stat-num">${fmtDuration(localLifetime?.totalSeconds)}</span><span class="profile-stat-label">Listened</span></div>
         </div>
-        ${preConnectFootnote}
+        ${footnoteHTML}
       </div>
     </div>
 
@@ -445,15 +498,34 @@ function renderStatsSection(container, { source, session, localLifetime, lastfmL
     </div>
 
     <div class="profile-card profile-lib-card">
-      <button class="profile-card-label profile-lib-toggle" id="profile-lib-toggle">
+      <button class="profile-card-label profile-lib-toggle ${libOpen ? 'is-open' : ''}" id="profile-lib-toggle" aria-expanded="${libOpen}">
         Library Stats
         <svg class="profile-lib-chevron" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
       </button>
-      <div class="profile-lib-content" id="profile-lib-content">
-        ${libraryStatsHTML(tracks)}
+      <div class="profile-lib-content ${libOpen ? 'is-open' : ''}" id="profile-lib-content">
+        ${libraryStatsHTML(tracks || [])}
       </div>
     </div>
   `;
+
+  if (animateFrom && animateFrom !== source) {
+    const toggle = document.getElementById('profile-source-toggle');
+    if (toggle) {
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        toggle.dataset.source = source;
+        toggle.querySelectorAll('.profile-source-btn').forEach((b) => {
+          const on = b.dataset.source === source;
+          b.classList.toggle('is-active', on);
+          b.setAttribute('aria-selected', String(on));
+        });
+        const thumb = toggle.querySelector('.profile-source-thumb');
+        if (thumb) {
+          thumb.classList.add('is-kick');
+          thumb.addEventListener('animationend', () => thumb.classList.remove('is-kick'), { once: true });
+        }
+      }));
+    }
+  }
 
   document.getElementById('profile-source-toggle')?.addEventListener('click', (e) => {
     const btn = e.target.closest('.profile-source-btn');
@@ -461,14 +533,18 @@ function renderStatsSection(container, { source, session, localLifetime, lastfmL
     const newSource = btn.dataset.source;
     if (newSource === source) return;
     try { localStorage.setItem('musik.profile.statsSource', newSource); } catch {}
-    renderStatsSection(container, { source: newSource, session, localLifetime, lastfmLifetime, connected, tracks });
+    // Carry the Library Stats open/closed state across the re-render —
+    // switching source used to slam an open section shut.
+    const libOpenNow = !!document.getElementById('profile-lib-toggle')?.classList.contains('is-open');
+    renderStatsSection(container, { source: newSource, session, localLifetime, lastfmLifetime, connected, tracks, libOpen: libOpenNow, animateFrom: source });
   });
 
   const libToggle = document.getElementById('profile-lib-toggle');
   const libContent = document.getElementById('profile-lib-content');
   libToggle?.addEventListener('click', () => {
-    libToggle.classList.toggle('is-open');
-    libContent?.classList.toggle('is-open');
+    const open = libToggle.classList.toggle('is-open');
+    libContent?.classList.toggle('is-open', open);
+    libToggle.setAttribute('aria-expanded', String(open));
   });
 }
 
@@ -485,15 +561,32 @@ window.MusikViews.profile = async function renderProfile(main) {
 
   renderProfileHeader(document.getElementById('profile-header'));
 
-  const [session, localLifetime, scrobbleSettings, tracks] = await Promise.all([
-    window.Musik?.stats?.getSession?.() ?? null,
-    window.Musik?.stats?.getLifetime?.() ?? null,
-    window.Musik?.scrobble?.getSettings?.() ?? null,
-    window.Musik?.library?.getTracks?.() ?? [],
-  ]);
+  let session = null, localLifetime = null, scrobbleSettings = null, tracks = [];
+  try {
+    [session, localLifetime, scrobbleSettings, tracks] = await Promise.all([
+      window.Musik?.stats?.getSession?.() ?? null,
+      window.Musik?.stats?.getLifetime?.() ?? null,
+      window.Musik?.scrobble?.getSettings?.() ?? null,
+      window.Musik?.library?.getTracks?.() ?? [],
+    ]);
+  } catch (err) {
+    // One failed IPC call used to leave the page stuck on "Loading stats...".
+    console.warn('[Musik] profile: stats load failed:', err?.message || err);
+  }
+  tracks = tracks || [];
 
   const connected = !!scrobbleSettings?.connected;
-  const lastfmLifetime = connected ? await window.Musik?.scrobble?.getLifetimeStats?.() : null;
+  let lastfmLifetime = null;
+  if (connected) {
+    try {
+      lastfmLifetime = await Promise.race([
+        window.Musik?.scrobble?.getLifetimeStats?.(),
+        new Promise((resolve) => setTimeout(() => resolve(null), LASTFM_TIMEOUT_MS)),
+      ]);
+    } catch (err) {
+      console.warn('[Musik] profile: Last.fm lifetime stats failed:', err?.message || err);
+    }
+  }
 
   // Default source: user's last explicit choice if still valid (e.g. they
   // picked Last.fm before, still connected), otherwise Last.fm once
@@ -505,7 +598,10 @@ window.MusikViews.profile = async function renderProfile(main) {
     ? savedSource
     : (connected && lastfmLifetime ? 'lastfm' : 'local');
 
-  const body = document.getElementById('profile-body');
+  // The user may have navigated away while the awaits above were pending —
+  // the view is gone, so bail instead of throwing on a null element.
+  const body = main.querySelector('#profile-body');
+  if (!body) return;
   body.className = '';
   renderStatsSection(body, {
     source: initialSource,

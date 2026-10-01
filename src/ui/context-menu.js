@@ -1,9 +1,16 @@
 // src/ui/context-menu.js
 //
-// Shared right-click "Add to Playlist" menu for track rows. Same
+// Shared right-click menus for track rows and playlist cards. Same
 // shared-utility-via-window-global pattern as MusikDialog/MusikCards.
-// Any view with a track row wires it with one call:
-//   window.MusikContextMenu.attachTrack(rowEl, track)
+// Any view wires them with one call:
+//   window.MusikContextMenu.attachTrack(rowEl, track, opts)
+//   window.MusikContextMenu.attachPlaylist(cardEl, playlist, opts)
+// opts (optional, both):
+//   onChange   — called after a menu action changed library data (removed a
+//                track, deleted/renamed a playlist), so the owning view can
+//                re-render itself.
+//   playlistId — attachTrack only: the playlist the row is being shown in.
+//                Adds "Remove from Playlist" to that row's menu.
 //
 // Simplification: single-level menu (playlist names listed directly)
 // rather than a nested "Add to Playlist ▸" submenu — avoids viewport-edge
@@ -44,7 +51,27 @@
   }
   function escapeAttr(str) { return escapeHTML(str); }
 
-  async function showTrackMenu(x, y, track) {
+  // Appends the menu, clamps it into the viewport, and wires the shared
+  // close-on-outside-click / Escape / scroll listeners.
+  function mountMenu(menu, x, y) {
+    document.body.appendChild(menu);
+    openMenuEl = menu;
+
+    const rect = menu.getBoundingClientRect();
+    const { x: cx, y: cy } = clampToViewport(x, y, rect.width, rect.height);
+    menu.style.left = `${cx}px`;
+    menu.style.top = `${cy}px`;
+
+    // Deferred so the contextmenu event that opened this menu doesn't
+    // immediately register as the "outside click" that closes it.
+    setTimeout(() => {
+      document.addEventListener('mousedown', onOutsideClick, true);
+      document.addEventListener('keydown', onKeydown, true);
+      window.addEventListener('scroll', closeMenu, true);
+    }, 0);
+  }
+
+  async function showTrackMenu(x, y, track, opts = {}) {
     closeMenu();
     if (!track?.filePath) return;
 
@@ -53,6 +80,8 @@
     const menu = document.createElement('div');
     menu.className = 'ctx-menu glass-surface--elevated';
     menu.innerHTML = `
+      <button class="ctx-menu-item" data-play-track>Play</button>
+      <div class="ctx-menu-divider"></div>
       <div class="ctx-menu-label">Add to Playlist</div>
       ${playlists.length
         ? playlists.map((p) => `<button class="ctx-menu-item" data-playlist-id="${escapeAttr(p.id)}">${escapeHTML(p.name)}</button>`).join('')
@@ -61,14 +90,16 @@
       <button class="ctx-menu-item ctx-menu-item--new" data-new-playlist>+ New Playlist...</button>
       <div class="ctx-menu-divider"></div>
       <button class="ctx-menu-item" data-refresh-art>Refresh Cover Art</button>
+      <div class="ctx-menu-divider"></div>
+      ${opts.playlistId ? `<button class="ctx-menu-item" data-remove-from-playlist>Remove from Playlist</button>` : ''}
+      <button class="ctx-menu-item ctx-menu-item--danger" data-remove-from-library>Remove from Library</button>
     `;
-    document.body.appendChild(menu);
-    openMenuEl = menu;
+    mountMenu(menu, x, y);
 
-    const rect = menu.getBoundingClientRect();
-    const { x: cx, y: cy } = clampToViewport(x, y, rect.width, rect.height);
-    menu.style.left = `${cx}px`;
-    menu.style.top = `${cy}px`;
+    menu.querySelector('[data-play-track]')?.addEventListener('click', async () => {
+      closeMenu();
+      if (window.MusikPlayerUI) await window.MusikPlayerUI.loadTrack(track);
+    });
 
     menu.querySelectorAll('[data-playlist-id]').forEach((btn) => {
       btn.addEventListener('click', async () => {
@@ -103,24 +134,90 @@
       }
     });
 
-    // Deferred so the contextmenu event that opened this menu doesn't
-    // immediately register as the "outside click" that closes it.
-    setTimeout(() => {
-      document.addEventListener('mousedown', onOutsideClick, true);
-      document.addEventListener('keydown', onKeydown, true);
-      window.addEventListener('scroll', closeMenu, true);
-    }, 0);
-  }
+    menu.querySelector('[data-remove-from-playlist]')?.addEventListener('click', async () => {
+      closeMenu();
+      await window.Musik?.library?.removeTrack?.(opts.playlistId, track.filePath);
+      opts.onChange?.();
+    });
 
-  function attachTrack(el, track) {
-    if (!el) return;
-    el.addEventListener('contextmenu', (e) => {
-      e.preventDefault();
-      showTrackMenu(e.clientX, e.clientY, track);
+    // Removes the track from the whole library (every playlist), never from
+    // disk — the confirm text says so because "delete" reads scarier than it is.
+    menu.querySelector('[data-remove-from-library]')?.addEventListener('click', async () => {
+      closeMenu();
+      const ok = await window.MusikDialog?.confirm?.(`Remove "${track.title}" from Musik? The file stays on your computer.`);
+      if (!ok) return;
+      await window.Musik?.library?.removeTracks?.([track.filePath]);
+      opts.onChange?.();
     });
   }
 
-  window.MusikContextMenu = { attachTrack };
+  async function showPlaylistMenu(x, y, playlist, opts = {}) {
+    closeMenu();
+    if (!playlist?.id) return;
+
+    const menu = document.createElement('div');
+    menu.className = 'ctx-menu glass-surface--elevated';
+    menu.innerHTML = `
+      <button class="ctx-menu-item" data-play-playlist>Play</button>
+      <div class="ctx-menu-divider"></div>
+      <button class="ctx-menu-item" data-rename-playlist>Rename...</button>
+      <div class="ctx-menu-divider"></div>
+      <button class="ctx-menu-item ctx-menu-item--danger" data-delete-playlist>Delete Playlist</button>
+    `;
+    mountMenu(menu, x, y);
+
+    menu.querySelector('[data-play-playlist]')?.addEventListener('click', async () => {
+      closeMenu();
+      // Re-read at click time — the playlist object passed in was captured
+      // when the view rendered and may be stale by now.
+      const [allPlaylists, allTracks] = await Promise.all([
+        window.Musik?.library?.getPlaylists?.(),
+        window.Musik?.library?.getTracks?.(),
+      ]);
+      const fresh = (allPlaylists ?? []).find((p) => p.id === playlist.id) ?? playlist;
+      const list = (fresh.trackIds || [])
+        .map((id) => (allTracks ?? []).find((t) => t.filePath === id))
+        .filter(Boolean);
+      if (list.length && window.MusikPlayerUI) {
+        window.MusikPlayerUI.playQueue?.(list) ?? window.MusikPlayerUI.loadTrack(list[0]);
+      }
+    });
+
+    menu.querySelector('[data-rename-playlist]')?.addEventListener('click', async () => {
+      closeMenu();
+      const newName = await window.MusikDialog?.prompt?.('Rename playlist:', playlist.name);
+      if (newName === null || newName === undefined) return;
+      await window.Musik?.library?.renamePlaylist?.(playlist.id, newName);
+      opts.onChange?.();
+    });
+
+    // Deletes the playlist only — its tracks stay in the library.
+    menu.querySelector('[data-delete-playlist]')?.addEventListener('click', async () => {
+      closeMenu();
+      const ok = await window.MusikDialog?.confirm?.(`Delete "${playlist.name}"? Its tracks stay in your library.`);
+      if (!ok) return;
+      await window.Musik?.library?.deletePlaylist?.(playlist.id);
+      opts.onChange?.();
+    });
+  }
+
+  function attachTrack(el, track, opts) {
+    if (!el) return;
+    el.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      showTrackMenu(e.clientX, e.clientY, track, opts);
+    });
+  }
+
+  function attachPlaylist(el, playlist, opts) {
+    if (!el) return;
+    el.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      showPlaylistMenu(e.clientX, e.clientY, playlist, opts);
+    });
+  }
+
+  window.MusikContextMenu = { attachTrack, attachPlaylist };
 })();
 
 // ---------------------------------------------------------------------------

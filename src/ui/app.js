@@ -88,9 +88,6 @@
           </svg>
         </span>
         <span class="logo-text-wrap">Musik</span>
-        <button class="sidebar-collapse-btn" id="sidebar-collapse-btn" title="Icon-only sidebar">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M15 6l-6 6 6 6"/></svg>
-        </button>
         <button class="sidebar-pin-btn" id="sidebar-pin-btn" title="Pin sidebar open">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
             <rect x="3" y="4" width="18" height="16" rx="3"/>
@@ -100,6 +97,12 @@
         </button>
       </div>
       <div id="nav-links"></div>
+      <div id="sidebar-footer">
+        <button class="sidebar-collapse-btn" id="sidebar-collapse-btn" title="Icon-only sidebar">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M15 6l-6 6 6 6"/></svg>
+          <span class="nav-text">Collapse</span>
+        </button>
+      </div>
       <div class="sidebar-resize-handle" id="sidebar-resize-handle"></div>
     `;
 
@@ -699,8 +702,12 @@
     const savedWidth = localStorage.getItem('sidebarWidth');
     if (savedWidth) document.documentElement.style.setProperty('--sidebar-width-expanded', savedWidth);
 
-    handle.addEventListener('mousedown', (e) => {
+    // Pointer capture keeps :hover pinned to the handle (and so #sidebar)
+    // for the whole drag, so overshooting the rail's edge can't drop the
+    // hover-expanded state mid-resize in dynamic mode.
+    handle.addEventListener('pointerdown', (e) => {
       e.preventDefault();
+      handle.setPointerCapture(e.pointerId);
       handle.classList.add('is-dragging');
       document.body.classList.add('sidebar-resizing');
 
@@ -712,14 +719,16 @@
       const onUp = () => {
         handle.classList.remove('is-dragging');
         document.body.classList.remove('sidebar-resizing');
-        document.removeEventListener('mousemove', onMove);
-        document.removeEventListener('mouseup', onUp);
+        handle.removeEventListener('pointermove', onMove);
+        handle.removeEventListener('pointerup', onUp);
+        handle.removeEventListener('pointercancel', onUp);
         const finalWidth = document.documentElement.style.getPropertyValue('--sidebar-width-expanded');
         if (finalWidth) localStorage.setItem('sidebarWidth', finalWidth.trim());
       };
 
-      document.addEventListener('mousemove', onMove);
-      document.addEventListener('mouseup', onUp);
+      handle.addEventListener('pointermove', onMove);
+      handle.addEventListener('pointerup', onUp);
+      handle.addEventListener('pointercancel', onUp);
     });
   }
 

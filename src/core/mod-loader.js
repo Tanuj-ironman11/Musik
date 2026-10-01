@@ -16,7 +16,10 @@ function configPath() {
 function readConfig() {
   try {
     const p = configPath();
-    if (fs.existsSync(p)) return JSON.parse(fs.readFileSync(p, 'utf-8'));
+    if (fs.existsSync(p)) {
+      const parsed = JSON.parse(fs.readFileSync(p, 'utf-8'));
+      if (parsed && typeof parsed.enabled === 'object') return parsed;
+    }
   } catch (_) {}
   return { enabled: {} };
 }
@@ -27,10 +30,10 @@ function writeConfig(config) {
   } catch (_) {}
 }
 
-function init(userDataPath) {
-  modsDir = path.join(userDataPath, '..', 'musik-mods');
+function init(userDataPath, isPackaged = false) {
+  modsDir = path.join(userDataPath, 'mods');
   const devModsDir = path.join(__dirname, '..', '..', 'mods');
-  if (fs.existsSync(devModsDir)) modsDir = devModsDir;
+  if (!isPackaged && fs.existsSync(devModsDir)) modsDir = devModsDir;
   if (!fs.existsSync(modsDir)) fs.mkdirSync(modsDir, { recursive: true });
   return modsDir;
 }
@@ -86,15 +89,16 @@ function setModEnabled(modId, enabled) {
   return true;
 }
 
-function getModFile(modName, fileName) {
+function getModFile(modName, relativePath) {
   if (!modsDir) return null;
 
   const safeModName = path.basename(modName);
-  const safeFileName = path.basename(fileName);
-  const filePath = path.join(modsDir, safeModName, safeFileName);
+  const modFolder = path.resolve(modsDir, safeModName);
+  const filePath = path.resolve(modFolder, relativePath);
 
-  if (!filePath.startsWith(modsDir)) return null;
-  if (!fs.existsSync(filePath)) return null;
+  // Strictly prevent escaping the mod's specific directory
+  if (!filePath.startsWith(modFolder + path.sep)) return null;
+  if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) return null;
 
   return fs.readFileSync(filePath, 'utf-8');
 }
