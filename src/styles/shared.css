@@ -1,11 +1,9 @@
 /* src/styles/shared.css
  *
- * A collection of small, reusable UI components that don't have an obvious
- * single-view home. Uses tokens from tokens.css so both stay
- * visually consistent with the rest of the glass system.
+ * Small reusable UI components that don't have a single-view home
+ * (marquee, create-playlist modal). Uses tokens from tokens.css so they
+ * stay consistent with the glass system.
  */
-
-/* ── Marquee ─────────────────────────────────────────────────────── */
 
 .marquee {
   display: block;
@@ -26,17 +24,15 @@
     #000 calc(100% - 12px),
     transparent 100%
   );
-  /* This mask, combined with sitting inside an ancestor that has
-     backdrop-filter (the player bar), is a known rough combo in
-     Chromium — .marquee-track below already isolates itself onto its
-     own layer, but the mask lives one level up, on this element, and
-     was never given the same isolation. Without it, an actively-
-     scrolling long title/artist can keep disturbing the blur for as
-     long as it's on screen, not just on the track-change moment. */
+  /* A mask inside an ancestor with backdrop-filter (the player bar) is a
+     rough combo in Chromium. .marquee-track already isolates itself onto its
+     own layer, but the mask lives one level up on this element, so it needs
+     the same isolation. Without it a scrolling long title/artist keeps
+     disturbing the blur for as long as it's on screen. */
   transform: translateZ(0);
 }
 
-/* Static (non-overflowing) state — no mask needed, avoids clipping short text */
+/* Static (non-overflowing) state: no mask needed, avoids clipping short text */
 .marquee:not(.is-marquee-active) {
   mask-image: none;
   -webkit-mask-image: none;
@@ -58,7 +54,7 @@
   margin-left: var(--marquee-gap, 48px);
 }
 
-/* Respect reduced-motion — freeze on first copy, no scroll */
+/* Respect reduced motion: freeze on the first copy, no scroll */
 @media (prefers-reduced-motion: reduce) {
   .marquee.is-marquee-active .marquee-track {
     animation: none !important;
@@ -69,14 +65,10 @@
   }
 }
 
-/* ── Create-playlist modal ───────────────────────────────────────── */
-/* Rework: was a single flat rgba(255,255,255,0.06) slab with a solid
-   border — reads as generic 2015-era glassmorphism, not the acrylic/
-   liquid-glass blend from the UI direction (20% Acrylic noise, 40%
-   frosted base, 40% liquid-glass silhouette/layering). Now built on
-   the elevated glass tier with a gradient-ring border and a real
-   feTurbulence noise layer, matching the treatment used elsewhere
-   (see core.css glass tiers). */
+/* Create-playlist modal. Built on the elevated glass tier with a gradient-ring
+   border and a feTurbulence noise layer, per the UI direction (20% Acrylic
+   noise, 40% frosted base, 40% liquid-glass silhouette/layering). Same
+   treatment as the glass tiers in tokens.css. */
 
 .playlist-create-overlay {
   position: fixed;
@@ -113,8 +105,8 @@
   animation: playlist-create-modal-in 0.34s var(--ease-bounce) both;
 }
 
-/* Gradient-ring border — a soft diagonal sheen instead of a flat solid
-   line, the "liquid glass" edge treatment the brief calls for. */
+/* Gradient-ring border: a soft diagonal sheen instead of a flat solid line,
+   the liquid-glass edge treatment. */
 .playlist-create-modal::before {
   content: "";
   position: absolute;
@@ -135,18 +127,15 @@
   pointer-events: none;
 }
 
-/* Accent bloom + acrylic noise, combined in one layer so we're not
-   stacking extra pseudo-elements. Noise uses feTurbulence per the
-   UI-direction spec (20% Acrylic), blended with overlay so it reads
-   as grain, not a visible texture. */
-/* Third layer here is the same --glass-specular highlight the rest of
-   the glass system uses (tokens.css .glass-surface--elevated). Kept
-   static rather than the drifting version elevated surfaces get — this
-   element's background is already a 3-layer stack (bloom + noise +
-   specular), and animating background-position only on one of those
-   layers needs its own dedicated multi-value keyframe matched to this
-   exact layer count. Not worth the fragility for one modal; static
-   still reads noticeably richer than before. */
+/* Accent bloom plus acrylic noise in one layer, so there are no extra
+   pseudo-elements stacked. The noise is feTurbulence (20% Acrylic in the UI
+   direction), blended with soft-light so it reads as grain, not a texture. */
+/* Third layer is the same --glass-specular highlight the rest of the glass
+   system uses (.glass-surface--elevated in tokens.css). Kept static rather than
+   the drifting version: this background is already a 3-layer stack (bloom,
+   noise, specular), and animating one layer's background-position needs a
+   dedicated multi-value keyframe matched to this exact layer count. Not worth
+   the fragility for one modal. */
 .playlist-create-modal::after {
   content: "";
   position: absolute;
@@ -262,9 +251,8 @@
   transform: translateY(-3px) var(--anim-press, scale(0.98));
 }
 
-/* Soft top-left glass highlight — fades in on hover rather than sweeping
-   across, reads as light catching the glass instead of a loading-bar
-   shine gimmick. */
+/* Soft top-left glass highlight that fades in on hover instead of sweeping
+   across, so it reads as light catching the glass, not a loading-bar shine. */
 .playlist-create-option::after {
   content: "";
   position: absolute;

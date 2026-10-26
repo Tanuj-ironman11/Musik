@@ -5,12 +5,21 @@
 // Any view wires them with one call:
 //   window.MusikContextMenu.attachTrack(rowEl, track, opts)
 //   window.MusikContextMenu.attachPlaylist(cardEl, playlist, opts)
+//   window.MusikContextMenu.actions — the same actions without a menu (search panel)
 // opts (optional, both):
 //   onChange   — called after a menu action changed library data (removed a
 //                track, deleted/renamed a playlist), so the owning view can
 //                re-render itself.
 //   playlistId — attachTrack only: the playlist the row is being shown in.
 //                Adds "Remove from Playlist" to that row's menu.
+//   queueIndex — attachTrack only: the row's queue index (queue panel).
+//                Swaps Add to Queue for "Remove from Queue", Play Next moves
+//                the existing slot, and Play jumps within the queue.
+//   compact    — attachTrack only: small-window menu (miniplayer). Short
+//                item set, "Add to Playlist" opens in place with a Back row
+//                instead of a long list. Pair with queueIndex.
+//   onPlay     — attachTrack + compact only: replaces the Play action (the
+//                miniplayer has no player of its own, it sends a command).
 //
 // Simplification: single-level menu (playlist names listed directly)
 // rather than a nested "Add to Playlist ▸" submenu — avoids viewport-edge
@@ -35,7 +44,22 @@
   }
 
   function onKeydown(e) {
-    if (e.key === 'Escape') closeMenu();
+    if (e.key === 'Escape') { closeMenu(); return; }
+    if (!openMenuEl) return;
+    const items = [...openMenuEl.querySelectorAll('.ctx-menu-item')];
+    if (!items.length) return;
+    const i = items.indexOf(document.activeElement);
+    let next = null;
+    if (e.key === 'ArrowDown') next = items[(i + 1) % items.length];
+    else if (e.key === 'ArrowUp') next = items[i < 0 ? items.length - 1 : (i - 1 + items.length) % items.length];
+    else if (e.key === 'Home') next = items[0];
+    else if (e.key === 'End') next = items[items.length - 1];
+    else if (e.key === 'ArrowLeft') { openMenuEl.querySelector('[data-back]')?.click(); return; }
+    else if (e.key === 'ArrowRight' && document.activeElement?.matches?.('[data-open-playlists]')) {
+      document.activeElement.click();
+      return;
+    }
+    if (next) { e.preventDefault(); next.focus(); }
   }
 
   function clampToViewport(x, y, width, height) {
@@ -71,16 +95,219 @@
     }, 0);
   }
 
+  // Other queue views (miniplayer) only hear about edits made here if the
+  // event round-trips through main, same as queue-panel's own notify.
+  function notifyQueueChanged() {
+    const ev = window.Musik?.events;
+    if (ev?.push) ev.push('queueupdate');
+    else ev?.emit?.('queueupdate');
+  }
+
+  // Appends to the queue; with playNext, moves the new track to sit right
+  // after the current one. add() returns the queue in display order with
+  // isCurrent/queueIndex set; the new track's queueIndex is always the last
+  // slot. Works with shuffle on too: move() acts on the shuffle order there.
+  async function enqueue(track, playNext) {
+    const q = window.Musik?.queue;
+    // Same fail-loud rule as Remove from Library: a missing bridge method
+    // shouldn't look like a successful add.
+    if (typeof q?.add !== 'function') {
+      window.MusikDialog?.alert?.('Queue isn\'t available in this build.');
+      return;
+    }
+    // loadTrack() never touches the queue, so a song played straight from
+    // Home/Library isn't in it. add() onto an empty queue marks the new
+    // track current, and next() then skips past it. Seed the playing track
+    // first so the queue starts from what's actually playing.
+    const playing = window.MusikPlayerUI?.getCurrentTrackData?.();
+    if (playing && typeof q.getQueue === 'function' && !(await q.getQueue())?.length) {
+      await q.add(playing);
+    }
+    const after = await q.add(track);
+    if (playNext && Array.isArray(after) && typeof q.move === 'function') {
+      const newIdx = after.length - 1;
+      const cur = after.findIndex((t) => t.isCurrent);
+      const target = cur > -1 ? after[cur + 1] : null;
+      if (target && target.queueIndex !== newIdx) await q.move(newIdx, target.queueIndex);
+    }
+    notifyQueueChanged();
+  }
+
+  // In-queue "Play Next": moves an existing slot to sit right after the
+  // current one. Positions are display order (shuffle-aware); move() takes
+  // queue indices, so the target slot's queueIndex is looked up. A slot
+  // before the current one shifts the current left when it's pulled out,
+  // hence the from < cur case.
+  async function moveNextInQueue(track, queueIndex) {
+    const q = window.Musik?.queue;
+    if (typeof q?.getQueue !== 'function' || typeof q.move !== 'function') {
+      window.MusikDialog?.alert?.('Queue isn\'t available in this build.');
+      return;
+    }
+    const live = (await q.getQueue()) ?? [];
+    const from = live.findIndex((t) => t.queueIndex === queueIndex && t.filePath === track.filePath);
+    const cur = live.findIndex((t) => t.isCurrent);
+    if (from === -1 || cur === -1 || from === cur) return;
+    const to = from < cur ? cur : cur + 1;
+    if (to !== from) await q.move(queueIndex, live[to].queueIndex);
+    notifyQueueChanged();
+  }
+
+  // Shared by the track/playlist menus below and the search actions panel
+  // (exported as MusikContextMenu.actions).
+  async function playTrack(track, queueIndex) {
+    // From the queue, jump within it (same as clicking the row) so the
+    // queue's current slot follows what's actually playing.
+    const target = Number.isInteger(queueIndex)
+      ? ((await window.Musik?.queue?.jumpTo?.(queueIndex)) ?? track)
+      : track;
+    if (window.MusikPlayerUI) await window.MusikPlayerUI.loadTrack(target);
+  }
+
+  function addToPlaylist(playlistId, track) {
+    return window.Musik?.library?.addTrack?.(playlistId, track.filePath);
+  }
+
+  async function newPlaylistWith(track) {
+    const name = await window.MusikDialog?.prompt?.('New playlist name:');
+    if (name === null || name === undefined) return;
+    const created = await window.Musik?.library?.createPlaylist?.(name);
+    if (created) await window.Musik?.library?.addTrack?.(created.id, track.filePath);
+  }
+
+  // NOTE: this refreshes art for the CURRENT SESSION only — broadcasts an
+  // artupdate so accent-extractor/player-bar/etc pick it up live, but does
+  // NOT persist to musik-library.json. There's no library:update-art IPC
+  // channel yet. Restarting the app reverts to whatever was embedded/cached
+  // originally. Flagging rather than pretending this is a permanent fix.
+  async function refreshArt(track) {
+    let artData = await window.Musik?.art?.extract?.(track.filePath);
+    if (!artData && track.artist && track.album) {
+      artData = await window.Musik?.art?.fetchOnline?.({ artist: track.artist, album: track.album });
+    }
+    if (artData) {
+      window.Musik?.events?.emit('artupdate', artData);
+    } else {
+      window.MusikDialog?.alert?.('No cover art found for this track.');
+    }
+  }
+
+  async function playPlaylist(playlist) {
+    // Re-read at call time — the playlist object passed in was captured
+    // when the view rendered and may be stale by now.
+    const [allPlaylists, allTracks] = await Promise.all([
+      window.Musik?.library?.getPlaylists?.(),
+      window.Musik?.library?.getTracks?.(),
+    ]);
+    const fresh = (allPlaylists ?? []).find((p) => p.id === playlist.id) ?? playlist;
+    const list = (fresh.trackIds || [])
+      .map((id) => (allTracks ?? []).find((t) => t.filePath === id))
+      .filter(Boolean);
+    if (list.length && window.MusikPlayerUI) {
+      window.MusikPlayerUI.playQueue?.(list) ?? window.MusikPlayerUI.loadTrack(list[0]);
+    }
+  }
+
+  // Miniplayer-sized track menu. Separate from showTrackMenu on purpose: a
+  // ~300px window can't fit that menu's full item set, and "Add to Playlist"
+  // can't be a flyout, so it swaps the menu's contents in place instead.
+  async function showCompactTrackMenu(x, y, track, opts = {}) {
+    closeMenu();
+    if (!track?.filePath) return;
+
+    const menu = document.createElement('div');
+    menu.className = 'ctx-menu ctx-menu--compact glass-surface--elevated';
+    menu.setAttribute('role', 'menu');
+
+    const chevronRight = '<svg class="ctx-menu-chevron" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg>';
+    const chevronLeft = '<svg class="ctx-menu-chevron" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 6l-6 6 6 6"/></svg>';
+
+    // Content swaps change the menu's height, so re-clamp after each.
+    const reposition = () => {
+      const r = menu.getBoundingClientRect();
+      const c = clampToViewport(parseFloat(menu.style.left), parseFloat(menu.style.top), r.width, r.height);
+      menu.style.left = `${c.x}px`;
+      menu.style.top = `${c.y}px`;
+    };
+
+    const showMain = () => {
+      menu.innerHTML = `
+        <button class="ctx-menu-item" role="menuitem" data-play>Play</button>
+        <button class="ctx-menu-item" role="menuitem" data-play-next>Play Next</button>
+        <div class="ctx-menu-divider"></div>
+        <button class="ctx-menu-item ctx-menu-item--drill" role="menuitem" data-open-playlists><span>Add to Playlist</span>${chevronRight}</button>
+        <div class="ctx-menu-divider"></div>
+        <button class="ctx-menu-item" role="menuitem" data-remove-from-queue>Remove from Queue</button>
+      `;
+
+      menu.querySelector('[data-play]').addEventListener('click', async () => {
+        closeMenu();
+        if (opts.onPlay) { opts.onPlay(); return; }
+        const target = Number.isInteger(opts.queueIndex)
+          ? ((await window.Musik?.queue?.jumpTo?.(opts.queueIndex)) ?? track)
+          : track;
+        if (window.MusikPlayerUI) await window.MusikPlayerUI.loadTrack(target);
+      });
+
+      menu.querySelector('[data-play-next]').addEventListener('click', () => {
+        closeMenu();
+        if (Number.isInteger(opts.queueIndex)) moveNextInQueue(track, opts.queueIndex);
+        else enqueue(track, true);
+      });
+
+      menu.querySelector('[data-open-playlists]').addEventListener('click', showPlaylists);
+
+      menu.querySelector('[data-remove-from-queue]').addEventListener('click', async () => {
+        closeMenu();
+        const live = (await window.Musik?.queue?.getQueue?.()) ?? [];
+        const hit = live.find((t) => t.queueIndex === opts.queueIndex && t.filePath === track.filePath);
+        if (hit) await window.Musik.queue.remove(opts.queueIndex);
+        notifyQueueChanged();
+      });
+
+      reposition();
+      menu.querySelector('.ctx-menu-item')?.focus({ preventScroll: true });
+    };
+
+    const showPlaylists = async () => {
+      const playlists = (await window.Musik?.library?.getPlaylists?.()) ?? [];
+      menu.innerHTML = `
+        <button class="ctx-menu-item ctx-menu-back" role="menuitem" data-back>${chevronLeft}<span>Add to Playlist</span></button>
+        <div class="ctx-menu-divider"></div>
+        ${playlists.length
+          ? playlists.map((p) => `<button class="ctx-menu-item" role="menuitem" data-playlist-id="${escapeAttr(p.id)}">${escapeHTML(p.name)}</button>`).join('')
+          : `<div class="ctx-menu-empty">No playlists yet</div>`}
+      `;
+
+      menu.querySelector('[data-back]').addEventListener('click', showMain);
+      menu.querySelectorAll('[data-playlist-id]').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          await window.Musik?.library?.addTrack?.(btn.dataset.playlistId, track.filePath);
+          closeMenu();
+        });
+      });
+
+      reposition();
+      (menu.querySelector('[data-playlist-id]') ?? menu.querySelector('.ctx-menu-item'))?.focus({ preventScroll: true });
+    };
+
+    mountMenu(menu, x, y);
+    showMain();
+  }
+
   async function showTrackMenu(x, y, track, opts = {}) {
     closeMenu();
     if (!track?.filePath) return;
 
     const playlists = (await window.Musik?.library?.getPlaylists?.()) ?? [];
+    const inQueue = Number.isInteger(opts.queueIndex);
 
     const menu = document.createElement('div');
     menu.className = 'ctx-menu glass-surface--elevated';
     menu.innerHTML = `
       <button class="ctx-menu-item" data-play-track>Play</button>
+      <button class="ctx-menu-item" data-play-next>Play Next</button>
+      ${inQueue ? '' : `<button class="ctx-menu-item" data-add-to-queue>Add to Queue</button>`}
       <div class="ctx-menu-divider"></div>
       <div class="ctx-menu-label">Add to Playlist</div>
       ${playlists.length
@@ -91,6 +318,7 @@
       <div class="ctx-menu-divider"></div>
       <button class="ctx-menu-item" data-refresh-art>Refresh Cover Art</button>
       <div class="ctx-menu-divider"></div>
+      ${inQueue ? `<button class="ctx-menu-item" data-remove-from-queue>Remove from Queue</button>` : ''}
       ${opts.playlistId ? `<button class="ctx-menu-item" data-remove-from-playlist>Remove from Playlist</button>` : ''}
       <button class="ctx-menu-item ctx-menu-item--danger" data-remove-from-library>Remove from Library</button>
     `;
@@ -98,40 +326,45 @@
 
     menu.querySelector('[data-play-track]')?.addEventListener('click', async () => {
       closeMenu();
-      if (window.MusikPlayerUI) await window.MusikPlayerUI.loadTrack(track);
+      await playTrack(track, opts.queueIndex);
+    });
+
+    menu.querySelector('[data-play-next]')?.addEventListener('click', () => {
+      closeMenu();
+      if (inQueue) moveNextInQueue(track, opts.queueIndex);
+      else enqueue(track, true);
+    });
+
+    menu.querySelector('[data-add-to-queue]')?.addEventListener('click', () => {
+      closeMenu();
+      enqueue(track, false);
+    });
+
+    // Re-checks the slot at click time: the index was captured when the
+    // panel rendered, and removing by a stale index would drop the wrong song.
+    menu.querySelector('[data-remove-from-queue]')?.addEventListener('click', async () => {
+      closeMenu();
+      const live = (await window.Musik?.queue?.getQueue?.()) ?? [];
+      const hit = live.find((t) => t.queueIndex === opts.queueIndex && t.filePath === track.filePath);
+      if (hit) await window.Musik.queue.remove(opts.queueIndex);
+      notifyQueueChanged();
     });
 
     menu.querySelectorAll('[data-playlist-id]').forEach((btn) => {
       btn.addEventListener('click', async () => {
-        await window.Musik?.library?.addTrack?.(btn.dataset.playlistId, track.filePath);
+        await addToPlaylist(btn.dataset.playlistId, track);
         closeMenu();
       });
     });
 
     menu.querySelector('[data-new-playlist]')?.addEventListener('click', async () => {
       closeMenu();
-      const name = await window.MusikDialog?.prompt?.('New playlist name:');
-      if (name === null || name === undefined) return;
-      const created = await window.Musik?.library?.createPlaylist?.(name);
-      if (created) await window.Musik?.library?.addTrack?.(created.id, track.filePath);
+      await newPlaylistWith(track);
     });
 
-    // NOTE: this refreshes art for the CURRENT SESSION only — broadcasts an
-    // artupdate so accent-extractor/player-bar/etc pick it up live, but does
-    // NOT persist to musik-library.json. There's no library:update-art IPC
-    // channel yet. Restarting the app reverts to whatever was embedded/cached
-    // originally. Flagging rather than pretending this is a permanent fix.
     menu.querySelector('[data-refresh-art]')?.addEventListener('click', async () => {
       closeMenu();
-      let artData = await window.Musik?.art?.extract?.(track.filePath);
-      if (!artData && track.artist && track.album) {
-        artData = await window.Musik?.art?.fetchOnline?.({ artist: track.artist, album: track.album });
-      }
-      if (artData) {
-        window.Musik?.events?.emit('artupdate', artData);
-      } else {
-        window.MusikDialog?.alert?.('No cover art found for this track.');
-      }
+      await refreshArt(track);
     });
 
     menu.querySelector('[data-remove-from-playlist]')?.addEventListener('click', async () => {
@@ -150,7 +383,10 @@
         window.MusikDialog?.alert?.('Remove from Library isn\'t available in this build.');
         return;
       }
-      const ok = await window.MusikDialog?.confirm?.(`Remove "${track.title}" from Musik? The file stays on your computer.`);
+      const ok = await window.MusikDialog?.confirm?.(`Remove "${track.title}" from Musik?`, {
+        detail: 'The file stays on your computer.',
+        confirmLabel: 'Remove',
+      });
       if (!ok) return;
       await window.Musik.library.removeTracks([track.filePath]);
       opts.onChange?.();
@@ -174,19 +410,7 @@
 
     menu.querySelector('[data-play-playlist]')?.addEventListener('click', async () => {
       closeMenu();
-      // Re-read at click time — the playlist object passed in was captured
-      // when the view rendered and may be stale by now.
-      const [allPlaylists, allTracks] = await Promise.all([
-        window.Musik?.library?.getPlaylists?.(),
-        window.Musik?.library?.getTracks?.(),
-      ]);
-      const fresh = (allPlaylists ?? []).find((p) => p.id === playlist.id) ?? playlist;
-      const list = (fresh.trackIds || [])
-        .map((id) => (allTracks ?? []).find((t) => t.filePath === id))
-        .filter(Boolean);
-      if (list.length && window.MusikPlayerUI) {
-        window.MusikPlayerUI.playQueue?.(list) ?? window.MusikPlayerUI.loadTrack(list[0]);
-      }
+      await playPlaylist(playlist);
     });
 
     menu.querySelector('[data-rename-playlist]')?.addEventListener('click', async () => {
@@ -200,7 +424,10 @@
     // Deletes the playlist only — its tracks stay in the library.
     menu.querySelector('[data-delete-playlist]')?.addEventListener('click', async () => {
       closeMenu();
-      const ok = await window.MusikDialog?.confirm?.(`Delete "${playlist.name}"? Its tracks stay in your library.`);
+      const ok = await window.MusikDialog?.confirm?.(`Delete "${playlist.name}"?`, {
+        detail: 'Its tracks stay in your library.',
+        confirmLabel: 'Delete',
+      });
       if (!ok) return;
       await window.Musik?.library?.deletePlaylist?.(playlist.id);
       opts.onChange?.();
@@ -211,7 +438,7 @@
     if (!el) return;
     el.addEventListener('contextmenu', (e) => {
       e.preventDefault();
-      showTrackMenu(e.clientX, e.clientY, track, opts);
+      (opts?.compact ? showCompactTrackMenu : showTrackMenu)(e.clientX, e.clientY, track, opts);
     });
   }
 
@@ -223,7 +450,11 @@
     });
   }
 
-  window.MusikContextMenu = { attachTrack, attachPlaylist };
+  window.MusikContextMenu = {
+    attachTrack,
+    attachPlaylist,
+    actions: { playTrack, enqueue, addToPlaylist, newPlaylistWith, refreshArt, playPlaylist },
+  };
 })();
 
 // ---------------------------------------------------------------------------

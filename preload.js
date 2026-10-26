@@ -136,6 +136,9 @@ const Musik = {
     setSensitivity: (value) => ipcRenderer.invoke('game-duck:set-sensitivity', value),
     setDuckCeiling: (value) => ipcRenderer.invoke('game-duck:set-duck-ceiling', value),
     setMaxDuck: (value) => ipcRenderer.invoke('game-duck:set-max-duck', value),
+    // NEW — 'gaming' | 'meetings' | 'movies' | 'custom'. Moving any manual
+    // slider switches the preset to 'custom' on the main side.
+    setPreset: (name) => ipcRenderer.invoke('game-duck:set-preset', name),
     setManualOverride: (value) => ipcRenderer.invoke('game-duck:set-manual-override', value),
     setTrackLoudness: (lufs) => ipcRenderer.invoke('game-duck:set-track-loudness', lufs),
     // NEW — lets Settings show what's currently producing audio, and let
@@ -167,7 +170,7 @@ const Musik = {
 
   // NEW — exposes main.js's existing 'net:fetch' proxy (bypasses CORS, allows
   // User-Agent/auth headers). Takes ONE object: { url, method, headers, body,
-  // timeout }. Resolves { ok, status, statusText, headers, text, error } —
+  // timeout }. Resolves { ok, status, statusText, headers, cookies, text, error } —
   // NOT a fetch Response (no .json()); parse `text` yourself.
   net: {
     fetch: (opts) => ipcRenderer.invoke('net:fetch', opts),

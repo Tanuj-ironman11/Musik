@@ -129,16 +129,6 @@
       svg: `<svg class="sidebar-icon" viewBox="0 0 24 24"><path d="M12 3l9 8h-3v9h-5v-6H11v6H6v-9H3l9-8z"/></svg>`,
     },
     {
-      id: 'search',
-      label: 'Search',
-      action: 'open-search',
-      title: 'Search (Ctrl+K)',
-      // Not a route — doesn't navigate, opens the search overlay instead
-      // (see wireSearchTrigger below). User can drag it anywhere via the
-      // reorder system like any other nav item.
-      svg: `<svg class="sidebar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="7"/><line x1="19.5" y1="19.5" x2="16.6" y2="16.6"/></svg>`,
-    },
-    {
       id: 'library',
       label: 'Library',
       href: '#/library',
@@ -182,7 +172,8 @@
   function getNavHidden() {
     let saved = null;
     try { saved = JSON.parse(localStorage.getItem(NAV_HIDDEN_KEY) || 'null'); } catch (_) {}
-    return Array.isArray(saved) ? saved : [];
+    // Skip ids that no longer exist (removed items), or "+N hidden" counts something it can't restore.
+    return Array.isArray(saved) ? saved.filter((id) => NAV_ITEMS.some((i) => i.id === id)) : [];
   }
   function setNavHidden(hidden) {
     localStorage.setItem(NAV_HIDDEN_KEY, JSON.stringify(hidden));
@@ -195,11 +186,6 @@
   }
 
   function navLinkHTML(item) {
-    if (item.action) {
-      // Action items (currently just search) don't navigate, so they're
-      // buttons, not anchors — same .nav-link class for shared styling.
-      return `<button type="button" class="nav-link nav-link--action" data-view="${item.id}" data-action="${item.action}" title="${escapeHTML(item.title)}" draggable="true">${item.svg}<span class="nav-text">${escapeHTML(item.label)}</span><span class="nav-shortcut-hint">CTRL K</span></button>`;
-    }
     return `<a class="nav-link" data-view="${item.id}" href="${item.href}" title="${escapeHTML(item.title)}" draggable="true">${item.svg}<span class="nav-text">${escapeHTML(item.label)}</span></a>`;
   }
 
@@ -224,46 +210,8 @@
     wireNavLinkDrag(container);
     wireNavLinkContextMenu();
     wireHiddenToggle();
-    wireSearchTrigger(container);
     initNavIconKicks();
     setActiveNav(currentRoute().view);
-    applyIconOnlyHintVisibility(getIconOnly());
-  }
-
-  // The search nav item is the only .nav-link with a 3rd child
-  // (.nav-shortcut-hint, the "CTRL K" pill) alongside icon + .nav-text.
-  // In icon-only mode this button needs explicit flex-centering to keep
-  // its icon centered as a compact square — inline styles are cleared
-  // back to '' when not collapsed so navigation.css's normal icon+label
-  // row layout applies.
-  function applyIconOnlySearchFix(iconOnly) {
-    const btn = document.querySelector('.nav-link--action[data-action="open-search"]');
-    if (!btn) return;
-    btn.style.display = iconOnly ? 'flex' : '';
-    btn.style.alignItems = iconOnly ? 'center' : '';
-    btn.style.justifyContent = iconOnly ? 'center' : '';
-  }
-
-  function applyIconOnlyHintVisibility(iconOnly) {
-    document.querySelectorAll('.nav-shortcut-hint').forEach((el) => {
-      el.style.display = iconOnly ? 'none' : '';
-    });
-    applyIconOnlySearchFix(iconOnly);
-  }
-
-  // ── Search trigger ── opens the overlay in search.js, doesn't route
-  function wireSearchTrigger(container) {
-    const btn = container.querySelector('.nav-link--action[data-action="open-search"]');
-    if (!btn) return;
-
-    btn.addEventListener('click', (e) => {
-      e.preventDefault();
-      btn.classList.remove('search-trigger-kick');
-      void btn.offsetWidth;
-      btn.classList.add('search-trigger-kick');
-      setTimeout(() => btn.classList.remove('search-trigger-kick'), 200);
-      window.MusikSearch?.open({ trigger: btn, originRect: btn.getBoundingClientRect() });
-    });
   }
 
   // ── Drag-to-reorder ── native HTML5 drag-and-drop, no library.
@@ -461,7 +409,6 @@
   function setIconOnly(value) {
     localStorage.setItem(ICON_ONLY_KEY, value ? '1' : '0');
     document.body.classList.toggle('sidebar-icon-only', value);
-    applyIconOnlyHintVisibility(value);
   }
 
   function initSidebarCollapse() {

@@ -1,31 +1,9 @@
 // native/wasapi-loopback/addon.cc
 //
-// v2 — per-process session metering (replaces raw system loopback).
-//
-// WHY THIS CHANGED FROM v1:
-// v1 used AUDCLNT_STREAMFLAGS_LOOPBACK on the default render device,
-// which captures the entire system mix — every app's audio summed
-// together, including Musik's own output. That caused a feedback
-// problem: when Musik played louder, the meter read "system is loud"
-// and ducked Musik itself, which is never what anyone wants and reads
-// as "the song got quieter but the game didn't get louder."
-//
-// v2 uses IAudioSessionManager2 to enumerate individual per-process
-// audio sessions and reads each session's own peak meter via
-// IAudioMeterInformation::GetPeakValue(). This is the API Windows
-// exposes specifically so you don't have to demix raw PCM yourself.
-// Musik's own process is always excluded by PID. Callers can also pass
-// an explicit allow-list of PIDs (e.g. "only duck for Forza") — if
-// omitted, the max peak across all other active sessions is used.
-//
-// Threading model: unchanged in spirit from v1. Start() spins a
-// dedicated background thread that owns COM for its lifetime and
-// re-enumerates sessions on every poll tick (session lists change as
-// apps open/close audio streams — re-enumerating is cheap compared to
-// raw buffer capture, so this is fine at ~30ms intervals). The smoothed
-// level is shared via std::atomic<double>; excluded/target PID sets are
-// guarded by a small mutex since they change rarely (once per call from
-// JS) but are read every tick.
+// Per-process audio session metering (IAudioSessionManager2 +
+// IAudioMeterInformation). Musik's own PID is always excluded so it can't
+// duck itself. A background thread owns COM; the session list is rebuilt
+// every SESSION_REFRESH_MS and the cached meters are read every METER_POLL_MS.
 
 #include <napi.h>
 #include <windows.h>
@@ -40,6 +18,11 @@
 #include <unordered_set>
 #include <string>
 #include <cmath>
+#include <chrono>
+
+#ifndef CREATE_WAITABLE_TIMER_HIGH_RESOLUTION
+#define CREATE_WAITABLE_TIMER_HIGH_RESOLUTION 0x00000002
+#endif
 
 namespace {
 
@@ -49,18 +32,19 @@ std::atomic<double> g_level{0.0};
 
 std::mutex g_configMutex;
 std::unordered_set<DWORD> g_excludedPids;   // always includes our own PID
-std::unordered_set<DWORD> g_targetPids;     // empty == "consider everything not excluded"
+std::unordered_set<DWORD> g_targetPids;     // empty == no target filter
 
-// Same ballistics as v1 — fast attack, slow decay, so the level reads
-// as musical rather than jittering every ~30ms poll.
-constexpr double ATTACK = 0.6;
-constexpr double DECAY = 0.05;
+// Fast attack, slow decay. Time constants in ms, independent of poll rate.
+constexpr double ATTACK_MS = 33.0;
+constexpr double DECAY_MS = 585.0;
+constexpr DWORD METER_POLL_MS = 8;
+constexpr int SESSION_REFRESH_MS = 100;
 
-void UpdateLevel(double rawLevel) {
+void UpdateLevel(double rawLevel, double dtMs) {
   double prev = g_level.load(std::memory_order_relaxed);
-  double coeff = (rawLevel > prev) ? ATTACK : DECAY;
-  double next = prev + (rawLevel - prev) * coeff;
-  g_level.store(next, std::memory_order_relaxed);
+  double tau = (rawLevel > prev) ? ATTACK_MS : DECAY_MS;
+  double coeff = 1.0 - std::exp(-dtMs / tau);
+  g_level.store(prev + (rawLevel - prev) * coeff, std::memory_order_relaxed);
 }
 
 std::string GetProcessName(DWORD pid) {
@@ -84,10 +68,8 @@ std::string GetProcessName(DWORD pid) {
   return result;
 }
 
-// One pass over current sessions. If `collect` is non-null, fills it with
-// every active session found (used by the synchronous GetSessions() call).
-// Returns the max peak among sessions that pass the exclude/target filter
-// (used by the background polling loop).
+// One pass over active sessions. Fills `collect` if non-null (GetSessions);
+// returns the max peak among sessions passing the exclude/target filter.
 double PollSessionsOnce(IMMDeviceEnumerator* enumerator,
                          std::vector<std::pair<DWORD, std::pair<std::string, double>>>* collect) {
   IMMDevice* device = nullptr;
@@ -151,6 +133,87 @@ double PollSessionsOnce(IMMDeviceEnumerator* enumerator,
   return maxPeak;
 }
 
+// Meter interfaces for every session on the default output device. The
+// device/manager/enumerator stay alive until the next rebuild so meters stay valid.
+class SessionCache {
+ public:
+  ~SessionCache() { Clear(); }
+
+  void Clear() {
+    for (auto& e : entries_) {
+      if (e.meter) e.meter->Release();
+    }
+    entries_.clear();
+    if (sessionEnum_) { sessionEnum_->Release(); sessionEnum_ = nullptr; }
+    if (sessionManager_) { sessionManager_->Release(); sessionManager_ = nullptr; }
+    if (device_) { device_->Release(); device_ = nullptr; }
+  }
+
+  void Rebuild(IMMDeviceEnumerator* enumerator) {
+    Clear();
+    if (FAILED(enumerator->GetDefaultAudioEndpoint(eRender, eConsole, &device_))) { Clear(); return; }
+    if (FAILED(device_->Activate(__uuidof(IAudioSessionManager2), CLSCTX_ALL, nullptr, (void**)&sessionManager_))) { Clear(); return; }
+    if (FAILED(sessionManager_->GetSessionEnumerator(&sessionEnum_))) { Clear(); return; }
+
+    int count = 0;
+    if (FAILED(sessionEnum_->GetCount(&count))) { Clear(); return; }
+
+    for (int i = 0; i < count; i++) {
+      IAudioSessionControl* control = nullptr;
+      if (FAILED(sessionEnum_->GetSession(i, &control)) || !control) continue;
+
+      IAudioSessionControl2* control2 = nullptr;
+      if (SUCCEEDED(control->QueryInterface(__uuidof(IAudioSessionControl2), (void**)&control2)) && control2) {
+        DWORD pid = 0;
+        AudioSessionState state = AudioSessionStateInactive;
+        control2->GetProcessId(&pid);
+        // Inactive sessions are kept so a sound is caught the instant it starts.
+        if (SUCCEEDED(control2->GetState(&state)) && state != AudioSessionStateExpired) {
+          IAudioMeterInformation* meter = nullptr;
+          if (SUCCEEDED(control->QueryInterface(__uuidof(IAudioMeterInformation), (void**)&meter)) && meter) {
+            entries_.push_back({pid, meter});
+          }
+        }
+        control2->Release();
+      }
+      control->Release();
+    }
+  }
+
+  // Max peak across cached sessions that pass the exclude/target filter.
+  double MaxPeak() {
+    double maxPeak = 0.0;
+    std::lock_guard<std::mutex> lock(g_configMutex);
+    for (auto& e : entries_) {
+      if (g_excludedPids.count(e.pid) > 0) continue;
+      if (!g_targetPids.empty() && g_targetPids.count(e.pid) == 0) continue;
+      float peak = 0.0f;
+      if (SUCCEEDED(e.meter->GetPeakValue(&peak)) && (double)peak > maxPeak) maxPeak = (double)peak;
+    }
+    return maxPeak;
+  }
+
+ private:
+  struct Entry { DWORD pid; IAudioMeterInformation* meter; };
+  std::vector<Entry> entries_;
+  IMMDevice* device_ = nullptr;
+  IAudioSessionManager2* sessionManager_ = nullptr;
+  IAudioSessionEnumerator* sessionEnum_ = nullptr;
+};
+
+// High-resolution timer wait (plain Sleep rounds up to ~15ms). Falls back to Sleep.
+void WaitMs(HANDLE timer, DWORD ms) {
+  if (timer) {
+    LARGE_INTEGER due;
+    due.QuadPart = -static_cast<LONGLONG>(ms) * 10000LL;
+    if (SetWaitableTimer(timer, &due, 0, nullptr, nullptr, FALSE)) {
+      WaitForSingleObject(timer, ms + 20);
+      return;
+    }
+  }
+  Sleep(ms);
+}
+
 void CaptureThreadMain() {
   HRESULT hr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
   if (FAILED(hr)) { g_running.store(false); return; }
@@ -160,12 +223,30 @@ void CaptureThreadMain() {
                          __uuidof(IMMDeviceEnumerator), (void**)&enumerator);
   if (FAILED(hr)) { CoUninitialize(); g_running.store(false); return; }
 
+  HANDLE timer = CreateWaitableTimerExW(nullptr, nullptr, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, TIMER_ALL_ACCESS);
+
+  using clock = std::chrono::steady_clock;
+  SessionCache cache;
+  auto last = clock::now();
+  auto lastRefresh = last - std::chrono::milliseconds(SESSION_REFRESH_MS); // forces a build on the first pass
+
   while (g_running.load(std::memory_order_relaxed)) {
-    double peak = PollSessionsOnce(enumerator, nullptr);
-    UpdateLevel(peak);
-    Sleep(30); // ~33Hz — session enumeration is cheap, no need to poll faster
+    auto now = clock::now();
+    double dtMs = std::chrono::duration<double, std::milli>(now - last).count();
+    last = now;
+    if (dtMs > 250.0) dtMs = 250.0; // a stalled thread shouldn't cause one huge jump
+
+    if (now - lastRefresh >= std::chrono::milliseconds(SESSION_REFRESH_MS)) {
+      cache.Rebuild(enumerator);
+      lastRefresh = now;
+    }
+
+    UpdateLevel(cache.MaxPeak(), dtMs);
+    WaitMs(timer, METER_POLL_MS);
   }
 
+  cache.Clear(); // must release COM objects before CoUninitialize
+  if (timer) CloseHandle(timer);
   if (enumerator) enumerator->Release();
   CoUninitialize();
 }
@@ -204,9 +285,8 @@ Napi::Value GetLevel(const Napi::CallbackInfo& info) {
   return Napi::Number::New(info.Env(), g_level.load(std::memory_order_relaxed));
 }
 
-// setTargetProcesses([pid, pid, ...]) — if called with a non-empty array,
-// getLevel() only considers those PIDs. Call with an empty array (or
-// don't call it at all) to go back to "everything except excluded."
+// setTargetProcesses([pid, ...]) — non-empty: only those PIDs count.
+// Empty: everything except excluded.
 Napi::Value SetTargetProcesses(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
   std::lock_guard<std::mutex> lock(g_configMutex);
@@ -221,13 +301,7 @@ Napi::Value SetTargetProcesses(const Napi::CallbackInfo& info) {
   return Napi::Boolean::New(env, true);
 }
 
-// setExcludedProcesses([pid, pid, ...]) — NEW. Start() only lets you set
-// the excluded set once, at capture-thread startup; there was previously
-// no way to add/remove an excluded PID (e.g. a notch-widget app like
-// v-notch) without stopping and restarting the whole capture thread. This
-// mirrors setTargetProcesses so exclusions can be updated live, same as
-// targets already could be. Musik's own PID is always re-added regardless
-// of what's passed in, so a caller can never accidentally un-exclude self.
+// setExcludedProcesses([pid, ...]) — live update. Musik's own PID is always re-added.
 Napi::Value SetExcludedProcesses(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
   std::lock_guard<std::mutex> lock(g_configMutex);
@@ -243,10 +317,8 @@ Napi::Value SetExcludedProcesses(const Napi::CallbackInfo& info) {
   return Napi::Boolean::New(env, true);
 }
 
-// Synchronous one-shot enumeration for UI purposes — "here's everything
-// currently making sound, pick which one(s) to duck against." Does its
-// own CoInitialize since this runs on whatever thread calls it (expected:
-// Node main thread), independent of the background polling thread.
+// Synchronous one-shot list of active sessions for the UI. Does its own
+// CoInitialize since it runs on the caller's thread.
 Napi::Value GetSessions(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
   Napi::Array result = Napi::Array::New(env);

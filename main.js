@@ -204,8 +204,8 @@ function appendDuckDebugLog(level, target, smoothed) {
 
 function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 1280,
-    height: 800,
+    width: 1920,
+    height: 1200,
     icon: path.join(__dirname, 'build', 'icon.ico'),
     minWidth: 900,
     minHeight: 600,
@@ -435,6 +435,7 @@ ipcMain.handle('net:fetch', async (_e, { url, method = 'GET', headers = {}, body
       status: res.status,
       statusText: res.statusText,
       headers: resHeaders,
+      cookies: res.headers.getSetCookie ? res.headers.getSetCookie() : [], // all Set-Cookie values
       text,
     };
   } catch (err) {
@@ -559,6 +560,7 @@ ipcMain.handle('game-duck:set-enabled', async (_e, value) => GameDuck?.setEnable
 ipcMain.handle('game-duck:set-sensitivity', async (_e, value) => GameDuck?.setSensitivity?.(value) ?? null);
 ipcMain.handle('game-duck:set-duck-ceiling', async (_e, value) => GameDuck?.setDuckCeiling?.(value) ?? null);
 ipcMain.handle('game-duck:set-max-duck', async (_e, value) => GameDuck?.setMaxDuck?.(value) ?? null);
+ipcMain.handle('game-duck:set-preset', async (_e, name) => GameDuck?.setPreset?.(name) ?? null);
 ipcMain.handle('game-duck:set-manual-override', async (_e, value) => GameDuck?.setManualOverride?.(value) ?? null);
 ipcMain.handle('game-duck:set-track-loudness', async (_e, lufs) => GameDuck?.setTrackLoudness?.(lufs) ?? null);
 ipcMain.handle('game-duck:get-sessions', async () => GameDuck?.getAudioSessions?.() ?? []);

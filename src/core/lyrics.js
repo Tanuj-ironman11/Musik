@@ -4,18 +4,18 @@
 // disk-cache pattern as library.js.
 //
 // Resolution order per track: manual override > disk cache > NetEase
-// klyric (word-level) > LRCLIB (synced+plain) > Lyrica (prehosted
-// fallback, see Mac/Windows discrepancy note in the project brief).
-// Musixmatch richsync was removed (ToS) — do not reintroduce.
+// klyric (word-level) > LRCLIB (synced + plain) > Lyrica (hosted fallback,
+// has a Mac/Windows discrepancy, see the project brief).
+// Musixmatch richsync was removed (ToS), do not reintroduce.
 //
-// Track keys are artist+title only (album dropped — it drifted between
-// reads and orphaned manual files; see legacyTrackKey/migration below).
+// Track keys are artist+title only. Album was dropped because it drifted
+// between reads and orphaned manual files (see legacyTrackKey).
 //
-// romanize()/romanizeLines() are async (Japanese/Chinese need dictionary
-// lookups; every other script is sync but wrapped the same way so callers
-// don't branch).
+// romanize()/romanizeLines() are async because Japanese/Chinese need
+// dictionary lookups. Other scripts are sync but wrapped the same way so
+// callers don't branch.
 //
-// IPC wiring (main.js + preload.js) is NOT in this file — new surface:
+// IPC wiring lives in main.js + preload.js, not here. Channels:
 // lyrics-get, lyrics-save-manual, lyrics-clear-manual, lyrics-romanize.
 
 'use strict';
@@ -25,13 +25,9 @@ const path = require('path');
 const crypto = require('crypto');
 const https = require('https');
 
-// ---------------------------------------------------------------------
-// Config
-// ---------------------------------------------------------------------
-
 const LRCLIB_BASE = 'https://lrclib.net/api';
 
-// Lyrica (https://github.com/Wilooper/Lyrica) — prehosted, no self-hosting
+// Lyrica (https://github.com/Wilooper/Lyrica), prehosted, no self-hosting
 // needed. HF Space first per the "recommended for production" note (built
 // for concurrent load, ~95% uptime); Render as automatic failover if HF is
 // down or cold-starting. Override via env if you self-host or the prehosted
@@ -46,10 +42,6 @@ const REQUEST_TIMEOUT_MS = 8000;
 let cacheDir = null;
 let manualDir = null;
 let initialized = false;
-
-// ---------------------------------------------------------------------
-// Init
-// ---------------------------------------------------------------------
 
 function init(userDataPath) {
   cacheDir = path.join(userDataPath, 'lyrics-cache');
@@ -66,11 +58,8 @@ function assertInit() {
   }
 }
 
-// ---------------------------------------------------------------------
-// Track key — same normalize-then-hash approach for cache filenames as
-// the fingerprint/metadata matching elsewhere in the project.
-// ---------------------------------------------------------------------
-
+// Filename key for cache/manual files: sha1 of the normalized artist+title,
+// same approach as the fingerprint/metadata matching elsewhere.
 function trackKey({ artist, title }) {
   const norm = (s) => (s || '').trim().toLowerCase().replace(/\s+/g, ' ');
   const raw = `${norm(artist)}::${norm(title)}`;
@@ -89,11 +78,8 @@ function legacyTrackKey({ artist, title, album }) {
 function cachePath(key) { return path.join(cacheDir, `${key}.json`); }
 function manualPath(key) { return path.join(manualDir, `${key}.json`); }
 
-// ---------------------------------------------------------------------
-// Tiny HTTPS JSON GET — no axios/node-fetch dependency, matches the
-// "keep deps minimal" pattern already used for fpcalc/AcoustID calls.
-// ---------------------------------------------------------------------
-
+// Plain https GET that parses JSON. No axios/node-fetch, keeps deps minimal
+// like the fpcalc/AcoustID calls.
 function httpGetJson(url, extraHeaders) {
   return new Promise((resolve, reject) => {
     const req = https.get(url, { timeout: REQUEST_TIMEOUT_MS, headers: { 'User-Agent': 'Musik/1.0', ...extraHeaders } }, (res) => {
@@ -116,10 +102,7 @@ function httpGetJson(url, extraHeaders) {
   });
 }
 
-// ---------------------------------------------------------------------
-// LRC parsing — turns "[mm:ss.xx]text" lines into { time, text }[]
-// ---------------------------------------------------------------------
-
+// Turns "[mm:ss.xx]text" lines into { time, text }[]
 function parseLrc(lrcText) {
   if (!lrcText) return null;
   const lineRe = /^\[(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?\](.*)$/;
@@ -136,10 +119,6 @@ function parseLrc(lrcText) {
   lines.sort((a, b) => a.time - b.time);
   return lines;
 }
-
-// ---------------------------------------------------------------------
-// Source: LRCLIB
-// ---------------------------------------------------------------------
 
 async function fetchFromLrclib({ artist, title, album, duration }) {
   const params = new URLSearchParams({
@@ -177,15 +156,11 @@ async function fetchFromLrclib({ artist, title, album, duration }) {
       }
     }
   } catch (_) {
-    // both LRCLIB attempts failed — caller falls back to Lyrica
+    // both LRCLIB attempts failed, caller falls back to Lyrica
   }
 
   return null;
 }
-
-// ---------------------------------------------------------------------
-// Source: Lyrica (fallback)
-// ---------------------------------------------------------------------
 
 async function fetchFromLyrica({ artist, title }) {
   const params = new URLSearchParams({ artist: artist || '', song: title || '', timestamps: 'true' });
@@ -193,7 +168,7 @@ async function fetchFromLyrica({ artist, title }) {
   for (const base of LYRICA_BASES) {
     try {
       const data = await httpGetJson(`${base}/lyrics/?${params.toString()}`);
-      if (data?.status !== 'success' || !data.data) continue; // 404/429/error body — try next base
+      if (data?.status !== 'success' || !data.data) continue; // 404/429/error body, try next base
 
       const d = data.data;
       const synced = Array.isArray(d.timed_lyrics) && d.timed_lyrics.length
@@ -208,18 +183,15 @@ async function fetchFromLyrica({ artist, title }) {
         plain: d.plain_lyrics || d.lyrics || null,
       };
     } catch (_) {
-      // this base is down/cold/rate-limited — try the next one
+      // this base is down/cold/rate-limited, try the next one
     }
   }
   return null;
 }
 
-// ---------------------------------------------------------------------
-// Source: NetEase Cloud Music klyric (word-level). No auth needed.
-// Format: [lineStartMs,lineDurationMs]word(offsetMs,durationMs)word(...)...
-// Best-effort parsing of the commonly-documented format.
-// ---------------------------------------------------------------------
-
+// NetEase klyric (word-level), no auth needed.
+// Line format: [lineStartMs,lineDurationMs]word(offsetMs,durationMs)word(...)...
+// Parsing is best-effort, based on the commonly documented format.
 const NETEASE_SEARCH = 'https://music.163.com/api/search/get/web';
 const NETEASE_LYRIC = 'https://music.163.com/api/song/lyric';
 
@@ -262,26 +234,22 @@ async function fetchFromNetease({ artist, title }) {
       };
     }
   } catch (_) {
-    // search miss, no klyric for this song, or format drift — fall through
+    // search miss, no klyric for this song, or format drift, fall through
   }
   return null;
 }
-
-// ---------------------------------------------------------------------
-// Public: getLyrics
-// ---------------------------------------------------------------------
 
 async function getLyrics(track) {
   assertInit();
   const key = trackKey(track);
 
-  // 1. Manual override always wins
+  // manual override always wins
   if (fs.existsSync(manualPath(key))) {
     const manual = JSON.parse(fs.readFileSync(manualPath(key), 'utf8'));
     return { ...manual, source: 'manual', key };
   }
 
-  // 1b. One-time migration from the old album-inclusive key.
+  // one-time migration from the old album-inclusive key
   const legacyKey = legacyTrackKey(track);
   if (legacyKey !== key && fs.existsSync(manualPath(legacyKey))) {
     const manual = JSON.parse(fs.readFileSync(manualPath(legacyKey), 'utf8'));
@@ -290,16 +258,15 @@ async function getLyrics(track) {
     return { ...manual, source: 'manual', key };
   }
 
-  // 2. Disk cache
+  // disk cache
   if (fs.existsSync(cachePath(key))) {
     const cached = JSON.parse(fs.readFileSync(cachePath(key), 'utf8'));
     return { ...cached, key };
   }
 
-  // 3-5. Network, in order, first hit wins. NetEase tried first since
-  // it's the remaining word-level source; line-level sources remain as
-  // fallbacks so coverage doesn't regress for tracks/languages NetEase
-  // doesn't have. (Musixmatch removed — ToS reasons, don't reintroduce.)
+  // Network sources, first hit wins. NetEase goes first since it's the
+  // remaining word-level source; the line-level sources are fallbacks for
+  // tracks/languages NetEase doesn't have.
   let result = await fetchFromNetease(track);
   if (!result) result = await fetchFromLrclib(track);
   if (!result) result = await fetchFromLyrica(track);
@@ -316,17 +283,13 @@ async function getLyrics(track) {
   return { ...result, key };
 }
 
-// ---------------------------------------------------------------------
-// Public: manual entry
-// ---------------------------------------------------------------------
-
 function saveManualLyrics(track, { plain, synced, words }) {
   assertInit();
   if (!fs.existsSync(manualDir)) fs.mkdirSync(manualDir, { recursive: true });
   const key = trackKey(track);
   const parsedSynced = typeof synced === 'string' ? parseLrc(synced) : (synced || null);
-  // words: optional word-level rich sync, [{ text, startMs, endMs }, ...] —
-  // same shape fetchFromNetease returns, so the UI doesn't branch by source.
+  // words: optional word-level sync, [{ text, startMs, endMs }, ...].
+  // Same shape fetchFromNetease returns, so the UI doesn't branch by source.
   const payload = { plain: plain || null, synced: parsedSynced, words: words || null, savedAt: Date.now() };
   fs.writeFileSync(manualPath(key), JSON.stringify(payload), 'utf8');
   return { ...payload, source: 'manual', key };
@@ -340,13 +303,11 @@ function clearManualLyrics(track) {
   return { key, cleared: true };
 }
 
-// ---------------------------------------------------------------------
-// Romanization — pluggable per-script. Hangul, Cyrillic, Greek, and the
-// Indic abugidas (Devanagari/Tamil/Telugu/Gurmukhi) are algorithmic, no
-// dictionary needed. Japanese/Chinese need a dictionary lib (kuroshiro+
-// kuromoji, pinyin-pro) — optional deps, see getKuroshiro(). Unsupported
-// scripts just return null; the UI hides the toggle in that case.
-// ---------------------------------------------------------------------
+// Romanization, one function per script. Hangul, Cyrillic, Greek and the
+// Indic abugidas are table-driven and need no dictionary. Japanese/Chinese
+// need dictionary libs (kuroshiro + kuromoji, pinyin-pro), optional deps,
+// see getKuroshiro(). Unsupported scripts return null and the UI hides the
+// toggle.
 
 const HANGUL_BASE = 0xac00;
 const CHO = ['g', 'kk', 'n', 'd', 'tt', 'r', 'm', 'b', 'pp', 's', 'ss', '', 'j', 'jj', 'c', 'k', 't', 'p', 'h'];
@@ -411,18 +372,16 @@ function romanizeGreek(text) {
   return out;
 }
 
-// -- Indic abugidas (Devanagari, Tamil, Telugu, Gurmukhi) ----------------
-//
-// Phonetic: consonants carry an inherent "a" that a following vowel sign
-// (matra) replaces, or that drops entirely before a virama/pulli.
-// Table + lookahead only, no dictionary needed.
+// Indic abugidas (Devanagari, Tamil, Telugu, Gurmukhi): consonants carry an
+// inherent "a" that a following vowel sign (matra) replaces, or that drops
+// before a virama/pulli. Table + lookahead only, no dictionary.
 
 function buildAbugidaRomanizer({ consonants, vowels, matras, virama, anusvara, anusvaraMap, visarga, nasal, nukta, nuktaMap, addak }) {
   const anusvaraChars = Array.isArray(anusvara) ? anusvara : (anusvara ? [anusvara] : []);
   return function romanizeAbugida(text) {
     const chars = Array.from(text);
     let out = '';
-    let pendingGeminate = false; // set by addak (Gurmukhi gemination mark) — doubles the NEXT consonant
+    let pendingGeminate = false; // set by addak (Gurmukhi gemination mark), doubles the next consonant
     for (let i = 0; i < chars.length; i++) {
       const ch = chars[i];
       let next = chars[i + 1];
@@ -458,14 +417,14 @@ function buildAbugidaRomanizer({ consonants, vowels, matras, virama, anusvara, a
       }
       if (anusvaraChars.includes(ch)) {
         // Nasalization sound depends on the following consonant (labial ->
-        // m, dental/alveolar -> n, velar -> ng) — not a flat 'm'.
+        // m, dental/alveolar -> n, velar -> ng), not a flat 'm'.
         const followingChar = chars[i + 1];
         out += (anusvaraMap && followingChar && anusvaraMap[followingChar]) || 'n';
         continue;
       }
       if (visarga && ch === visarga) { out += 'h'; continue; }
       if (nasal && ch === nasal) { out += 'n'; continue; }
-      if (nukta && ch === nukta) continue; // stray/unmatched nukta — drop, don't leak into output
+      if (nukta && ch === nukta) continue; // stray/unmatched nukta: drop, don't leak into output
 
       out += ch; // punctuation, spaces, digits, anything unmapped
     }
@@ -564,7 +523,7 @@ const romanizeTelugu = buildAbugidaRomanizer({
   visarga: 'ః',
 });
 
-// Gurmukhi (Punjabi) — same structural layout as Devanagari (Unicode block
+// Gurmukhi (Punjabi): same structural layout as Devanagari (Unicode block
 // mirrors it: U+0A00-U+0A7F vs U+0900-U+097F). Nukta-derived letters (ਖ਼ ਗ਼
 // ਜ਼ ਫ਼) are listed directly in `consonants` since real-world text uses
 // their precomposed codepoints rather than base+combining-nukta.
@@ -577,7 +536,7 @@ const romanizeGurmukhi = buildAbugidaRomanizer({
     ਪ: 'p', ਫ: 'ph', ਬ: 'b', ਭ: 'bh', ਮ: 'm',
     ਯ: 'y', ਰ: 'r', ਲ: 'l', ਵ: 'v', ੜ: 'r',
     ਸ: 's', ਹ: 'h',
-    // precomposed nukta-derived letters (see confidence note above)
+    // precomposed nukta-derived letters
     ਖ਼: 'kh', ਗ਼: 'gh', ਜ਼: 'z', ਫ਼: 'f', ਸ਼: 'sh',
   },
   vowels: {
@@ -589,7 +548,7 @@ const romanizeGurmukhi = buildAbugidaRomanizer({
     'ੇ': 'e', 'ੈ': 'ai', 'ੋ': 'o', 'ੌ': 'au',
   },
   virama: '੍',
-  anusvara: ['ਂ', 'ੰ'], // bindi + tippi — both nasalize, treated identically here
+  anusvara: ['ਂ', 'ੰ'], // bindi + tippi, both nasalize, treated identically here
   anusvaraMap: {
     ਕ: 'ng', ਖ: 'ng', ਗ: 'ng', ਘ: 'ng', ਙ: 'ng',
     ਚ: 'n', ਛ: 'n', ਜ: 'n', ਝ: 'n', ਞ: 'n',
@@ -597,12 +556,12 @@ const romanizeGurmukhi = buildAbugidaRomanizer({
     ਤ: 'n', ਥ: 'n', ਦ: 'n', ਧ: 'n', ਨ: 'n',
     ਪ: 'm', ਫ: 'm', ਬ: 'm', ਭ: 'm', ਮ: 'm',
   },
-  addak: 'ੱ', // gemination mark — doubles the consonant right after it
+  addak: 'ੱ', // gemination mark, doubles the consonant right after it
 });
 
 // Kana presence tells Japanese apart from Chinese (both use CJK ideographs,
-// only Japanese mixes in kana). Heuristic, not real language detection — a
-// kanji-only line with zero kana would misroute to pinyin. Good enough.
+// only Japanese mixes in kana). Heuristic, not real language detection: a
+// kanji-only line with no kana gets routed to pinyin.
 const KANA_RE = /[\u3040-\u30FF]/;
 const CJK_IDEOGRAPH_RE = /[\u4E00-\u9FFF]/;
 
@@ -620,26 +579,21 @@ function detectScript(text) {
   return 'latin';
 }
 
-// ---------------------------------------------------------------------
-// Japanese (kuroshiro + kuromoji) and Chinese (pinyin-pro) — dictionary-
-// backed, optional deps (npm install kuroshiro kuroshiro-analyzer-kuromoji
-// pinyin-pro). Not installed = romanize() returns null for that script,
-// UI hides the toggle, no crash.
+// Japanese (kuroshiro + kuromoji) and Chinese (pinyin-pro): dictionary-backed,
+// optional deps (npm install kuroshiro kuroshiro-analyzer-kuromoji pinyin-pro).
+// If they're not installed, romanize() returns null for that script, the UI
+// hides the toggle and nothing crashes.
 //
-// PACKAGING TODO (not done here): kuromoji's dict directory needs
-// electron-builder asarUnpack, same concern as the WASAPI .node addon —
-// if that's not set up yet, JP romanization will silently fail in a
-// packaged build even though it works fine in dev.
-// ---------------------------------------------------------------------
+// Packaging: kuromoji's dict directory is unpacked via build.asarUnpack in
+// package.json (same concern as the WASAPI .node addon). If that entry is
+// ever removed, JP romanization silently fails in packaged builds while
+// still working in dev.
 
 let kuroshiroInitPromise = null;
 
-// NOTE: no sticky "give up forever" flag here anymore. A previous version
-// cached init failure permanently for the whole app session, so one bad
-// init (cold start, dict path race, whatever) silently killed JP
-// romanization for every song after it — this is almost certainly what
-// caused the "romanize button works sometimes" reports. Now every call
-// with no live instance just retries.
+// Init failures are deliberately not cached. A failed init gets retried on the
+// next call, otherwise one bad init (cold start, dict path race) would disable
+// JP romanization for the rest of the session.
 async function getKuroshiro() {
   if (!kuroshiroInitPromise) {
     kuroshiroInitPromise = (async () => {
@@ -661,7 +615,7 @@ function romanizeChinese(text) {
   try {
     const { pinyin } = require('pinyin-pro');
     // Word-level lyric sources are often space-joined syllable tokens, not
-    // real prose spacing — strip spaces so tone/word-boundary resolution
+    // real prose spacing. Strip spaces so tone/word-boundary resolution
     // works, then let toneType/mode re-derive real spacing on output.
     return pinyin(text.replace(/\s+/g, ''), { toneType: 'none', type: 'string', nonZh: 'consecutive' });
   } catch (err) {
@@ -669,6 +623,11 @@ function romanizeChinese(text) {
     return null;
   }
 }
+
+// Rare kanji kuromoji's dictionary doesn't know come out raw (e.g. 踠い -> "踠 i").
+// Swap them for kana first; add more as they turn up. Value = the kanji's reading as written in the word.
+const JA_KANJI_FALLBACK = { '踠': 'もが' };
+const JA_KANJI_FALLBACK_RE = new RegExp('[' + Object.keys(JA_KANJI_FALLBACK).join('') + ']', 'g');
 
 async function romanizeJapanese(text) {
   const kuroshiro = await getKuroshiro();
@@ -678,7 +637,7 @@ async function romanizeJapanese(text) {
     // kuromoji's tokenizer (each chunk loses sentence context, single
     // kanji fail lookup). Strip spaces for conversion, mode:'spaced'
     // re-adds proper word spacing on the output.
-    return await kuroshiro.convert(text.replace(/\s+/g, ''), { to: 'romaji', mode: 'spaced' });
+    return await kuroshiro.convert(text.replace(JA_KANJI_FALLBACK_RE, (c) => JA_KANJI_FALLBACK[c]).replace(/\s+/g, ''), { to: 'romaji', mode: 'spaced' });
   } catch (err) {
     console.warn('[Musik] lyrics: kuroshiro conversion failed for a line, skipping it.', err.message);
     return null;
@@ -686,8 +645,8 @@ async function romanizeJapanese(text) {
 }
 
 // Async so every script shares one call shape (only JP actually needs it).
-// scriptHint, if given, skips detectScript entirely — used by
-// romanizeWords() below so word-level tokens inherit their containing
+// scriptHint, if given, skips detectScript entirely. romanizeWords() below
+// uses it so word-level tokens inherit their containing
 // line's script instead of getting misdetected on their own tiny fragment
 // (a kanji-only word with no kana in it, e.g. "渦巻" split out from
 // "渦巻いて", looks identical to Chinese by the kana heuristic alone).
@@ -703,7 +662,7 @@ async function romanize(text, scriptHint) {
     case 'gurmukhi': return romanizeGurmukhi(text);
     case 'chinese': return romanizeChinese(text);
     case 'japanese': return romanizeJapanese(text);
-    default: return null; // 'latin' — nothing to do
+    default: return null; // 'latin', nothing to do
   }
 }
 
@@ -715,24 +674,16 @@ async function romanizeLines(lines) {
   return out.some((l) => l.romanized) ? out : null;
 }
 
-// Word-level rich sync needs a different pairing than romanizeLines: each
-// word gets matched to its containing line (by timing). Japanese lines get
-// romanized as a whole (see below) instead of per word — this source
-// segments below real word/mora boundaries, so there's no reliable way to
-// split a shared reading across word tokens. Every other script romanizes
-// each word independently against the line's pinned script (those don't
-// suffer Japanese's isolation/segmentation problem).
+// Word-level sync: each word is matched to its containing line by timing,
+// then romanized against that line's script. Japanese is the exception, see
+// the branch below.
 async function romanizeWords(words, lines) {
   if (!Array.isArray(words) || !Array.isArray(lines) || !lines.length) return null;
 
-  // Bucket each word into the line it chronologically falls under. The old
-  // ±25ms tolerance windows left a small gap between consecutive lines'
-  // windows that a word could fall through, returning -1 — and the -1
-  // fallback then used just that ONE orphaned word as "lineText" instead
-  // of its real line, wiping out sentence context and recreating the
-  // exact isolated-kanji bug (that's what 騒/濡/喰 showing up raw actually
-  // was). Never returning -1 removes the gap: every word lands under the
-  // last line whose start time it's at or past.
+  // Bucket each word under the last line whose start time it's at or past.
+  // Tolerance windows leave gaps between lines, and a word that falls through
+  // gets romanized as its own one-word "line", losing sentence context
+  // (isolated kanji like 騒/濡/喰 come out raw). This can't miss.
   const lineIndexForWord = words.map((w) => {
     let li = 0;
     for (let i = 0; i < lines.length; i++) {
@@ -755,12 +706,10 @@ async function romanizeWords(words, lines) {
     const script = detectScript(lineText);
 
     if (script === 'japanese') {
-      // Per-word splitting for Japanese doesn't work here — this source
-      // segments lyrics close to per-syllable, well below real word/mora
-      // boundaries, so there's no reliable way to divide a shared
-      // reading across word tokens. Romanize the whole line at once
-      // instead (same proven path romanizeLines() uses) and surface it
-      // once, on the line's first word, in sync with the line's start.
+      // This source segments close to per-syllable, well below real word/mora
+      // boundaries, so a shared reading can't be reliably divided across word
+      // tokens. Romanize the whole line at once (same path romanizeLines()
+      // uses) and put it on the line's first word, in sync with the line start.
       const lineRomanized = await romanizeJapanese(lineText);
       wordIdxs.forEach((wi, k) => { romanized[wi] = k === 0 ? lineRomanized : ''; });
     } else {

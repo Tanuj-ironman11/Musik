@@ -1,310 +1,10 @@
 // src/ui/views/settings.js
-// Settings tab. Sections are separated into their own render functions so
-// new prefs slot in without touching unrelated ones.
+// Settings view. Helpers and prefs are in prefs.js (load it first).
 
 window.MusikViews = window.MusikViews || {};
 
-// Shared with app.js. Broadcast via 'musik:layout-change' so an
-// already-open app.js instance updates live instead of needing a reload.
-const LAYOUT_MODE_KEY = 'musikLayoutMode';
-
-function getLayoutMode() {
-  return localStorage.getItem(LAYOUT_MODE_KEY) || 'dynamic';
-}
-
-const COMPACT_SETTINGS_KEY = 'musik:compact-settings';
-
-function getCompactSettings() {
-  return localStorage.getItem(COMPACT_SETTINGS_KEY) !== 'off';
-}
-function broadcastLayoutChange() {
-  window.dispatchEvent(new CustomEvent('musik:layout-change', {
-    detail: { mode: getLayoutMode() },
-  }));
-}
-
-// 3D visualizer quality — visualizer.js is the source of truth for
-// applying this live (window.MusikVisualizer.setQuality), this just
-// persists the pref and broadcasts so an already-open Fullscreen view
-// picks it up without needing a reload. Kept out of the topbar per explicit
-// call: fullscreen stays uncluttered, quality lives in Settings only.
-const VIS_QUALITY_KEY = 'musik:visualizer-quality';
-
-function getVisQuality() {
-  return localStorage.getItem(VIS_QUALITY_KEY) || 'medium';
-}
-function broadcastVisualizerChange(detail) {
-  window.dispatchEvent(new CustomEvent('musik:visualizer-settings-change', { detail }));
-}
-
-// 3D blob reactivity. visualizer.js reads this straight out of localStorage
-// every frame (draw3d), so writing it here is enough — no broadcast event
-// needed for it to take effect live.
-const VIS_SENSITIVITY_KEY = 'musik_vis_sensitivity';
-
-function getVisSensitivityPercent() {
-  const raw = parseFloat(localStorage.getItem(VIS_SENSITIVITY_KEY));
-  return Number.isFinite(raw) ? Math.round(raw * 100) : 100;
-}
-
-// "Custom effects" — Fresnel rim lighting + dither, both uniform-gated in
-// visualizer.js so toggling applies live with no rebuild. Master gates both
-// subs; each sub defaults to on so flipping the master shows both, then
-// either can be switched off individually to A/B against a clean baseline.
-const CUSTOM_FX_KEY = 'musik:visualizer-customfx';
-const FRESNEL_KEY = 'musik:visualizer-fresnel';
-const DITHER_KEY = 'musik:visualizer-dither';
-
-function getCustomFxOn() {
-  return localStorage.getItem(CUSTOM_FX_KEY) === 'on';
-}
-function getFresnelOn() {
-  return localStorage.getItem(FRESNEL_KEY) !== 'off';
-}
-function getDitherOn() {
-  return localStorage.getItem(DITHER_KEY) !== 'off';
-}
-
-// "Always on top" needs window.Musik.miniplayer.setAlwaysOnTop() —
-// not exposed by preload.js/main.js yet. Pref saves, no effect until then.
-// Default volume applied at next launch, before the player-bar slider is
-// touched. NOTE: playback boot doesn't read this key yet — still needs
-// wiring in player-ui.js (or wherever initial volume gets set).
-const DEFAULT_VOLUME_KEY = 'musikDefaultVolume';
-
-function getStoredDefaultVolumePercent() {
-  const raw = parseFloat(localStorage.getItem(DEFAULT_VOLUME_KEY));
-  if (Number.isFinite(raw)) return Math.round(raw * 100);
-  // No saved default yet — fall back to whatever's currently playing so the
-  // slider doesn't jump to some arbitrary unrelated number on first render.
-  return Math.round((window.MusikPlayerUI?.getVolume?.() ?? 1) * 100);
-}
-
-const MINI_ALWAYS_ON_TOP_KEY = 'musikMiniAlwaysOnTop';
-
-function getMiniAlwaysOnTop() {
-  return localStorage.getItem(MINI_ALWAYS_ON_TOP_KEY) !== 'false';
-}
-
-// Own Last.fm API key/secret. localStorage only — never written to a repo
-// file. Pushed into the main process via setCredentials() on change.
-const LASTFM_API_KEY_KEY = 'musikLastfmApiKey';
-const LASTFM_API_SECRET_KEY = 'musikLastfmApiSecret';
-
-function getStoredLastfmCreds() {
-  return {
-    apiKey: localStorage.getItem(LASTFM_API_KEY_KEY) || '',
-    apiSecret: localStorage.getItem(LASTFM_API_SECRET_KEY) || '',
-  };
-}
-
-function setStoredLastfmCreds(apiKey, apiSecret) {
-  if (apiKey) localStorage.setItem(LASTFM_API_KEY_KEY, apiKey);
-  else localStorage.removeItem(LASTFM_API_KEY_KEY);
-  if (apiSecret) localStorage.setItem(LASTFM_API_SECRET_KEY, apiSecret);
-  else localStorage.removeItem(LASTFM_API_SECRET_KEY);
-}
-
-async function syncLastfmCredsToMain() {
-  const { apiKey, apiSecret } = getStoredLastfmCreds();
-  if (!apiKey && !apiSecret) return;
-  await window.Musik?.scrobble?.setCredentials?.({ apiKey, apiSecret });
-}
-
-// Exposed so app.js can call this once on app boot — right now it only
-// ever ran when the Settings view itself rendered, meaning a saved key
-// wasn't actually pushed into the scrobbler until you opened Settings that
-// session. If you played a track first, scrobbling would fail with a
-// misleading "API key missing" error despite the key being saved fine.
-window.MusikViews.syncLastfmCredsToMain = syncLastfmCredsToMain;
-
-function layoutNavItemHTML(mode, active, inline) {
-  const label = mode === 'pinned' ? '<span class="layout-mock-line"></span>' : '';
-  const classes = [
-    'layout-mock-navitem',
-    active ? 'layout-mock-navitem--active' : '',
-    inline ? 'layout-mock-navitem--inline' : '',
-  ].filter(Boolean).join(' ');
-  return `<span class="${classes}"><span class="layout-mock-dot"></span>${label}</span>`;
-}
-
-function layoutCardHTML(mode, title, desc) {
-  if (mode === 'topbar') {
-    return `
-      <button type="button" class="layout-card" data-nav-mode="${mode}">
-        <div class="layout-mock layout-mock--topbar">
-          <div class="layout-mock-bar">
-            ${layoutNavItemHTML(mode, true, true)}
-            ${layoutNavItemHTML(mode, false, true)}
-            ${layoutNavItemHTML(mode, false, true)}
-          </div>
-          <div class="layout-mock-content layout-mock-content--full">
-            <span class="layout-mock-block"></span>
-            <span class="layout-mock-block"></span>
-          </div>
-        </div>
-        <span class="layout-card-title">${title}</span>
-        <span class="layout-card-desc">${desc}</span>
-      </button>
-    `;
-  }
-
-  const railClass = mode === 'pinned'
-    ? 'layout-mock-rail layout-mock-rail--expanded'
-    : 'layout-mock-rail layout-mock-rail--dynamic';
-
-  return `
-    <button type="button" class="layout-card" data-nav-mode="${mode}">
-      <div class="layout-mock">
-        <div class="${railClass}">
-          ${layoutNavItemHTML(mode, true, false)}
-          ${layoutNavItemHTML(mode, false, false)}
-          ${layoutNavItemHTML(mode, false, false)}
-        </div>
-        ${mode === 'dynamic' ? '<div class="layout-mock-hover-hint"></div>' : ''}
-        <div class="layout-mock-content">
-          <span class="layout-mock-block"></span>
-          <span class="layout-mock-block"></span>
-        </div>
-      </div>
-      <span class="layout-card-title">${title}</span>
-      <span class="layout-card-desc">${desc}</span>
-    </button>
-  `;
-}
-
-// Shared by every "range slider + live %/unit label next to it" row in this
-// file (default volume, duck sensitivity/ceiling/max, visualizer
-// sensitivity) — also paints the accent fill (--fill), since every slider
-// in Settings uses it now. formatFn defaults to a plain percentage; pass a
-// custom one where a row needs different formatting.
-function bindRangeValueDisplay(slider, valueEl, onInput, formatFn) {
-  const format = formatFn || ((v) => `${v}%`);
-  const paint = () => {
-    valueEl.textContent = format(slider.value);
-    const pct = (slider.value - slider.min) / (slider.max - slider.min) * 100;
-    slider.style.setProperty('--fill', `${pct}%`);
-  };
-  paint();
-  slider.addEventListener('input', () => {
-    paint();
-    onInput?.(slider.value);
-  });
-  return paint;
-}
-
-function formatRelativeTime(ms) {
-  if (!ms) return null;
-  const diff = Date.now() - ms;
-  const sec = Math.floor(diff / 1000);
-  if (sec < 60) return 'just now';
-  const min = Math.floor(sec / 60);
-  if (min < 60) return `${min} minute${min === 1 ? '' : 's'} ago`;
-  const hr = Math.floor(min / 60);
-  if (hr < 24) return `${hr} hour${hr === 1 ? '' : 's'} ago`;
-  const day = Math.floor(hr / 24);
-  if (day < 30) return `${day} day${day === 1 ? '' : 's'} ago`;
-  return new Date(ms).toLocaleDateString();
-}
-
-function lastfmApiCredsHTML() {
-  const { apiKey, apiSecret } = getStoredLastfmCreds();
-  return `
-    <div class="settings-row settings-row--stack">
-      <div class="settings-row-label">
-        <span class="settings-row-name">Your own API key (optional)</span>
-        <span class="settings-row-desc">Stored only in this browser's local storage, never written to a file on disk. Leave blank to use the shared default key.</span>
-      </div>
-      <div class="settings-row-control settings-row-control--inline">
-        <input type="password" id="settings-lastfm-apikey-input" placeholder="API key" autocomplete="off" spellcheck="false" value="${apiKey}" />
-        <input type="password" id="settings-lastfm-apisecret-input" placeholder="Shared secret" autocomplete="off" spellcheck="false" value="${apiSecret}" />
-        <button id="settings-lastfm-creds-save" class="btn">Save</button>
-        ${(apiKey || apiSecret) ? '<button id="settings-lastfm-creds-clear" class="btn btn--danger">Clear</button>' : ''}
-      </div>
-      <span id="settings-lastfm-creds-status" class="settings-row-desc" hidden></span>
-    </div>
-  `;
-}
-
-function lastfmSectionHTML(s) {
-  if (s.connected) {
-    const lastScrobbleText = formatRelativeTime(s.lastScrobbleAt);
-    return `
-      <div class="settings-row">
-        <div class="settings-row-label">
-          <span class="settings-row-name">Connected as ${s.username}</span>
-          <span class="settings-row-desc">${lastScrobbleText ? `Last scrobble: ${lastScrobbleText}` : 'No scrobbles yet.'}</span>
-        </div>
-        <div class="settings-row-control">
-          <button id="settings-lastfm-disconnect" class="btn btn--danger">Disconnect</button>
-        </div>
-      </div>
-      ${lastfmApiCredsHTML()}
-    `;
-  }
-
-  const { apiKey } = getStoredLastfmCreds();
-  const hasKey = !!apiKey;
-
-  return `
-    <div class="settings-row">
-      <div class="settings-row-label">
-        <span class="settings-row-name">Scrobbling</span>
-        <span class="settings-row-desc">${hasKey ? 'Connect your Last.fm account to scrobble plays automatically.' : 'Add your API key below first, then connect.'}</span>
-      </div>
-      <div class="settings-row-control">
-        <button id="settings-lastfm-connect" class="btn" ${hasKey ? '' : 'disabled'}>Connect</button>
-      </div>
-    </div>
-    <div class="settings-row settings-row--stack" id="settings-lastfm-token-row" hidden>
-      <div class="settings-row-label">
-        <span class="settings-row-name">Approved in your browser?</span>
-        <span class="settings-row-desc">Once you've clicked "Yes, Allow Access" on the Last.fm page, come back and confirm below.</span>
-      </div>
-      <div class="settings-row-control settings-row-control--inline">
-        <button id="settings-lastfm-token-submit" class="btn">I've approved it</button>
-      </div>
-      <span id="settings-lastfm-error" class="settings-row-error" hidden></span>
-    </div>
-    ${lastfmApiCredsHTML()}
-  `;
-}
-
-function modRowHTML(mod) {
-  return `
-    <div class="settings-row" data-mod-id="${mod.id}">
-      <div class="settings-row-label">
-        <span class="settings-row-name">${mod.name}</span>
-        <span class="settings-row-desc">v${mod.version} — ${mod.author}</span>
-      </div>
-      <div class="settings-row-control">
-        <input type="checkbox" class="settings-mod-toggle" data-mod-id="${mod.id}" ${mod.enabled ? 'checked' : ''} />
-      </div>
-    </div>
-  `;
-}
-
-async function refreshModsList() {
-  const listEl = document.getElementById('settings-mods-list');
-  if (!listEl) return;
-  const mods = (await window.Musik?.mods?.list?.()) ?? [];
-  listEl.innerHTML = mods.length
-    ? mods.map(modRowHTML).join('')
-    : '<div class="settings-row"><div class="settings-row-label"><span class="settings-row-desc">No mods found.</span></div></div>';
-
-  listEl.querySelectorAll('.settings-mod-toggle').forEach((toggle) => {
-    toggle.addEventListener('change', async (e) => {
-      await window.Musik?.mods?.setEnabled?.(e.target.dataset.modId, e.target.checked);
-    });
-  });
-}
-
-// Settings view re-renders its whole DOM via main.innerHTML on every visit.
-// Element-scoped listeners die with their elements naturally, but anything
-// bound to document/window (custom-select outside-click, resize, the
-// musik:eq-change bus) outlives that and stacked up one extra copy per
-// visit. This controller is aborted at the top of every render so the
-// previous visit's listeners are torn down before the new ones go on.
+// Settings re-renders on every visit, so document/window listeners would stack up.
+// This controller is aborted at the top of each render to tear the old ones down.
 let settingsViewAbortController = null;
 
 window.MusikViews['settings'] = async function renderSettings(main) {
@@ -312,348 +12,11 @@ window.MusikViews['settings'] = async function renderSettings(main) {
   settingsViewAbortController = new AbortController();
   const { signal } = settingsViewAbortController;
 
-  const duckSettings = (await window.Musik?.gameDuck?.getSettings?.()) ?? { available: false, enabled: false, sensitivity: 0.5, duckCeiling: 0.4, maxDuck: 0.6 };
+  const duckSettings = (await window.Musik?.gameDuck?.getSettings?.()) ?? { available: false, enabled: false, sensitivity: 0.5, duckCeiling: 0.4, maxDuck: 0.6, preset: 'gaming' };
+  const duckAdvancedOpen = localStorage.getItem('musik.duck.advanced') === '1';
   const scrobblerSettings = (await window.Musik?.scrobble?.getSettings?.()) ?? { connected: false, username: null, enabled: true, usingCustomApiKey: false, lastScrobbleAt: null };
 
-  main.innerHTML = `
-    <div class="settings-page${getCompactSettings() ? ' settings-page--compact' : ''}">
-      <div class="settings-header">
-        <h1 class="settings-title">Settings</h1>
-        <div class="settings-view-toggle" id="settings-view-toggle" role="group" aria-label="Settings layout" data-compact="${getCompactSettings()}">
-          <span class="settings-view-toggle-thumb" aria-hidden="true"></span>
-          <button type="button" class="settings-view-opt" data-compact="false" aria-pressed="${!getCompactSettings()}" aria-label="Single column" title="Single column">
-            <svg class="settings-view-icon" viewBox="0 0 16 16" aria-hidden="true">
-              <rect class="sv-bar sv-bar--single" x="2" y="3" width="12" height="10" rx="2.5"/>
-            </svg>
-          </button>
-          <button type="button" class="settings-view-opt" data-compact="true" aria-pressed="${getCompactSettings()}" aria-label="Side by side" title="Side by side">
-            <svg class="settings-view-icon" viewBox="0 0 16 16" aria-hidden="true">
-              <rect class="sv-bar sv-bar--l" x="2" y="3" width="5" height="10" rx="2"/>
-              <rect class="sv-bar sv-bar--r" x="9" y="3" width="5" height="10" rx="2"/>
-            </svg>
-          </button>
-        </div>
-      </div>
-
-      <div class="settings-section-grid settings-section-grid--compact">
-        <section class="settings-section" id="settings-playback">
-          <h2 class="settings-section-title">Playback</h2>
-          <div class="settings-row">
-            <div class="settings-row-label">
-              <span class="settings-row-name">Default volume</span>
-              <span class="settings-row-desc">Volume applied on launch, before you touch the slider.</span>
-            </div>
-            <div class="settings-row-control">
-              <input type="range" id="settings-default-volume" min="0" max="100"
-                value="${getStoredDefaultVolumePercent()}" />
-              <span id="settings-default-volume-value" class="settings-row-value"></span>
-            </div>
-          </div>
-        </section>
-
-        <section class="settings-section" id="settings-miniplayer">
-          <h2 class="settings-section-title">Miniplayer</h2>
-          <div class="settings-row">
-            <div class="settings-row-label">
-              <span class="settings-row-name">Always on top</span>
-              <span class="settings-row-desc">Keep the miniplayer floating above other windows. Off = it behaves like a normal window.</span>
-            </div>
-            <div class="settings-row-control">
-              <input type="checkbox" id="settings-mini-always-on-top" ${getMiniAlwaysOnTop() ? 'checked' : ''} />
-            </div>
-          </div>
-        </section>
-      </div>
-
-      <section class="settings-section" id="settings-layout">
-        <h2 class="settings-section-title">Layout</h2>
-        <div class="settings-row settings-row--stack">
-          <div class="settings-row-label">
-            <span class="settings-row-name">Navigation</span>
-            <span class="settings-row-desc">Choose how the sidebar behaves — or turn it into a top bar.</span>
-          </div>
-        </div>
-        <div class="layout-grid" id="layout-nav-grid">
-          ${layoutCardHTML('dynamic', 'Dynamic', 'Hidden until you hover the edge.')}
-          ${layoutCardHTML('pinned', 'Pinned', 'Sidebar stays expanded, always visible.')}
-          ${layoutCardHTML('topbar', 'Top Bar', 'Sidebar becomes a bar across the top.')}
-        </div>
-      </section>
-
-      <section class="settings-section" id="settings-eq">
-        <h2 class="settings-section-title">Equalizer</h2>
-        <div class="settings-row">
-          <div class="settings-row-label">
-            <span class="settings-row-name">Mode</span>
-            <span class="settings-row-desc">Off is flat, zero effect on playback. Simple/Advanced are gain-only sliders. Master unlocks frequency and Q per band.</span>
-          </div>
-          <div class="settings-row-control">
-            <div class="custom-select" id="settings-eq-mode">
-              <button type="button" class="custom-select-trigger">
-                <span class="custom-select-trigger-label">Off</span>
-                <svg class="select-arrow" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
-              </button>
-              <div class="custom-select-options">
-                <div class="custom-option" data-value="off">Off</div>
-                <div class="custom-option" data-value="simple">Simple</div>
-                <div class="custom-option" data-value="advanced">Advanced</div>
-                <div class="custom-option" data-value="master">Master</div>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div class="settings-row" id="settings-eq-advanced-count-row">
-          <div class="settings-row-label">
-            <span class="settings-row-name">Bands</span>
-          </div>
-          <div class="settings-row-control">
-            <div class="custom-select" id="settings-eq-advanced-count">
-              <button type="button" class="custom-select-trigger">
-                <span class="custom-select-trigger-label">5-band</span>
-                <svg class="select-arrow" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
-              </button>
-              <div class="custom-select-options">
-                <div class="custom-option" data-value="5">5-band</div>
-                <div class="custom-option" data-value="10">10-band</div>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div class="settings-row settings-row--stack" id="settings-eq-presets-row">
-          <div class="settings-row-label">
-            <span class="settings-row-name">Presets</span>
-            <span class="settings-row-desc">Applies to the underlying 10 bands, so it shows correctly no matter which tier you're viewing.</span>
-          </div>
-          <div class="eq-preset-grid" id="settings-eq-presets"></div>
-        </div>
-        <div class="settings-row settings-row--stack" id="settings-eq-bands-row">
-          <div class="settings-row-label">
-            <span class="settings-row-name">Bands</span>
-          </div>
-          <div class="eq-bands-grid" id="settings-eq-bands"></div>
-        </div>
-      </section>
-
-      <section class="settings-section" id="settings-visualizer">
-        <h2 class="settings-section-title">Visualizer</h2>
-        <div class="settings-row">
-          <div class="settings-row-label">
-            <span class="settings-row-name">Quality</span>
-            <span class="settings-row-desc">Low disables extra fill/glow rendering and thins point density for weaker hardware. High turns it all up. Ultra adds supersampling on top of that.</span>
-          </div>
-          <div class="settings-row-control">
-            <div class="custom-select" id="settings-vis-quality">
-              <button type="button" class="custom-select-trigger">
-                <span class="custom-select-trigger-label">Low</span>
-                <svg class="select-arrow" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
-              </button>
-              <div class="custom-select-options">
-                <div class="custom-option" data-value="low">Low</div>
-                <div class="custom-option" data-value="medium">Medium</div>
-                <div class="custom-option" data-value="high">High</div>
-                <div class="custom-option" data-value="ultra">Ultra</div>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div class="settings-row">
-          <div class="settings-row-label">
-            <span class="settings-row-name">Reactivity</span>
-            <span class="settings-row-desc">How much the 3D blob deforms in response to audio. Lower this if it feels too jumpy.</span>
-          </div>
-          <div class="settings-row-control">
-            <input type="range" id="settings-vis-sensitivity" min="25" max="200"
-              value="${getVisSensitivityPercent()}" />
-            <span id="settings-vis-sensitivity-value" class="settings-row-value"></span>
-          </div>
-        </div>
-        <div class="settings-row">
-          <div class="settings-row-label">
-            <span class="settings-row-name">Custom effects</span>
-            <span class="settings-row-desc">Fresnel rim lighting and dither — bigger visual changes than the quality tiers above. Off by default so you can compare against the clean look first.</span>
-          </div>
-          <div class="settings-row-control">
-            <input type="checkbox" id="settings-vis-customfx" ${getCustomFxOn() ? 'checked' : ''} />
-          </div>
-        </div>
-        <div class="settings-row settings-row--sub" id="settings-vis-fresnel-row">
-          <div class="settings-row-label">
-            <span class="settings-row-name">Fresnel rim lighting</span>
-            <span class="settings-row-desc">Glowing edge along the blob's silhouette, brightest at grazing angles.</span>
-          </div>
-          <div class="settings-row-control">
-            <input type="checkbox" id="settings-vis-fresnel" ${getFresnelOn() ? 'checked' : ''} ${getCustomFxOn() ? '' : 'disabled'} />
-          </div>
-        </div>
-        <div class="settings-row settings-row--sub" id="settings-vis-dither-row">
-          <div class="settings-row-label">
-            <span class="settings-row-name">Dither</span>
-            <span class="settings-row-desc">Adds a faint texture to smooth out banding in the bloom glow.</span>
-          </div>
-          <div class="settings-row-control">
-            <input type="checkbox" id="settings-vis-dither" ${getDitherOn() ? 'checked' : ''} ${getCustomFxOn() ? '' : 'disabled'} />
-          </div>
-        </div>
-      </section>
-
-      <div class="settings-section-grid settings-section-grid--compact">
-      <section class="settings-section" id="settings-library">
-        <h2 class="settings-section-title">Library</h2>
-        <div class="settings-row">
-          <div class="settings-row-label">
-            <span class="settings-row-name">Auto-rescan</span>
-            <span class="settings-row-desc">Automatically rescans all watched folders on launch and on this interval. Set to Off to only scan manually.</span>
-          </div>
-          <div class="settings-row-control">
-            <div class="custom-select" id="settings-rescan-interval">
-              <button type="button" class="custom-select-trigger">
-                <span class="custom-select-trigger-label">Off</span>
-                <svg class="select-arrow" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
-              </button>
-              <div class="custom-select-options">
-                <div class="custom-option" data-value="0">Off</div>
-                <div class="custom-option" data-value="15">Every 15 min</div>
-                <div class="custom-option" data-value="30">Every 30 min</div>
-                <div class="custom-option" data-value="60">Every 60 min</div>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div class="settings-row">
-          <div class="settings-row-label">
-            <span class="settings-row-name">Rescan now</span>
-            <span class="settings-row-desc">Force an immediate rescan of all watched folders.</span>
-          </div>
-          <div class="settings-row-control">
-            <button type="button" id="settings-rescan-now" class="btn">Rescan library</button>
-            <span id="settings-rescan-status" class="settings-row-value"></span>
-          </div>
-        </div>
-        <div class="settings-row">
-          <div class="settings-row-label">
-            <span class="settings-row-name">Reset library</span>
-            <span class="settings-row-desc">Removes every track, playlist and watched folder from Musik. Your audio files are never touched.</span>
-          </div>
-          <div class="settings-row-control">
-            <button type="button" id="settings-library-reset" class="btn btn--danger">Reset library</button>
-            <span id="settings-library-reset-status" class="settings-row-value"></span>
-          </div>
-        </div>
-      </section>
-
-      <section class="settings-section" id="settings-mods">
-        <h2 class="settings-section-title">Mods</h2>
-        <div class="settings-row">
-          <div class="settings-row-label">
-            <span class="settings-row-name">Installed mods</span>
-            <span class="settings-row-desc">Drop mod folders into the mods directory, then rescan.</span>
-          </div>
-          <div class="settings-row-control">
-            <button type="button" id="settings-mods-open-folder" class="btn">Open mods folder</button>
-            <button type="button" id="settings-mods-rescan" class="btn">Rescan mods</button>
-          </div>
-        </div>
-        <div id="settings-mods-list"></div>
-      </section>
-      </div>
-
-      <section class="settings-section" id="settings-game-mode">
-        <h2 class="settings-section-title">Game mode</h2>
-        ${!duckSettings.available ? `
-          <div class="settings-row">
-            <div class="settings-row-label">
-              <span class="settings-row-name">Reactive volume ducking</span>
-              <span class="settings-row-desc">Not available on this platform (Windows only).</span>
-            </div>
-          </div>
-        ` : `
-          <div class="settings-row">
-            <div class="settings-row-label">
-              <span class="settings-row-name">Reactive volume ducking</span>
-              <span class="settings-row-desc">Automatically lowers Musik's volume when system audio (games, etc.) gets loud. Ctrl+Shift+D to override anytime.</span>
-            </div>
-            <div class="settings-row-control">
-              <input type="checkbox" id="settings-duck-enabled" ${duckSettings.enabled ? 'checked' : ''} />
-            </div>
-          </div>
-          <div class="settings-row">
-            <div class="settings-row-label">
-              <span class="settings-row-name">Sensitivity</span>
-              <span class="settings-row-desc">Higher = ducks at quieter system audio.</span>
-            </div>
-            <div class="settings-row-control">
-              <input type="range" id="settings-duck-sensitivity" min="0" max="100"
-                value="${Math.round(duckSettings.sensitivity * 100)}" />
-              <span id="settings-duck-sensitivity-value" class="settings-row-value"></span>
-            </div>
-          </div>
-          <div class="settings-row">
-            <div class="settings-row-label">
-              <span class="settings-row-name">Duck ceiling</span>
-              <span class="settings-row-desc">System audio level treated as "fully loud." Real game audio rarely peaks near 100% — lower this if ducking feels too weak, raise it if it's ducking on quiet sounds.</span>
-            </div>
-            <div class="settings-row-control">
-              <input type="range" id="settings-duck-ceiling" min="1" max="100"
-                value="${Math.round(duckSettings.duckCeiling * 100)}" />
-              <span id="settings-duck-ceiling-value" class="settings-row-value"></span>
-            </div>
-          </div>
-          <div class="settings-row">
-            <div class="settings-row-label">
-              <span class="settings-row-name">Max duck amount</span>
-              <span class="settings-row-desc">How much volume gets removed at peak system audio.</span>
-            </div>
-            <div class="settings-row-control">
-              <input type="range" id="settings-duck-max" min="0" max="100"
-                value="${Math.round(duckSettings.maxDuck * 100)}" />
-              <span id="settings-duck-max-value" class="settings-row-value"></span>
-            </div>
-          </div>
-          <div class="settings-row" id="settings-duck-meter-row">
-            <div class="settings-row-label">
-              <span class="settings-row-name">Live meter</span>
-              <span class="settings-row-desc">Play something loud in another app to test. Only updates while ducking is enabled.</span>
-            </div>
-            <div class="settings-row-control settings-row-control--inline">
-              <span id="settings-duck-meter-level" class="settings-row-value">level: —</span>
-              <span id="settings-duck-meter-mult" class="settings-row-value">volume: —</span>
-            </div>
-          </div>
-        `}
-      </section>
-
-      <div class="settings-section-grid settings-section-grid--compact">
-      <section class="settings-section" id="settings-scrobbling">
-        <h2 class="settings-section-title">Last.fm</h2>
-        ${lastfmSectionHTML(scrobblerSettings)}
-      </section>
-
-      <section class="settings-section" id="settings-debug">
-        <h2 class="settings-section-title">Debug</h2>
-        <div class="settings-row">
-          <div class="settings-row-label">
-            <span class="settings-row-name">System check</span>
-            <span class="settings-row-desc">Bridge status, manual file playback test.</span>
-          </div>
-          <div class="settings-row-control">
-            <button id="settings-open-system-check" class="btn">Open</button>
-          </div>
-        </div>
-      </section>
-      </div>
-
-      <nav class="settings-section-rail" aria-label="Settings sections">
-        <button type="button" class="settings-section-dot is-active" data-target="settings-playback" aria-label="Playback"><span>Playback</span></button>
-        <button type="button" class="settings-section-dot" data-target="settings-layout" aria-label="Layout"><span>Layout</span></button>
-        <button type="button" class="settings-section-dot" data-target="settings-eq" aria-label="Equalizer"><span>Equalizer</span></button>
-        <button type="button" class="settings-section-dot" data-target="settings-visualizer" aria-label="Visualizer"><span>Visualizer</span></button>
-        <button type="button" class="settings-section-dot" data-target="settings-library" aria-label="Library"><span>Library</span></button>
-        <button type="button" class="settings-section-dot" data-target="settings-game-mode" aria-label="Game mode"><span>Game mode</span></button>
-        <button type="button" class="settings-section-dot" data-target="settings-scrobbling" aria-label="Account"><span>Account</span></button>
-      </nav>
-      <button type="button" class="settings-back-to-top" aria-label="Back to top">↑</button>
-    </div>
-  `;
+  main.innerHTML = settingsHTML(duckSettings, scrobblerSettings, duckAdvancedOpen);
 
   const volumeSlider = document.getElementById('settings-default-volume');
   const volumeValue = document.getElementById('settings-default-volume-value');
@@ -679,22 +42,48 @@ window.MusikViews['settings'] = async function renderSettings(main) {
     .map((dot) => document.getElementById(dot.dataset.target))
     .filter(Boolean);
 
+  // A dot click pins its section as active. Sections near the bottom can't
+  // scroll up to the threshold (page runs out), so scroll position alone would
+  // never light them. The pin drops as soon as the user scrolls by hand.
+  let pinnedId = null;
+
   const paintSectionRail = () => {
     const mainTop = main.getBoundingClientRect().top;
     const threshold = mainTop + 120;
-    let current = navigableSections[0];
-    for (const section of navigableSections) {
-      if (section.getBoundingClientRect().top <= threshold) current = section;
+    const atBottom = main.scrollHeight - main.scrollTop - main.clientHeight < 4;
+    let currentId = pinnedId;
+    if (!currentId) {
+      let current = navigableSections[0];
+      let prevTop = null;
+      for (const section of navigableSections) {
+        const top = section.getBoundingClientRect().top;
+        // Side-by-side cards share a top edge - first one in the row owns the scroll position.
+        const sameRow = prevTop !== null && Math.abs(top - prevTop) < 4;
+        if (!sameRow && top <= threshold) current = section;
+        prevTop = top;
+      }
+      if (atBottom) current = navigableSections[navigableSections.length - 1];
+      currentId = current?.id;
     }
     sectionDots.forEach((dot) => {
-      dot.classList.toggle('is-active', dot.dataset.target === current?.id);
+      dot.classList.toggle('is-active', dot.dataset.target === currentId);
     });
     backToTop?.classList.toggle('is-visible', main.scrollTop > 420);
   };
 
+  const releasePin = () => { if (pinnedId) { pinnedId = null; paintSectionRail(); } };
+  main.addEventListener('wheel', releasePin, { signal, passive: true });
+  main.addEventListener('touchmove', releasePin, { signal, passive: true });
+  main.addEventListener('pointerdown', (e) => { if (e.target === main) releasePin(); }, { signal });
+  document.addEventListener('keydown', (e) => {
+    if (['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' '].includes(e.key)) releasePin();
+  }, { signal });
+
   sectionDots.forEach((dot) => {
     dot.addEventListener('click', () => {
-      document.getElementById(dot.dataset.target)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      pinnedId = dot.dataset.target;
+      paintSectionRail();
+      document.getElementById(pinnedId)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }, { signal });
   });
   main.addEventListener('scroll', paintSectionRail, { signal, passive: true });
@@ -762,7 +151,7 @@ window.MusikViews['settings'] = async function renderSettings(main) {
     }
   });
 
-  // Demo reset — wipes tracks, playlists and watched folders (never files on
+  // Demo reset - wipes tracks, playlists and watched folders (never files on
   // disk). Backend: library.clear -> 'library:clear', which also broadcasts
   // libraryupdate { cleared: true } so open views refresh themselves.
   const libraryResetBtn = document.getElementById('settings-library-reset');
@@ -772,9 +161,11 @@ window.MusikViews['settings'] = async function renderSettings(main) {
       libraryResetStatus.textContent = 'Unavailable';
       return;
     }
-    const ok = await window.MusikDialog?.confirm?.(
-      'Reset your library? This removes every track, playlist and watched folder from Musik. Your audio files stay on your computer.'
-    );
+    const ok = await window.MusikDialog?.confirm?.('Reset your library?', {
+      detail: 'This removes every track, playlist and watched folder from Musik. Your audio files stay on your computer.',
+      confirmLabel: 'Reset',
+      defaultFocus: 'cancel',
+    });
     if (!ok) return;
     libraryResetBtn.disabled = true;
     libraryResetStatus.textContent = 'Resetting…';
@@ -789,6 +180,18 @@ window.MusikViews['settings'] = async function renderSettings(main) {
       setTimeout(() => { libraryResetStatus.textContent = ''; }, 3000);
     }
   });
+
+  const searchHistoryClearBtn = document.getElementById('settings-search-history-clear');
+  const searchHistoryStatus = document.getElementById('settings-search-history-status');
+  if (window.MusikSearch?.clearHistory) {
+    searchHistoryClearBtn.addEventListener('click', () => {
+      window.MusikSearch.clearHistory();
+      searchHistoryStatus.textContent = 'Cleared';
+      setTimeout(() => { searchHistoryStatus.textContent = ''; }, 3000);
+    }, { signal });
+  } else {
+    searchHistoryClearBtn.closest('.settings-row').hidden = true;
+  }
 
   const visQualitySelect = document.getElementById('settings-vis-quality');
 
@@ -852,7 +255,7 @@ window.MusikViews['settings'] = async function renderSettings(main) {
   const eqBandsWrap = document.getElementById('settings-eq-bands');
 
   // Minimal, self-contained wiring for the app's existing .custom-select
-  // component (styled in tokens.css, previously unused by any JS) — click
+  // component (styled in tokens.css, previously unused by any JS) - click
   // trigger to open, click an option to pick it, click outside to close.
   function initCustomSelect(root, onChange) {
     if (!root) return null;
@@ -861,15 +264,11 @@ window.MusikViews['settings'] = async function renderSettings(main) {
     const optionsPanel = root.querySelector('.custom-select-options');
     const options = root.querySelectorAll('.custom-option');
 
-    // .settings-section has its own backdrop-filter, which creates a
-    // separate stacking context per section. An absolutely-positioned
-    // options panel is trapped inside its own section's context — no
-    // z-index can lift it above whichever section comes next in the DOM.
-    // Moving the panel to <body> and position:fixed-ing it off the
-    // trigger's live bounding rect escapes the trap entirely.
+    // .settings-section's backdrop-filter traps an absolute panel in its own stacking
+    // context, so the panel moves to <body> and is fixed-positioned off the trigger.
     optionsPanel.classList.add('custom-select-options--portal');
     document.body.appendChild(optionsPanel);
-    // It's now a body-level child, not a descendant of main — the next
+    // It's now a body-level child, not a descendant of main - the next
     // render's main.innerHTML wipe won't remove it. Clean it up ourselves
     // when this render's lifetime ends.
     signal.addEventListener('abort', () => optionsPanel.remove());
@@ -891,12 +290,8 @@ window.MusikViews['settings'] = async function renderSettings(main) {
       window.removeEventListener('scroll', onScroll, true);
     }
 
-    // Shared by setValue() (external/initial sync) and the option click
-    // handler below (user-driven selection) — previously only setValue()
-    // did this, so clicking an option fired onChange() and closed the
-    // panel, but the trigger label and .selected state never updated to
-    // reflect the click. The setting was actually being applied
-    // underneath; it just looked like clicking did nothing.
+    // Shared by setValue() and the option click handler so the trigger label and
+    // .selected state update on user clicks too.
     function applySelection(value) {
       let match = null;
       options.forEach((o) => {
@@ -910,7 +305,7 @@ window.MusikViews['settings'] = async function renderSettings(main) {
     trigger.addEventListener('click', (e) => {
       e.stopPropagation();
       const opening = !root.classList.contains('open');
-      // Close any other open portaled select first — otherwise clicking
+      // Close any other open portaled select first - otherwise clicking
       // straight from one trigger to another leaves both panels open,
       // since stopPropagation() here skips the document click-close.
       document.querySelectorAll('.custom-select-options--portal.is-open').forEach((p) => p.classList.remove('is-open'));
@@ -947,7 +342,7 @@ window.MusikViews['settings'] = async function renderSettings(main) {
     return (1 - (dB + 12) / 24) * 100; // -12dB -> 100% (bottom), +12dB -> 0% (top)
   }
 
-  // Redraws the connecting curve from live DOM thumb positions — turns
+  // Redraws the connecting curve from live DOM thumb positions - turns
   // separate sliders into one continuous shape. Cheap enough for every
   // drag tick (no re-render, just path-string math).
   function updateEqCurve(consoleEl) {
@@ -958,11 +353,7 @@ window.MusikViews['settings'] = async function renderSettings(main) {
 
     const consoleRect = consoleEl.getBoundingClientRect();
 
-    // Centerline uses a rail's own rect (position never moves mid-drag,
-    // only the thumb does) as an exact 0dB reference. Same rect gives us
-    // the rail's bottom edge, which is where the fill below should stop
-    // — it was previously running the full console height and washing
-    // out the dB inputs sitting underneath.
+    // The rail's own rect is the exact 0dB reference and the bottom edge the fill stops at.
     const centerline = consoleEl.querySelector('.eq-console-centerline');
     const railRect = bandEls[0].querySelector('.eq-band-rail').getBoundingClientRect();
     const railBottomY = railRect.bottom - consoleRect.top;
@@ -1020,7 +411,7 @@ window.MusikViews['settings'] = async function renderSettings(main) {
       window.removeEventListener('pointermove', onPointerMove);
       window.removeEventListener('pointerup', onPointerUp);
       thumb.classList.remove('eq-band-thumb--dragging');
-      // Commit once at drag end — persists + broadcasts musik:eq-change.
+      // Commit once at drag end - persists + broadcasts musik:eq-change.
       const finalDb = applyFromClientY(e.clientY);
       window.MusikEQ.commitBandGain(bandIndex, finalDb);
     }
@@ -1120,7 +511,7 @@ window.MusikViews['settings'] = async function renderSettings(main) {
   }
 
   // Presets/mode/band-count changes funnel through this event so the UI
-  // never drifts from real state. Drag-in-progress updates don't — see
+  // never drifts from real state. Drag-in-progress updates don't - see
   // previewBandGain in eq.js.
   window.addEventListener('musik:eq-change', renderEqSection, { signal });
   renderEqSection();
@@ -1148,27 +539,61 @@ window.MusikViews['settings'] = async function renderSettings(main) {
       window.Musik?.gameDuck?.setEnabled?.(e.target.checked);
     });
 
+    const DUCK_PRESET_DESCS = {
+      gaming: 'Follows game audio. Quick to duck, holds through short gaps.',
+      meetings: 'Ducks hard and fast when someone talks, holds through pauses.',
+      movies: 'Rides along with the audio, no hold.',
+      custom: 'Uses the sliders under Advanced.',
+    };
+    const presetBtns = document.querySelectorAll('#settings-duck-presets [data-duck-preset]');
+    const presetDesc = document.getElementById('settings-duck-preset-desc');
+    const paintDuckPreset = (name) => {
+      presetBtns.forEach((b) => {
+        const on = b.dataset.duckPreset === name;
+        b.classList.toggle('segmented-btn--active', on);
+        b.setAttribute('aria-pressed', on);
+      });
+      if (presetDesc) presetDesc.textContent = DUCK_PRESET_DESCS[name] || '';
+    };
+    paintDuckPreset(duckSettings.preset || 'gaming');
+    presetBtns.forEach((b) => b.addEventListener('click', () => {
+      paintDuckPreset(b.dataset.duckPreset);
+      window.Musik?.gameDuck?.setPreset?.(b.dataset.duckPreset);
+    }));
+
+    const advToggle = document.getElementById('settings-duck-advanced-toggle');
+    advToggle.addEventListener('click', () => {
+      const open = advToggle.getAttribute('aria-pressed') !== 'true';
+      advToggle.setAttribute('aria-pressed', open);
+      advToggle.textContent = open ? 'Hide' : 'Show';
+      document.querySelectorAll('.settings-duck-adv').forEach((r) => { r.style.display = open ? '' : 'none'; });
+      localStorage.setItem('musik.duck.advanced', open ? '1' : '0');
+    });
+
     const sensSlider = document.getElementById('settings-duck-sensitivity');
     const sensValue = document.getElementById('settings-duck-sensitivity-value');
     bindRangeValueDisplay(sensSlider, sensValue, (value) => {
+      paintDuckPreset('custom');
       window.Musik?.gameDuck?.setSensitivity?.(Number(value) / 100);
     });
 
     const ceilingSlider = document.getElementById('settings-duck-ceiling');
     const ceilingValue = document.getElementById('settings-duck-ceiling-value');
     bindRangeValueDisplay(ceilingSlider, ceilingValue, (value) => {
+      paintDuckPreset('custom');
       window.Musik?.gameDuck?.setDuckCeiling?.(Number(value) / 100);
     });
 
     const maxSlider = document.getElementById('settings-duck-max');
     const maxValue = document.getElementById('settings-duck-max-value');
     bindRangeValueDisplay(maxSlider, maxValue, (value) => {
+      paintDuckPreset('custom');
       window.Musik?.gameDuck?.setMaxDuck?.(Number(value) / 100);
     });
 
-    // 'duckdebug' — main.js/game-duck.js don't emit this yet; row stays at "—" until they do.
+    // 'duckdebug' - main.js/game-duck.js don't emit this yet; row stays at "-" until they do.
     // window.Musik.events is a custom bus, not a native EventTarget, so it
-    // can't take an AbortSignal directly — remove it by hand on teardown.
+    // can't take an AbortSignal directly - remove it by hand on teardown.
     const meterLevel = document.getElementById('settings-duck-meter-level');
     const meterMult = document.getElementById('settings-duck-meter-mult');
     const onDuckDebug = ({ level, smoothed }) => {
@@ -1177,6 +602,42 @@ window.MusikViews['settings'] = async function renderSettings(main) {
     };
     window.Musik?.events?.on?.('duckdebug', onDuckDebug);
     signal.addEventListener('abort', () => window.Musik?.events?.off?.('duckdebug', onDuckDebug));
+  }
+
+  const searchShortcutBtn = document.getElementById('settings-search-shortcut');
+  const searchShortcutReset = document.getElementById('settings-search-shortcut-reset');
+  const searchShortcutDesc = document.getElementById('settings-search-shortcut-desc');
+  if (window.MusikSearch?.getShortcutLabel) {
+    const SHORTCUT_HINT = searchShortcutDesc.textContent;
+    const SHORTCUT_ERRORS = {
+      'needs-modifier': 'Add Ctrl, Cmd or Alt so it doesn\'t fire while you type.',
+      invalid: 'That key can\'t be used.',
+    };
+    const paintShortcut = () => { searchShortcutBtn.textContent = window.MusikSearch.getShortcutLabel(); };
+    paintShortcut();
+
+    searchShortcutBtn.addEventListener('click', async () => {
+      searchShortcutBtn.textContent = 'Press keys…';
+      searchShortcutDesc.textContent = 'Esc to cancel.';
+      const result = await window.MusikSearch.captureShortcut((partial) => {
+        searchShortcutBtn.textContent = partial || 'Press keys\u2026';
+      });
+      paintShortcut();
+      searchShortcutDesc.textContent = result.reason === 'conflict'
+        ? `Conflicts with ${result.label}. Pick another.`
+        : SHORTCUT_ERRORS[result.reason] || SHORTCUT_HINT;
+    }, { signal });
+
+    searchShortcutReset.addEventListener('click', () => {
+      window.MusikSearch.resetShortcut();
+      paintShortcut();
+      searchShortcutDesc.textContent = SHORTCUT_HINT;
+    }, { signal });
+
+    // Leaving Settings mid-capture shouldn't leave a key grab running.
+    signal.addEventListener('abort', () => window.MusikSearch?.cancelShortcutCapture?.());
+  } else {
+    searchShortcutBtn.closest('.settings-row').hidden = true;
   }
 
   await refreshModsList();
@@ -1188,90 +649,3 @@ window.MusikViews['settings'] = async function renderSettings(main) {
   await syncLastfmCredsToMain();
   bindLastfmSection(main);
 };
-
-async function refreshLastfmSection() {
-  const section = document.getElementById('settings-scrobbling');
-  if (!section) return;
-  const settings = (await window.Musik?.scrobble?.getSettings?.()) ?? { connected: false };
-  section.innerHTML = `<h2 class="settings-section-title">Last.fm</h2>${lastfmSectionHTML(settings)}`;
-  bindLastfmSection(document);
-}
-
-function bindLastfmSection(scope) {
-  const connectBtn = scope.querySelector('#settings-lastfm-connect');
-  const disconnectBtn = scope.querySelector('#settings-lastfm-disconnect');
-  const tokenRow = scope.querySelector('#settings-lastfm-token-row');
-  const tokenSubmit = scope.querySelector('#settings-lastfm-token-submit');
-  const errorEl = scope.querySelector('#settings-lastfm-error');
-
-  function showError(msg) {
-    if (!errorEl) return;
-    errorEl.textContent = msg;
-    errorEl.hidden = false;
-  }
-
-  connectBtn?.addEventListener('click', async () => {
-    connectBtn.disabled = true;
-    try {
-      const url = await window.Musik?.scrobble?.getAuthUrl?.();
-      if (!url) return;
-      window.Musik?.system?.openExternal?.(url);
-      tokenRow.hidden = false;
-    } finally {
-      connectBtn.disabled = false;
-    }
-  });
-
-  tokenSubmit?.addEventListener('click', async () => {
-    tokenSubmit.disabled = true;
-    tokenSubmit.textContent = 'Connecting…';
-    try {
-      await window.Musik?.scrobble?.completeAuth?.();
-      await refreshLastfmSection();
-    } catch (err) {
-      showError(err?.message || 'Couldn\'t connect — make sure you approved access, then try again.');
-      tokenSubmit.disabled = false;
-      tokenSubmit.textContent = "I've approved it";
-    }
-  });
-
-  disconnectBtn?.addEventListener('click', async () => {
-    disconnectBtn.disabled = true;
-    await window.Musik?.scrobble?.disconnect?.();
-    await refreshLastfmSection();
-  });
-
-  const apiKeyInput = scope.querySelector('#settings-lastfm-apikey-input');
-  const apiSecretInput = scope.querySelector('#settings-lastfm-apisecret-input');
-  const credsSaveBtn = scope.querySelector('#settings-lastfm-creds-save');
-  const credsClearBtn = scope.querySelector('#settings-lastfm-creds-clear');
-  const credsStatus = scope.querySelector('#settings-lastfm-creds-status');
-
-  function showCredsStatus(msg) {
-    if (!credsStatus) return;
-    credsStatus.textContent = msg;
-    credsStatus.hidden = false;
-  }
-
-  credsSaveBtn?.addEventListener('click', async () => {
-    const apiKey = apiKeyInput?.value.trim() || '';
-    const apiSecret = apiSecretInput?.value.trim() || '';
-    setStoredLastfmCreds(apiKey, apiSecret);
-    credsSaveBtn.disabled = true;
-    credsSaveBtn.textContent = 'Saving…';
-    try {
-      await window.Musik?.scrobble?.setCredentials?.({ apiKey: apiKey || '', apiSecret: apiSecret || '' });
-      showCredsStatus('Saved to this browser only.');
-    } finally {
-      credsSaveBtn.disabled = false;
-      credsSaveBtn.textContent = 'Save';
-      await refreshLastfmSection();
-    }
-  });
-
-  credsClearBtn?.addEventListener('click', async () => {
-    setStoredLastfmCreds('', '');
-    await window.Musik?.scrobble?.setCredentials?.({ apiKey: '', apiSecret: '' });
-    await refreshLastfmSection();
-  });
-}

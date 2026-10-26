@@ -1,0 +1,197 @@
+/* src/styles/context-menu.css
+ *
+ * Right-click menus from context-menu.js (track, playlist, queue row, and the
+ * compact miniplayer variant). Shared by index.html and miniplayer.html —
+ * the container/danger rules came from shell.css and the item rules from
+ * track-actions.css, which the miniplayer window doesn't load.
+ *
+ * Load AFTER the main stylesheet chain (components.css / tokens.css): the
+ * rules below rely on coming last to win over .glass-surface--elevated.
+ */
+
+/* ── Container ─────────────────────────────────────────────────── */
+.context-menu, .ctx-menu {
+  position: fixed;
+  overflow: hidden;
+  background: rgba(22, 22, 22, 0.94);
+  backdrop-filter: blur(12px) saturate(var(--glass-saturate-standard));
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+  z-index: var(--z-context-menu, 11000); /* fallback: the miniplayer window doesn't load the file that defines it */
+  min-width: 170px;
+  padding: 6px 4px;
+}
+
+/* grain for the menus */
+.context-menu::before, .ctx-menu::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: var(--glass-noise);
+  mix-blend-mode: overlay;
+  opacity: 0.4;
+  pointer-events: none;
+  border-radius: inherit;
+}
+
+/* danger items (remove, delete). extra specificity so load order doesn't undo it */
+.ctx-menu .ctx-menu-item--danger { color: var(--color-danger, #ff6b6b); }
+.ctx-menu .ctx-menu-item--danger:hover,
+.ctx-menu .ctx-menu-item--danger:focus-visible {
+  color: var(--color-danger, #ff6b6b);
+  background: color-mix(in srgb, var(--color-danger, #ff6b6b) 16%, transparent);
+}
+
+/* ── Right-click context menu ──────────────────────────────────── */
+/* Container above. z-index must not be redeclared lower here: it was once
+   1000, which dropped the menu under the sidebar (10050) and player bar (9000). */
+.ctx-menu {
+  min-width: 200px;
+  max-width: 260px;
+  padding: 6px;
+  border: 1px solid var(--color-border-strong);
+  box-shadow: 0 16px 40px -8px rgba(0, 0, 0, 0.55);
+  font-size: 13px;
+}
+
+.ctx-menu-label {
+  padding: 8px 10px 4px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-dim);
+}
+
+.ctx-menu-label,
+.ctx-menu-item,
+.ctx-menu-divider,
+.ctx-menu-empty {
+  position: relative; /* sit above the ::before noise layer */
+  z-index: 1;
+}
+
+.ctx-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 32px;
+  padding: 7px 10px;
+  border: none;
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: background 0.12s var(--ease-out), color 0.12s var(--ease-out);
+}
+
+.ctx-menu-item:hover,
+.ctx-menu-item:focus-visible {
+  outline: none;
+  background: color-mix(in srgb, var(--color-text) 8%, transparent);
+}
+
+.ctx-menu-item:active { background: var(--color-accent-subtle); }
+
+.ctx-menu-item--new { color: var(--color-accent); }
+
+.ctx-menu-item--new:hover,
+.ctx-menu-item--new:focus-visible { background: var(--color-accent-dim); }
+
+/* Destructive rows: "Remove from Library", "Delete Playlist". */
+.ctx-menu-item--danger { color: var(--color-danger, #ff6b6b); }
+
+.ctx-menu-item--danger:hover,
+.ctx-menu-item--danger:focus-visible {
+  background: color-mix(in srgb, var(--color-danger, #ff6b6b) 14%, transparent);
+}
+
+.ctx-menu-item--danger:active {
+  background: color-mix(in srgb, var(--color-danger, #ff6b6b) 24%, transparent);
+}
+
+.ctx-menu-item:disabled {
+  opacity: 0.4;
+  cursor: default;
+  background: transparent;
+}
+
+.ctx-menu-divider {
+  height: 1px;
+  margin: 5px 6px;
+  background: var(--color-border-strong);
+}
+
+.ctx-menu-empty {
+  padding: 8px 10px;
+  color: var(--color-text-dim);
+  font-size: 12px;
+}
+
+/* ── Entrance ──────────────────────────────────────────────────────
+   Keyframes live in animations.css. context-menu.js builds a fresh element
+   per right-click, so a plain animation plays once per open; the compact
+   menu's in-place view swaps don't replay it. */
+.context-menu,
+.ctx-menu {
+  transform-origin: top left;
+  animation: ctx-menu-in 140ms var(--ease-out, ease-out) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .context-menu,
+  .ctx-menu { animation: none; }
+}
+
+/* ── Compact variant (miniplayer) ─────────────────────────────────
+   Window is ~300px wide, so: tighter rows, never taller than the window
+   (scrolls instead), "Add to Playlist" swaps in place with a Back row. */
+.ctx-menu--compact {
+  min-width: 156px;
+  max-width: calc(100vw - 16px);
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
+  padding: 4px;
+  font-size: 12px;
+  scrollbar-width: thin;
+}
+
+.ctx-menu--compact .ctx-menu-item {
+  min-height: 28px;
+  padding: 5px 9px;
+}
+
+.ctx-menu--compact .ctx-menu-divider { margin: 4px 5px; }
+
+.ctx-menu-item > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Rows that open a sub-view: label left, chevron pinned right. */
+.ctx-menu-item--drill { justify-content: space-between; }
+
+.ctx-menu-chevron {
+  flex-shrink: 0;
+  opacity: 0.55;
+}
+
+/* Back row at the top of a sub-view: reads as a header, not an action. */
+.ctx-menu-back {
+  color: var(--color-text-dim);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.ctx-menu-back:hover,
+.ctx-menu-back:focus-visible { color: var(--color-text); }

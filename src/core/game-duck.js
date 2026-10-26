@@ -7,10 +7,11 @@
 //
 // Settings semantics:
 //   enabled        — master on/off (Settings toggle)
-//   sensitivity     0..1 — level threshold above which ducking starts
-//                    kicking in. Lower = ducks on quieter sounds.
+//   sensitivity     0..1 — how readily ducking starts. Higher = ducks on
+//                    quieter system audio. Internally the trigger level is
+//                    1 - sensitivity.
 //   duckCeiling     0..1 — level treated as "fully loud" for ramp
-//                    purposes. Must be > sensitivity. Default 0.4.
+//                    purposes. Must be above the trigger level. Default 0.4.
 //   maxDuck         0..1 — AMOUNT removed when fully ducked (e.g. 0.7
 //                    means volume drops by 70%, to 30% of normal, at
 //                    peak system audio; 1.0 = ducks to silence, 0 = no
@@ -21,8 +22,16 @@
 //                    `enabled` or live level. Not persisted — resets to
 //                    false on relaunch.
 //
-// Multiplier curve: below effective sensitivity, multiplier is 1.0 (no
-// duck). From effective sensitivity to effective duckCeiling, multiplier
+// Presets (preset): gaming, meetings, movies, custom. Every preset except
+// custom uses adaptive detection: the trigger level and ceiling follow how
+// loud the other audio has been over the last few seconds, so nothing needs
+// tuning per game or per call. Each preset also sets its own max duck and
+// attack/hold/release timing. Custom uses the manual sliders (sensitivity,
+// duckCeiling, maxDuck) and the fixed timings below. Touching any slider
+// switches the preset to custom.
+//
+// Multiplier curve: below the effective trigger level, multiplier is 1.0
+// (no duck). From the effective trigger level to effective duckCeiling, multiplier
 // ramps linearly down to (1 - maxDuck). At/above ceiling, pinned there.
 // Smoothed with time-based attack/release plus a release hold (see the
 // ballistics constants) so it doesn't snap or pump on bursty audio.
@@ -34,8 +43,8 @@
 // shift down; a loud track (e.g. -8 LUFS) shifts them up. Reference point
 // is -18 LUFS (roughly "normal" streaming-normalized loudness) — no
 // adjustment at that point. Adjustment is clamped so it can only nudge
-// the curve, never invert sensitivity > ceiling or push either out of
-// 0..1.
+// the curve, never put the trigger level above the ceiling or push either
+// out of 0..1.
 //
 // Self-exclusion (added — fixes feedback loop): the addon only auto-
 // excludes the PID of whatever process calls addon.start(). Electron
@@ -62,19 +71,40 @@ const { app } = require('electron');
 
 const DEFAULTS = {
   enabled: false,
-  sensitivity: 0.15,
+  sensitivity: 0.85,
   duckCeiling: 0.4,
   maxDuck: 0.65,
   maxDuckIsAmount: true, // migration marker: absent on old files where maxDuck was a floor
+  sensitivityHigherIsMore: true, // migration marker: absent on old files where sensitivity was the trigger level itself
   // Process names (not PIDs — PIDs change every relaunch) that should
   // never count toward ducking, e.g. a notch-widget visualizer that has
   // its own active audio session but isn't something to duck for.
   excludedProcessNames: [],
+  preset: 'gaming',
 };
 
 const LUFS_REFERENCE = -18;
 const LUFS_ADJUST_RANGE = 20; // +/-20 LUFS from reference maps to +/-MAX_LUFS_ADJUST
 const MAX_LUFS_ADJUST = 0.12; // cap on how far loudness can shift sensitivity/ceiling
+
+// Each preset: max duck is the amount removed at full duck; the timings are
+// time constants in ms. Movies has no hold, so it follows the audio up and down.
+const PRESETS = {
+  gaming:   { maxDuck: 0.65, attackMs: 50,  holdMs: 700,  releaseMs: 900 },
+  meetings: { maxDuck: 0.85, attackMs: 25,  holdMs: 1400, releaseMs: 700 },
+  movies:   { maxDuck: 0.5,  attackMs: 120, holdMs: 0,    releaseMs: 500 },
+};
+const PRESET_NAMES = [...Object.keys(PRESETS), 'custom'];
+
+// Adaptive detection tuning values. loudRef is the recent loud level of the
+// other audio. Ducking starts at ADAPT_TRIGGER_FRAC of it and is full at
+// ADAPT_CEILING_FRAC of it.
+const REF_MIN = 0.12;            // loudRef never drops below this, so a quiet blip can't count as full loud
+const REF_DECAY_MS = 12000;      // how long loudRef takes to forget a loud moment
+const ADAPT_TRIGGER_MIN = 0.01;  // anything quieter than this is ignored (idle hiss)
+const ADAPT_TRIGGER_FRAC = 0.12;
+const ADAPT_CEILING_FRAC = 0.8;
+const ADAPT_MIN_SPAN = 0.03;     // trigger to ceiling gap never gets smaller than this
 
 // Separate from persisted settings — resets every launch by design.
 let manualOverride = false;
@@ -87,6 +117,7 @@ let addon = null;
 let available = false;
 let pollInterval = null;
 let smoothedMultiplier = 1.0;
+let loudRef = REF_MIN;
 let onMultiplierChange = () => {};
 let onDebugTick = null; // optional: (level, target, smoothed) => void
 
@@ -101,7 +132,9 @@ let onDebugTick = null; // optional: (level, target, smoothed) => void
 // from the real elapsed time (1 - e^(-dt/tau)).
 //
 // These five numbers are TUNING values (subjective feel), not bug fixes.
-const POLL_MS = 30;           // how often the level is sampled
+const POLL_MS = 10;           // how often the level is sampled
+const SEND_MIN_MS = 16;       // never push the multiplier to the renderer faster than this
+const DEBUG_EVERY_MS = 100;   // debug meter / log rate, independent of the sample rate
 const DUCK_IN_MS = 50;        // attack time constant — how fast it ducks
 const DUCK_RELEASE_MS = 900;  // release time constant — how slowly it recovers
 const HOLD_MS = 700;          // after the last "still ducking" moment, wait this long before releasing (bridges gaps between words/sentences)
@@ -185,13 +218,27 @@ function loadSettingsFromDisk() {
   try {
     const disk = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'));
     settings = { ...DEFAULTS, ...disk };
+    let migrated = false;
     // One-time migration: old files stored maxDuck as a floor multiplier
     // (0.35 = duck TO 35%). It's now the amount removed, so flip it.
     if (!disk.maxDuckIsAmount && typeof disk.maxDuck === 'number') {
       settings.maxDuck = Math.max(0, Math.min(1, 1 - disk.maxDuck));
       settings.maxDuckIsAmount = true;
-      saveSettingsToDisk();
+      migrated = true;
     }
+    // One-time migration: old files stored sensitivity as the trigger level
+    // (higher = needs louder audio), which is the reverse of what the slider
+    // says. Flip it so existing users keep the exact same ducking behavior.
+    if (!disk.sensitivityHigherIsMore && typeof disk.sensitivity === 'number') {
+      settings.sensitivity = Math.max(0, Math.min(1, 1 - disk.sensitivity));
+      settings.sensitivityHigherIsMore = true;
+      migrated = true;
+    }
+    if (!PRESET_NAMES.includes(settings.preset)) {
+      settings.preset = DEFAULTS.preset;
+      migrated = true;
+    }
+    if (migrated) saveSettingsToDisk();
   } catch (err) {
     console.warn('[Musik] game-duck: failed to read settings, using defaults:', err.message);
   }
@@ -213,25 +260,59 @@ function loudnessAdjustment() {
   return normalized * MAX_LUFS_ADJUST;
 }
 
-function computeTargetMultiplier(level) {
+function activeTuning() {
+  const preset = PRESETS[settings.preset];
+  if (preset) return { ...preset, adaptive: true };
+  return {
+    maxDuck: settings.maxDuck,
+    attackMs: DUCK_IN_MS,
+    holdMs: HOLD_MS,
+    releaseMs: DUCK_RELEASE_MS,
+    adaptive: false,
+  };
+}
+
+// Instant rise, slow fall, so loudRef tracks the loud level of whatever is
+// playing now and fades after it stops.
+function updateLoudReference(level, dt) {
+  if (level >= loudRef) {
+    loudRef = level;
+    return;
+  }
+  const floor = Math.max(level, REF_MIN);
+  loudRef += (floor - loudRef) * (1 - Math.exp(-dt / REF_DECAY_MS));
+}
+
+function computeTargetMultiplier(level, tune) {
   if (manualOverride) return 1.0;
   if (!settings.enabled) return 1.0;
 
   const adjust = loudnessAdjustment();
-  const effectiveSensitivity = Math.max(0, Math.min(0.95, settings.sensitivity + adjust));
-  const effectiveCeiling = Math.max(effectiveSensitivity + 0.001, Math.min(1, settings.duckCeiling + adjust));
+  let trigger;
+  let ceiling;
+  if (tune.adaptive) {
+    // A quiet track scales both levels down (ducks earlier), a loud one up.
+    const scale = Math.pow(2, (adjust / MAX_LUFS_ADJUST) * 0.5);
+    trigger = Math.min(0.95, Math.max(ADAPT_TRIGGER_MIN, loudRef * ADAPT_TRIGGER_FRAC) * scale);
+    ceiling = Math.min(1, Math.max(trigger + ADAPT_MIN_SPAN, loudRef * ADAPT_CEILING_FRAC * scale));
+  } else {
+    trigger = Math.max(0, Math.min(0.95, (1 - settings.sensitivity) + adjust));
+    ceiling = Math.max(trigger + 0.001, Math.min(1, settings.duckCeiling + adjust));
+  }
 
-  if (level <= effectiveSensitivity) return 1.0;
+  if (level <= trigger) return 1.0;
 
-  const range = effectiveCeiling - effectiveSensitivity;
-  const over = range > 0 ? (level - effectiveSensitivity) / range : 1.0;
+  const range = ceiling - trigger;
+  const over = range > 0 ? (level - trigger) / range : 1.0;
   const clamped = Math.max(0, Math.min(1, over));
-  return 1.0 - clamped * settings.maxDuck;
+  return 1.0 - clamped * tune.maxDuck;
 }
 
 let lastTickAt = 0;
 let holdUntil = 0;
 let lastSentMultiplier = 1.0;
+let lastSentAt = 0;
+let lastDebugAt = 0;
 
 function tick() {
   if (!addon) return;
@@ -248,7 +329,9 @@ function tick() {
   }
 
   const level = addon.getLevel();
-  let target = computeTargetMultiplier(level);
+  updateLoudReference(level, dt);
+  const tune = activeTuning();
+  let target = computeTargetMultiplier(level, tune);
 
   // Hold: every time the signal is at least as loud as what we're already
   // ducked to, restart the hold timer. While it's running, refuse to
@@ -256,22 +339,27 @@ function tick() {
   // between words. Only applies while ducking is actually active, so the
   // manual-override hotkey / disabling the feature still releases at once.
   if (target < 1.0 && target <= smoothedMultiplier) {
-    holdUntil = now + HOLD_MS;
+    holdUntil = now + tune.holdMs;
   } else if (target > smoothedMultiplier && settings.enabled && !manualOverride && now < holdUntil) {
     target = smoothedMultiplier;
   }
 
-  const tau = target < smoothedMultiplier ? DUCK_IN_MS : DUCK_RELEASE_MS;
+  const tau = target < smoothedMultiplier ? tune.attackMs : tune.releaseMs;
   smoothedMultiplier += (target - smoothedMultiplier) * (1 - Math.exp(-dt / tau));
   if (Math.abs(target - smoothedMultiplier) < SNAP_EPSILON) smoothedMultiplier = target;
 
-  // Only push when the value actually changed — at 30ms polling that's
-  // ~33 msgs/s while moving, zero once it settles.
-  if (smoothedMultiplier !== lastSentMultiplier) {
+  // Only push when the value changed, and at most every SEND_MIN_MS. A
+  // skipped value is not lost: it still differs from lastSentMultiplier, so
+  // the next tick sends it. Zero messages once it settles.
+  if (smoothedMultiplier !== lastSentMultiplier && now - lastSentAt >= SEND_MIN_MS) {
     lastSentMultiplier = smoothedMultiplier;
+    lastSentAt = now;
     onMultiplierChange(smoothedMultiplier);
   }
-  if (onDebugTick) onDebugTick(level, target, smoothedMultiplier);
+  if (onDebugTick && now - lastDebugAt >= DEBUG_EVERY_MS) {
+    lastDebugAt = now;
+    onDebugTick(level, target, smoothedMultiplier);
+  }
 }
 
 function startPolling() {
@@ -285,7 +373,10 @@ function startPolling() {
   refreshExcludedPids(); // apply user-excluded names immediately, don't wait for the first periodic refresh
   lastRefreshAt = Date.now();
   lastTickAt = 0;
+  lastSentAt = 0;
+  lastDebugAt = 0;
   holdUntil = 0;
+  loudRef = REF_MIN;
   pollInterval = setInterval(tick, POLL_MS);
 }
 
@@ -300,6 +391,7 @@ function stopPolling() {
   smoothedMultiplier = 1.0;
   lastSentMultiplier = 1.0;
   holdUntil = 0;
+  loudRef = REF_MIN;
   onMultiplierChange(1.0);
 }
 
@@ -332,6 +424,7 @@ function getSettings() {
     sensitivity: settings.sensitivity,
     duckCeiling: settings.duckCeiling,
     maxDuck: settings.maxDuck,
+    preset: settings.preset,
     excludedProcessNames: settings.excludedProcessNames,
     manualOverride,
     trackLoudnessLufs,
@@ -347,18 +440,29 @@ function setEnabled(value) {
 
 function setSensitivity(value) {
   settings.sensitivity = Math.max(0, Math.min(1, Number(value)));
+  settings.preset = 'custom';
   saveSettingsToDisk();
   return getSettings();
 }
 
 function setDuckCeiling(value) {
   settings.duckCeiling = Math.max(0, Math.min(1, Number(value)));
+  settings.preset = 'custom';
   saveSettingsToDisk();
   return getSettings();
 }
 
 function setMaxDuck(value) {
   settings.maxDuck = Math.max(0, Math.min(1, Number(value)));
+  settings.preset = 'custom';
+  saveSettingsToDisk();
+  return getSettings();
+}
+
+function setPreset(name) {
+  if (!PRESET_NAMES.includes(name)) return getSettings();
+  settings.preset = name;
+  holdUntil = 0;
   saveSettingsToDisk();
   return getSettings();
 }
@@ -415,6 +519,7 @@ module.exports = {
   setSensitivity,
   setDuckCeiling,
   setMaxDuck,
+  setPreset,
   setManualOverride,
   setTrackLoudness,
   getAudioSessions,

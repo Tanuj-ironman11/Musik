@@ -1,134 +1,270 @@
-/* styles/search-overlay.css */
+/* styles/search-overlay.css: Siri-style search overlay. Markup in search.js. */
 
-/* Full-screen scrim behind the panel. Blur ramps in via a class toggle
-   rather than being present at 0 opacity, since backdrop-filter blur
-   is expensive to animate at full strength on an inset:0 element. */
-.search-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 10200;
-  background: rgba(6, 6, 6, 0.55);
-  backdrop-filter: blur(0px);
-  -webkit-backdrop-filter: blur(0px);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.2s var(--ease-out), backdrop-filter 0.24s var(--ease-out);
-}
-
-.search-backdrop--visible {
-  opacity: 1;
-  pointer-events: auto;
-  backdrop-filter: blur(14px) saturate(1.3);
-  -webkit-backdrop-filter: blur(14px) saturate(1.3);
-}
-
-/* Panel floats top-center, not full-screen. Backdrop finishes its fade
-   a hair before the panel finishes scaling in (backdrop: 0.2s, panel:
-   0.26s) so there's no felt lag between "background reacts" and "panel
-   lands". */
+/* Holds slab, sheet and chip. Settles in from slightly large, faster plain close. */
 .search-overlay {
+  --search-spring: linear(0, 0.043, 0.148, 0.283, 0.426, 0.563, 0.685, 0.787, 0.869, 0.932, 0.977, 1.007, 1.025, 1.035, 1.038, 1.037, 1.034, 1.029, 1.023, 1.018, 1.013, 1.009, 1.006, 1.003, 1.001, 1, 0.999, 0.999, 0.999, 0.999, 0.999, 0.999, 1);
+
   position: fixed;
-  top: 15%;
+  top: 11vh;
   left: 50%;
-  width: min(660px, 90vw);
-  max-height: 60vh;
-  transform: translate(-50%, -8px) scale(0.96);
+  width: min(680px, 90vw);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  transform: translate(-50%, 0) scale(0.98);
+  transform-origin: 50% 0;
   opacity: 0;
   pointer-events: none;
   z-index: 10210;
-  transition: transform 0.26s var(--ease-spring), opacity 0.2s var(--ease-out);
+  transition:
+    transform 0.14s var(--ease-out),
+    opacity 0.12s var(--ease-out);
 }
 
 .search-overlay--visible {
   transform: translate(-50%, 0) scale(1);
   opacity: 1;
   pointer-events: auto;
+  transition: opacity 0.1s var(--ease-out);
+  animation: search-overlay-settle 0.22s cubic-bezier(0.2, 0.9, 0.3, 1) backwards;
 }
 
+/* closeInstant() uses this to skip the fade. */
+.search-overlay--no-transition {
+  transition: none !important;
+}
+
+/* How much of the slab's black is showing; the open animation takes it 0 to 1. */
+@property --slab-dark {
+  syntax: "<number>";
+  inherits: false;
+  initial-value: 1;
+}
+
+/* Slab: black on top, fading to frosted glass at the bottom edge. */
 .search-panel {
   position: relative;
-  display: flex;
-  flex-direction: column;
-  max-height: 60vh;
-  border-radius: 20px;
-  overflow: hidden;
-  /* Normal UI typeface, not the monospace terminal font. Not relying on
-     a project --font-* var here since it was the mono var that caused
-     the terminal look in the first place — this stack is explicit. */
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
+  padding: 26px 38px;
+  border-radius: 64px;
+  background:
+    radial-gradient(90% 60% at 50% 125%, rgba(255, 255, 255, 0.26), transparent 70%),
+    linear-gradient(180deg, transparent 40%, rgba(255, 255, 255, 0.06) 100%),
+    linear-gradient(
+      180deg,
+      rgb(0 0 0 / var(--slab-dark)) 0%,
+      rgb(0 0 0 / var(--slab-dark)) 22%,
+      rgb(0 0 0 / calc(var(--slab-dark) * 0.55)) 42%,
+      rgb(0 0 0 / calc(var(--slab-dark) * 0.18)) 62%,
+      rgb(0 0 0 / 0) 82%
+    );
+  backdrop-filter: blur(8px) saturate(1.6);
+  -webkit-backdrop-filter: blur(8px) saturate(1.6);
+  box-shadow:
+    inset 0 -18px 28px -18px rgba(255, 255, 255, 0.22),
+    0 30px 70px -20px rgba(0, 0, 0, 0.7);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI Variable", "Segoe UI", Inter, Roboto, sans-serif;
 }
 
-/* Corner registration marks, matching the rest of the app's visual
-   language instead of reading as a bolted-on generic modal. */
-.search-panel-corner {
+/* 1px rim: visible all round (it's the bar's edge on dark pages), brightest at the bottom. */
+.search-panel::before {
+  content: "";
   position: absolute;
-  width: 14px;
-  height: 14px;
-  border: 1.5px solid color-mix(in srgb, var(--color-accent) 55%, transparent);
-  opacity: 0.8;
+  inset: 0;
+  padding: 1px;
+  border-radius: inherit;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0.14) 50%, rgba(255, 255, 255, 0.5));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
   pointer-events: none;
 }
-.search-panel-corner--tl { top: 8px; left: 8px; border-right: none; border-bottom: none; }
-.search-panel-corner--tr { top: 8px; right: 8px; border-left: none; border-bottom: none; }
-.search-panel-corner--bl { bottom: 8px; left: 8px; border-right: none; border-top: none; }
-.search-panel-corner--br { bottom: 8px; right: 8px; border-left: none; border-top: none; }
 
-.search-input-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 18px 20px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  flex-shrink: 0;
+/* Bottom-edge highlight that breathes on focus. */
+.search-panel::after {
+  content: "";
+  position: absolute;
+  left: 14%;
+  right: 14%;
+  bottom: -1px;
+  height: 2px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.8), transparent);
+  filter: blur(1px);
+  opacity: 0.5;
+  pointer-events: none;
 }
 
-.search-input-icon {
-  width: 18px;
-  height: 18px;
-  color: var(--color-text-dim);
-  flex-shrink: 0;
+.search-overlay--visible .search-panel:focus-within::after {
+  animation: search-rim-breathe 3.4s ease-in-out infinite;
+}
+
+/* Slab darkens from pale glass on open, then the text fades in. */
+.search-overlay--visible .search-panel {
+  animation: search-slab-in 0.2s var(--ease-out) backwards;
+}
+
+.search-overlay--visible .search-field {
+  animation: search-field-in 0.45s var(--ease-out) both;
+  animation-delay: 110ms;
+}
+
+/* Textarea over a hidden mirror. The mirror sets the height (search.js copies it) and holds the ghost suffix. */
+.search-field {
+  position: relative;
+  height: 28px;
+  transition: height 0.3s var(--ease-out);
+}
+
+.search-mirror,
+.search-input {
+  margin: 0;
+  padding: 0;
+  border: none;
+  font: 400 22px/28px -apple-system, BlinkMacSystemFont, "Segoe UI Variable", "Segoe UI", Inter, Roboto, sans-serif;
+  letter-spacing: -0.012em;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+.search-mirror {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  color: transparent;
+  pointer-events: none;
+  user-select: none;
+}
+
+.search-ghost {
+  color: rgba(255, 255, 255, 0.4);
 }
 
 .search-input {
-  flex: 1;
-  min-width: 0;
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  resize: none;
+  overflow: hidden;
   background: transparent;
-  border: none;
   outline: none;
-  color: var(--color-text);
-  font-family: inherit;
-  font-size: 15px;
-  font-weight: 500;
-  caret-color: var(--color-accent);
+  color: #fff;
+  caret-color: transparent; /* the glowing caret below is drawn in the mirror */
 }
 
-.search-input::placeholder {
-  color: var(--color-text-dim);
-  font-weight: 400;
+.search-input::selection {
+  background: rgba(var(--color-accent-rgb), 0.38);
+  color: #fff;
 }
 
-.search-esc-hint {
-  font-family: inherit;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  color: var(--color-text-dim);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: var(--radius-sm);
-  padding: 2px 6px;
-  flex-shrink: 0;
+/* Caret drawn in the mirror; zero-width so wrapping is unaffected. */
+.search-caret {
+  display: inline-block;
+  width: 2px;
+  height: 24px;
+  margin: 2px -1px 0;
+  vertical-align: top;
+  border-radius: 1px;
+  background: #fff;
+  box-shadow: 0 0 9px 1px rgba(var(--color-accent-rgb), 0.9), 0 0 2px rgba(255, 255, 255, 0.9);
+  opacity: 0;
+}
+
+.search-field:focus-within .search-caret {
+  animation: search-caret-blink 1.06s steps(1, end) infinite;
+}
+
+.search-caret--hidden { display: none; }
+
+/* Results sheet: glass frame around the .search-results scroller. Only shown with results. */
+.search-sheet {
+  position: relative;
+  border-radius: 32px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI Variable", "Segoe UI", Inter, Roboto, sans-serif;
+  transform-origin: 50% 0;
+}
+
+.search-sheet:not([hidden]) {
+  animation: search-sheet-in 0.28s cubic-bezier(0.2, 0.9, 0.3, 1) backwards;
+  animation-delay: 30ms;
+}
+
+.search-sheet:not([hidden]) .search-results {
+  animation: search-results-in 0.24s var(--ease-out) backwards;
+  animation-delay: 90ms;
 }
 
 .search-results {
+  position: relative; /* above the glass noise layer */
+  z-index: 1;
+  max-height: min(46vh, 420px);
   overflow-y: auto;
-  padding: 8px 8px 12px;
+  padding: 10px;
+  scrollbar-width: none;
+}
+
+.search-results::-webkit-scrollbar { display: none; }
+
+/* Overlay scroll thumb, sized and moved by search.js. */
+.search-scroll-thumb {
+  position: absolute;
+  top: 0;
+  right: 6px;
+  width: 4px;
+  height: 0;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.4);
+  opacity: 0;
+  pointer-events: none;
+  z-index: 2;
+  transition: opacity 0.25s var(--ease-out);
+}
+
+.search-scroll-thumb--on { opacity: 1; }
+
+/* 2x2 playlist cover. */
+.search-art-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  width: 100%;
+  height: 100%;
+}
+
+/* One highlight that slides to the active row (--hl-y set by search.js). */
+.search-hilite {
+  position: absolute;
+  top: 0;
+  left: 10px;
+  right: 10px;
+  height: 0;
+  border-radius: 22px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.15), rgba(255, 255, 255, 0.07));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.04);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(var(--hl-y, 0px));
+  transition:
+    transform 0.2s cubic-bezier(0.25, 1, 0.5, 1),
+    height 0.18s cubic-bezier(0.25, 1, 0.5, 1),
+    opacity 0.15s var(--ease-out),
+    background 0.15s var(--ease-out);
+}
+
+.search-hilite--on { opacity: 1; }
+.search-hilite--instant { transition: none; }
+
+.search-results:has(.search-row:active) .search-hilite {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0.12));
 }
 
 .search-empty-hint {
-  padding: 24px 10px;
-  text-align: center;
-  color: var(--color-text-dim);
-  font-size: 13px;
+  padding: 18px 14px;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 14px;
 }
 
 .search-dym-btn {
@@ -142,29 +278,19 @@
   text-underline-offset: 2px;
   cursor: pointer;
 }
-.search-dym-btn:hover {
-  opacity: 0.8;
-}
+.search-dym-btn:hover { opacity: 0.8; }
 
-/* Used briefly by closeInstant() (search.js) so a result-selection close
-   skips the normal fade instead of visibly overlapping the page swap. */
-.search-overlay--no-transition {
-  transition: none !important;
-}
-
-/* Staggered entrance per row via animation-delay set inline as
-   --row-delay (see search.js) — rows animate in as you type instead of
-   snap-replacing. Single flat list now, ranked by match quality across
-   all result types, with a colored tag identifying the type instead of
-   grouping rows under section headers. */
+/* Rows stagger in via --row-delay (set by search.js). */
 .search-row {
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   width: 100%;
-  padding: 8px 10px;
+  padding: 7px 12px 7px 8px;
   border: none;
-  border-radius: var(--radius-sm);
+  border-radius: 22px;
   background: transparent;
   color: var(--color-text);
   font-family: inherit;
@@ -176,47 +302,39 @@
   animation-delay: var(--row-delay, 0ms);
 }
 
-@keyframes search-row-in {
-  to { opacity: 1; transform: translateY(0); }
-}
+.search-row--active .search-row-title { color: #fff; }
 
-.search-tag {
+.search-row-art {
+  width: 40px;
+  height: 40px;
   flex-shrink: 0;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  padding: 3px 7px;
-  border-radius: 999px;
-  white-space: nowrap;
+  border-radius: 20px;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  background: rgba(255, 255, 255, 0.07);
+  color: rgba(255, 255, 255, 0.5);
 }
 
-.search-tag--track {
-  color: #8fd3ff;
-  background: rgba(143, 211, 255, 0.14);
+.search-row-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
-.search-tag--artist {
-  color: #c9a4ff;
-  background: rgba(201, 164, 255, 0.14);
-}
-.search-tag--album {
-  color: #ffcf8f;
-  background: rgba(255, 207, 143, 0.14);
-}
-.search-tag--playlist {
-  color: #8fffb0;
-  background: rgba(143, 255, 176, 0.14);
-}
+
+.search-row-art--artist { border-radius: 50%; }
 
 .search-row-text {
   display: flex;
-  align-items: baseline;
-  gap: 8px;
+  flex-direction: column;
+  gap: 2px;
   min-width: 0;
   flex: 1;
 }
 
 .search-row-title {
-  font-size: 13.5px;
+  font-size: 15px;
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -224,160 +342,300 @@
 }
 
 .search-row-sub {
-  font-size: 12px;
-  color: var(--color-text-dim);
+  font-size: 12.5px;
+  color: rgba(255, 255, 255, 0.5);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  flex-shrink: 1;
 }
 
-.search-row:hover,
-.search-row--active {
-  background: var(--color-accent-dim);
+.search-row-kind {
+  flex-shrink: 0;
+  font-size: 12.5px;
+  color: rgba(255, 255, 255, 0.4);
 }
 
-.search-row:active {
-  background: var(--color-accent-subtle);
-  transform: scale(0.99);
-}
+.search-row--active .search-row-kind { color: rgba(255, 255, 255, 0.6); }
 
-/* ── Persistent topbar search bar (all tabs) ─────────────────────────
-   Fixed, appended to document.body by search.js's injectTopbarTrigger —
-   see that function's comment for the positioning caveat re: sidebar
-   width var. Visually a big pill "input" but is actually a button; it
-   only ever opens the real overlay, never accepts text itself, so there's
-   one source of truth for search state instead of two inputs to keep
-   in sync. */
-.global-search-bar {
-  position: fixed;
-  /* Was a flat 18px from the viewport top, which put it directly under
-     the custom titlebar/tab-strip (frameless window chrome isn't part
-     of document flow, so this element has no natural way to know it
-     exists). --titlebar-height is expected to be set globally wherever
-     the titlebar itself is sized; 40px fallback matches a typical
-     Windows custom-titlebar + tab-strip stack until that var is
-     confirmed to exist. If it turns out layouts.css already defines
-     this under a different name, swap it in here instead of adding a
-     second competing var. */
-  top: calc(var(--titlebar-height, 40px) + 12px);
-  /* Was spanning the entire content area edge-to-edge (way too wide).
-     Now a fixed, centered pill within the content area (viewport minus
-     the sidebar), same idea as .search-overlay's own min(660px, 90vw)
-     but smaller since this is a resting affordance, not the active panel. */
-  left: calc(
-    var(--sidebar-width-collapsed, 76px) +
-    (100vw - var(--sidebar-width-collapsed, 76px)) / 2
-  );
-  transform: translateX(-50%);
-  width: min(420px, 60vw);
+/* Chip: active result's cover plus its Enter action. */
+.search-chip,
+.search-actions-pill {
+  align-self: center;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 100%;
   height: 46px;
-  z-index: 40;
+  padding: 0 22px 0 9px;
+  border: none;
+  border-radius: 23px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.15), rgba(255, 255, 255, 0.06));
+  backdrop-filter: blur(28px) saturate(1.6);
+  -webkit-backdrop-filter: blur(28px) saturate(1.6);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.3),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.1),
+    0 14px 30px -10px rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font: 500 16px/1 -apple-system, BlinkMacSystemFont, "Segoe UI Variable", "Segoe UI", Inter, Roboto, sans-serif;
+  cursor: pointer;
+  transition: transform 0.15s var(--ease-out), background 0.15s var(--ease-out);
+}
+
+.search-chip[hidden] { display: none; }
+
+.search-chip:not([hidden]) {
+  animation: search-chip-in 0.5s var(--search-spring) both;
+  animation-delay: 90ms;
+}
+
+.search-chip:hover,
+.search-actions-pill:hover { background: linear-gradient(180deg, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0.09)); }
+.search-chip:active,
+.search-actions-pill:active { transform: scale(0.97); }
+
+.search-chip-art {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: 9px;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.search-chip-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.search-chip-art--artist { border-radius: 50%; }
+
+.search-chip-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Dock: the chip and the Actions pill side by side, only while there's a chip. */
+.search-dock {
+  align-self: center;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 100%;
+}
+
+.search-dock:has(.search-chip[hidden]) { display: none; }
+
+.search-dock .search-chip {
+  min-width: 0;
+  padding-right: 12px;
+}
+
+.search-actions-pill {
+  flex-shrink: 0;
+  padding: 0 10px 0 18px;
+  animation: search-chip-in 0.5s var(--search-spring) both;
+  animation-delay: 140ms;
+}
+
+.search-keys,
+.search-action-keys {
+  display: inline-flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+/* Keycap, used by the chip, the pill and the actions panel. */
+.search-kbd {
+  display: inline-grid;
+  place-items: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16), inset 0 -1px 0 rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.78);
+  font: 600 11.5px/1 -apple-system, BlinkMacSystemFont, "Segoe UI Variable", "Segoe UI", Inter, Roboto, sans-serif;
+}
+
+/* Actions panel (Ctrl/Cmd+K): floats over the sheet's bottom-right, just above the dock. */
+.search-overlay .search-actions {
+  position: absolute;
+  right: 10px;
+  bottom: 58px; /* dock height + gap */
+  z-index: 3;
+  width: min(320px, calc(100% - 20px));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transform-origin: 100% 100%;
+}
+
+.search-actions {
+  padding: 8px;
+  border-radius: 24px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI Variable", "Segoe UI", Inter, Roboto, sans-serif;
+}
+
+.search-actions[hidden] { display: none; }
+
+.search-actions > * {
+  position: relative; /* above the glass noise layer */
+  z-index: 1;
+}
+
+.search-actions:not([hidden]) { animation: search-actions-in 0.32s var(--search-spring) both; }
+.search-actions.search-actions--closing { animation: search-actions-out 0.14s var(--ease-out) both; }
+
+.search-actions-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px 8px;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.search-actions-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.search-actions-back {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  margin-left: -6px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.search-actions-back:hover { background: rgba(255, 255, 255, 0.1); }
+
+.search-actions-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 232px;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.search-actions-list::-webkit-scrollbar { display: none; }
+
+.search-action {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 0 18px;
-  border-radius: 999px;
-  border: 1px solid var(--color-border, rgba(255, 255, 255, 0.08));
-  background: color-mix(in srgb, var(--color-bg-surface, #111) 88%, transparent);
-  backdrop-filter: blur(16px) saturate(1.2);
-  -webkit-backdrop-filter: blur(16px) saturate(1.2);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 6px 20px -12px rgba(0, 0, 0, 0.5);
-  cursor: pointer;
-  color: var(--color-text-dim);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
-  transition: opacity 0.2s var(--ease-out), border-color 0.18s var(--ease-out), transform 0.15s var(--ease-out);
-}
-
-.global-search-bar:hover {
-  border-color: var(--color-accent-subtle);
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 16px;
+  background: transparent;
   color: var(--color-text);
-}
-
-.global-search-bar:active {
-  transform: translateX(-50%) scale(0.995);
-}
-
-.global-search-bar-icon {
-  width: 18px;
-  height: 18px;
-  flex-shrink: 0;
-}
-
-.global-search-bar-placeholder {
-  flex: 1;
+  font: 500 14px/1.2 -apple-system, BlinkMacSystemFont, "Segoe UI Variable", "Segoe UI", Inter, Roboto, sans-serif;
   text-align: left;
-  font-size: 14px;
-  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.12s var(--ease-out);
+}
+
+.search-action--active {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.15), rgba(255, 255, 255, 0.07));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16);
+}
+
+.search-action-icon {
+  flex-shrink: 0;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.search-action-label {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.global-search-bar-hint {
+.search-action-chevron {
   flex-shrink: 0;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.03em;
-  color: var(--color-text-dim);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: var(--radius-sm);
-  padding: 3px 6px;
-  line-height: 1;
+  color: rgba(255, 255, 255, 0.4);
 }
 
-/* One-shot "handoff" punch on click — the bar visibly compresses toward
-   the overlay's origin point right as the morph transition kicks off,
-   instead of just sitting there while something else happens elsewhere. */
-.global-search-bar--handoff {
-  animation: global-search-bar-handoff 0.16s var(--ease-out) forwards;
+.search-actions-filter {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-@keyframes global-search-bar-handoff {
-  0%   { transform: translateX(-50%) scale(1); opacity: 1; }
-  100% { transform: translateX(-50%) scale(0.98); opacity: 0; }
+.search-actions-input {
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: #fff;
+  font: 400 14px/1.2 -apple-system, BlinkMacSystemFont, "Segoe UI Variable", "Segoe UI", Inter, Roboto, sans-serif;
 }
 
-/* Ghost element that actually travels from the bar's screen position to
-   the overlay's resting position — see playMorphGhost() in search.js.
-   Sits between the backdrop (10200) and the overlay itself (10210) so it
-   reads as "the bar becoming the panel" rather than a separate object. */
-.search-morph-ghost {
-  position: fixed;
-  z-index: 10205;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--color-bg-surface, #111) 88%, transparent);
-  border: 1px solid var(--color-border, rgba(255, 255, 255, 0.08));
-  backdrop-filter: blur(16px) saturate(1.2);
-  -webkit-backdrop-filter: blur(16px) saturate(1.2);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 6px 20px -12px rgba(0, 0, 0, 0.5);
-  pointer-events: none;
+.search-actions-input::placeholder { color: rgba(255, 255, 255, 0.4); }
+
+/* Close: chip, then sheet, then slab. */
+.search-overlay:not(.search-overlay--visible) .search-chip:not([hidden]),
+.search-overlay:not(.search-overlay--visible) .search-actions-pill {
+  animation: search-chip-out 0.14s var(--ease-out) both;
 }
 
-/* Fade out while the big overlay is open — avoids two search affordances
-   competing for attention at once, and it's what's "underneath" the
-   overlay conceptually. */
-body.search-open .global-search-bar {
-  opacity: 0.35;
-  pointer-events: none;
+.search-overlay:not(.search-overlay--visible) .search-sheet:not([hidden]) {
+  animation: search-sheet-out 0.18s var(--ease-out) both;
+  animation-delay: 20ms;
 }
 
-/* Sidebar recedes very slightly the instant search opens — a visual
-   handoff cue from sidebar to overlay. Deliberately NOT the same blur
-   treatment as the backdrop; just a couple percent of opacity. */
-body.search-open #sidebar {
-  opacity: 0.97;
-  transition: opacity 0.15s var(--ease-out);
+/* Squircle corners where supported (not the bar: plain circular corners read rounder).
+   Rows nest in the sheet: row radius = sheet radius - the 10px results padding. */
+@supports (corner-shape: squircle) {
+  .search-sheet  { corner-shape: squircle; border-radius: 40px; }
+  .search-row,
+  .search-hilite { corner-shape: squircle; border-radius: 27px; }
+  .search-chip,
+  .search-actions-pill { corner-shape: squircle; border-radius: 28px; }
+  .search-actions { corner-shape: squircle; border-radius: 30px; }
+  .search-action  { corner-shape: squircle; border-radius: 20px; }
+  .search-row-art:not(.search-row-art--artist),
+  .search-chip-art:not(.search-chip-art--artist) { corner-shape: squircle; border-radius: 24px; }
 }
 
-/* Tiny settle bounce on the page underneath when the overlay closes. */
+@media (prefers-reduced-motion: reduce) {
+  .search-overlay { transition: opacity 0.1s linear; }
+  .search-overlay--visible,
+  .search-sheet:not([hidden]) .search-results { animation: none; }
+  .search-field,
+  .search-hilite { transition: none; }
+  .search-overlay--visible .search-panel,
+  .search-overlay--visible .search-field,
+  .search-overlay--visible .search-panel:focus-within::after,
+  .search-sheet:not([hidden]),
+  .search-chip:not([hidden]),
+  .search-actions-pill,
+  .search-actions:not([hidden]),
+  .search-row { animation: none; opacity: 1; transform: none; }
+}
+
+/* Small settle on the page when the overlay closes. */
 body.search-closing-settle #main {
   animation: search-page-settle 0.26s var(--ease-out);
-}
-
-@keyframes search-page-settle {
-  0% { transform: scale(1); }
-  40% { transform: scale(0.997); }
-  100% { transform: scale(1); }
 }

@@ -115,24 +115,22 @@
       // load the resulting track (compare next()/previous(), which both
       // call loadTrack() after moving the pointer). Routing through the
       // same command relay next/prev already use fixes that.
-      label.addEventListener('click', () => command('jumpTo', { index }));
+      label.addEventListener('click', () => command('jumpTo', { index: track.queueIndex }));
       li.appendChild(label);
 
       const actions = document.createElement('span');
       actions.className = 'mp-queue-item-actions';
 
-      // NEW queue API surface — window.Musik.queue.reorder/remove don't
-      // exist yet. Flagging per the "API changes called out before
-      // implementation" rule: needs a main-process/queue-manager.js
-      // handler for each, then exposing on preload.js the same way
-      // getQueue/jumpTo/add/clear/shuffle already are.
+      // remove/move take queueIndex (the manager's slot id), not the row's
+      // position — they differ when shuffle is on. Both push queueupdate so
+      // the main window's queue panel hears about edits made here.
       const removeBtn = document.createElement('button');
       removeBtn.className = 'mp-queue-item-btn mp-queue-item-btn--remove';
       removeBtn.setAttribute('aria-label', 'Remove from queue');
       removeBtn.textContent = '×';
       removeBtn.addEventListener('click', (e) => {
         e.stopPropagation();
-        window.Musik.queue.remove?.(index).then(renderQueue);
+        window.Musik.queue.remove(track.queueIndex).then(() => window.Musik.events.push('queueupdate'));
       });
 
       actions.append(removeBtn);
@@ -186,8 +184,17 @@
         if (dragSrcIndex < targetIndex) targetIndex -= 1;
         if (targetIndex === dragSrcIndex) return;
 
-        window.Musik.queue.reorder?.(dragSrcIndex, targetIndex).then(renderQueue);
+        window.Musik.queue.move(tracks[dragSrcIndex].queueIndex, tracks[targetIndex].queueIndex)
+          .then(() => window.Musik.events.push('queueupdate'));
         dragSrcIndex = null;
+      });
+
+      // Right-click menu: same module as the main window, compact variant.
+      // Play goes through the command relay like the label click above.
+      window.MusikContextMenu?.attachTrack?.(li, track, {
+        compact: true,
+        queueIndex: track.queueIndex,
+        onPlay: () => command('jumpTo', { index: track.queueIndex }),
       });
 
       queueList.appendChild(li);

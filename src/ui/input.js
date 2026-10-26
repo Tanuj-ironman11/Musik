@@ -1,8 +1,43 @@
-// src/ui/media-session.js
-// Wires the Web MediaSession API to Musik's event bus so the OS media
-// overlay (Windows SMTC, macOS Now Playing, media keys) shows track info
-// and can drive playback. Requires window.MusikPlayerUI + window.Musik.events.
+// src/ui/input.js
+// Shortcut registry (MusikKeys) and OS media session (media keys, SMTC, Now Playing).
 
+// Registry of built-in shortcuts, for custom-shortcut conflict checks.
+// Combo: "Mod+Alt+Shift+Code" (Mod = Ctrl/Cmd, Code = e.code), e.g. "Mod+ArrowLeft".
+window.MusikKeys = (function () {
+  const map = new Map();
+
+  function parse(str) {
+    const parts = str.split('+');
+    const code = parts.pop();
+    return { mod: parts.includes('Mod'), alt: parts.includes('Alt'), shift: parts.includes('Shift'), code };
+  }
+
+  function key(c) {
+    const o = typeof c === 'string' ? parse(c) : c;
+    return [o.mod && 'Mod', o.alt && 'Alt', o.shift && 'Shift', o.code].filter(Boolean).join('+');
+  }
+
+  // Returns an unregister fn.
+  function reg(combo, label) {
+    const k = key(combo);
+    map.set(k, label);
+    return () => { if (map.get(k) === label) map.delete(k); };
+  }
+
+  function find(combo) {
+    return map.get(key(combo)) ?? null;
+  }
+
+  // Seeds until each key handler registers its own.
+  reg('Space', 'play/pause');
+  ['Left', 'Right', 'Up', 'Down'].forEach((d) => reg(`Mod+Arrow${d}`, 'a player shortcut'));
+  reg('Alt+F4', 'close window');
+  reg('Alt+Space', 'the window menu');
+
+  return { reg, find, list: () => [...map] };
+})();
+
+// Media session. Needs window.MusikPlayerUI + window.Musik.events.
 (function () {
   if (!('mediaSession' in navigator)) {
     console.warn('[Musik] navigator.mediaSession unsupported in this runtime — OS media controls will stay blank.');
@@ -27,8 +62,7 @@
       album: track.album || '',
       artwork: artworkFrom(track.artData),
     });
-    // Electron's taskbar/alt-tab preview follows document.title by default.
-    // Just title — artist, nothing extra (no app-name suffix cluttering it).
+    // Taskbar/alt-tab preview follows document.title.
     document.title = `${track.title || 'Unknown Title'} — ${track.artist || 'Unknown Artist'}`;
   }
 
@@ -58,7 +92,7 @@
         position: Math.min(currentTime, duration),
       });
     } catch (_) {
-      // stale/out-of-range mid track-swap — safe to skip a tick
+      // stale mid track-swap; skip a tick
     }
   });
 

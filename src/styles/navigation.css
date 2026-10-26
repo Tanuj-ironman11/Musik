@@ -675,77 +675,6 @@ body.sidebar-icon-only.sidebar-pinned #now-playing-bar {
   border-color: color-mix(in srgb, var(--color-accent) 30%, transparent);
 }
 
-/* ── Search trigger ───────────────────────────────────────────────
-   Same box/shape as a regular .nav-link — hover ripple, top-edge
-   highlight, drag-reorder, etc. all work unchanged since it's just a
-   .nav-link with a different click behavior. What's layered on top is
-   the launch-punch on click (below), which reads as "summons
-   something" rather than "navigates somewhere". */
-/* ROOT CAUSE of the search-icon-never-centered bug: this is the only
-   .nav-link that's a <button> instead of an <a> — every other nav item
-   is an anchor, which carries zero native browser chrome. Buttons come
-   with Chromium's own UA-stylesheet appearance, padding, border-style,
-   and font metrics, and nothing anywhere in .nav-link/.nav-link--action
-   was stripping that. That native box is what was throwing the icon off
-   center, not the SVG's viewBox (which was already correct) and not
-   anything fixable from JS — app.js's applyIconOnlySearchFix() was
-   fighting the wrong layer, which is why it never fully worked. */
-.nav-link--action {
-  appearance: none;
-  -webkit-appearance: none;
-  -moz-appearance: none;
-  padding: 0;
-  margin: 0;
-  font: inherit;
-  text-align: inherit;
-  background: color-mix(in srgb, var(--color-text) 4%, transparent);
-}
-
-.nav-shortcut-hint {
-  margin-left: auto;
-  flex-shrink: 0;
-  opacity: 0;
-  width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  font-family: var(--font-mono);
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.03em;
-  color: var(--color-text-dim);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: var(--radius-sm);
-  padding: 3px 6px;
-  line-height: 1;
-  box-sizing: border-box;
-  transition: opacity 0.22s var(--ease-out) 0.06s, width 0.24s var(--ease-spring);
-}
-
-#sidebar:hover .nav-shortcut-hint { opacity: 0.75; width: auto; }
-
-body.layout-topbar .nav-shortcut-hint { display: none; }
-
-/* Launch-punch on click — its own keyframe, not reused from icon-kick
-   elsewhere, so its timing/shape isn't coupled to some other button's
-   animation changing later. */
-.nav-link--action.search-trigger-kick .sidebar-icon {
-  animation: search-trigger-punch 0.18s var(--ease-spring);
-}
-
-@keyframes search-trigger-punch {
-  0% { transform: scale(1); }
-  40% { transform: scale(0.82); }
-  75% { transform: scale(1.08); }
-  100% { transform: scale(1); }
-}
-
-/* Brief "listening" ring when opened via Ctrl/Cmd+K — fires before the
-   overlay itself is visible, so keyboard users get the same instant
-   confirmation the click punch gives mouse users. */
-.nav-link--action.search-trigger-listening {
-  box-shadow: 0 0 0 1.5px var(--color-accent), 0 0 14px var(--color-accent-glow);
-}
-
 .sidebar-icon {
   width: 20px; height: 20px;
   fill: currentColor;
@@ -983,12 +912,6 @@ body.sidebar-icon-only .logo-text-wrap {
 .nav-link[data-view="library"].icon-kick .lib-bar:nth-child(2) { animation-delay: 0.05s; }
 .nav-link[data-view="library"].icon-kick .lib-bar:nth-child(3) { animation-delay: 0.05s; }
 .nav-link[data-view="library"].icon-kick .lib-bar:nth-child(4) { animation-delay: 0.1s; }
-
-.nav-link[data-view="search"].icon-kick .sidebar-icon {
-  transform-box: fill-box;
-  transform-origin: center;
-  animation: icon-search-ping 0.4s var(--ease-bounce);
-}
 
 .nav-link[data-view="profile"].icon-kick .sidebar-icon {
   transform-box: fill-box;

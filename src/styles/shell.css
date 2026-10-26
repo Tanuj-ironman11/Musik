@@ -1,6 +1,6 @@
-/* component/shell.css — titlebar, window controls, app shell, modals */
+/* shell.css: titlebar, window controls, app shell, modals */
 
-/* ─── Merged Integrated Titlebar & Window Controls ─── */
+/* titlebar + window controls */
 #titlebar {
   position: fixed;
   top: 0;
@@ -41,6 +41,9 @@ body.npf-open #titlebar {
   display: flex;
   align-items: center;
   gap: 7px;
+  /* was flush against the left edge, mirrors the 20px on window-controls */
+  padding-left: 20px;
+  line-height: 1;
   font-size: 12px;
   font-weight: 700;
   color: var(--color-text-dim);
@@ -85,7 +88,7 @@ body.npf-open #titlebar {
   transition: opacity 0.12s var(--ease-out, ease);
 }
 
-/* Window controls */
+/* window controls */
 .window-controls {
   display: flex;
   align-items: center;
@@ -163,7 +166,7 @@ body.npf-open #titlebar {
   transform: scale(0.9);
 }
 
-/* Topbar layout mode */
+/* topbar layout */
 body.layout-topbar #app-name {
   grid-column: 1;
   justify-self: start;
@@ -185,7 +188,7 @@ body.layout-topbar #now-playing-bar {
   width: calc(100% - 32px);
 }
 
-/* App shell / view scaffolding */
+/* app shell */
 #main {
   position: fixed !important;
   top: 0 !important;
@@ -247,7 +250,7 @@ body.layout-topbar #now-playing-bar {
   flex-wrap: wrap;
 }
 
-/* Modals / dialogs */
+/* modals */
 #confirm-modal-overlay {
   position: fixed; inset: 0; z-index: var(--z-modal-backdrop);
   display: none; align-items: center; justify-content: center;
@@ -258,12 +261,7 @@ body.layout-topbar #now-playing-bar {
 
 .confirm-modal-backdrop { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.6); opacity: 0; }
 
-/* Rework: was a flat rgba(#161616) slab with a solid border and no
-   blur at all — the only modal in the app with zero glass treatment.
-   Brought up to the same elevated glass tier + noise grain used by
-   .metadata-modal below and .playlist-create-modal (shared.css), just
-   without the gradient-ring/bloom flourish that fits a bigger dialog
-   better than a small confirm box. */
+/* same elevated glass + grain as the metadata modal, minus the ring */
 .confirm-modal-box {
   position: relative; z-index: 1;
   overflow: hidden;
@@ -303,44 +301,10 @@ body.layout-topbar #now-playing-bar {
 
 .confirm-modal-options { display: flex; flex-direction: column; gap: 8px; position: relative; z-index: 1; }
 
-.context-menu, .ctx-menu {
-  position: fixed;
-  overflow: hidden;
-  background: rgba(22, 22, 22, 0.94);
-  backdrop-filter: blur(12px) saturate(var(--glass-saturate-standard));
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: var(--radius-md);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
-  z-index: var(--z-context-menu);
-  min-width: 170px;
-  padding: 6px 4px;
-}
-
-/* This was the one menu/panel in the app with zero grain — small and
-   quick to appear, but still visibly flatter than every other glass
-   surface once you'd seen the rest get the noise treatment. */
-.context-menu::before, .ctx-menu::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background-image: var(--glass-noise);
-  mix-blend-mode: overlay;
-  opacity: 0.4;
-  pointer-events: none;
-  border-radius: inherit;
-}
+/* .context-menu / .ctx-menu container, grain and danger rows moved to
+   context-menu.css (shared with miniplayer.html, which doesn't load this file). */
 
 .ctx-separator { height: 1px; background: rgba(255,255,255,0.05); margin: 3px 4px; }
-
-/* Destructive menu actions (Remove from Library, Delete Playlist). Higher
-   specificity than the base .ctx-menu-item rules so load order can't
-   flatten it back to a normal-looking item. */
-.ctx-menu .ctx-menu-item--danger { color: var(--color-danger, #ff6b6b); }
-.ctx-menu .ctx-menu-item--danger:hover,
-.ctx-menu .ctx-menu-item--danger:focus-visible {
-  color: var(--color-danger, #ff6b6b);
-  background: color-mix(in srgb, var(--color-danger, #ff6b6b) 16%, transparent);
-}
 
 .metadata-modal-overlay,
 .meta-fix-modal {
@@ -354,12 +318,7 @@ body.layout-topbar #now-playing-bar {
   justify-content: center;
 }
 
-/* Rework: same flat-slab problem as .confirm-modal-box above, just with
-   a backdrop-filter already present — still no noise grain, so up close
-   it read as a plain dark panel rather than glass. Added the same
-   feTurbulence layer every other glass surface in the app uses. No
-   gradient-ring border here — this modal is data-dense (tables, field
-   grids), and the extra sheen fought for attention against the content. */
+/* glass + grain, no ring since this one is mostly tables */
 .metadata-modal, .meta-fix-content {
   position: relative;
   background: var(--glass-bg-elevated);
@@ -571,7 +530,7 @@ body.layout-topbar #now-playing-bar {
 
 .scan-status.hidden { display: none; }
 
-/* Mod root injection container: floats above the now-playing bar */
+/* mods mount here, floats above the player bar */
 #mod-root {
   position: fixed;
   bottom: calc(var(--player-bar-height, 80px) + 16px);
@@ -585,4 +544,4 @@ body.layout-topbar #now-playing-bar {
 
 #mod-root > * {
   pointer-events: auto;
-}
+}

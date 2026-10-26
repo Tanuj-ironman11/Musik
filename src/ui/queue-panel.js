@@ -138,7 +138,7 @@
       if (!track) return;
       const index = track.queueIndex;
 
-      if (track) window.MusikContextMenu?.attachTrack?.(row, track);
+      if (track) window.MusikContextMenu?.attachTrack?.(row, track, { queueIndex: index });
 
       row.addEventListener('click', async (e) => {
         if (e.target.closest('[data-action="remove"]')) return;

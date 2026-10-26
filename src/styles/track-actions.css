@@ -1,107 +1,14 @@
 /* src/styles/track-actions.css
  *
- * Visual treatment for context-menu.js's right-click track/playlist menus
- * (add to playlist, remove, delete), and library-view.js's "Add tracks"
- * picker modal. New file, same
+ * Visual treatment for library-view.js's "Add tracks" picker modal. The
+ * right-click menus (context-menu.js) moved to context-menu.css so the
+ * miniplayer window can load them too. New file, same
  * reasoning as playlist-edit.css/settings.css — cleanly scoped to their
  * own selectors, kept out of library.css/components.css directly.
  *
  * Needs one line in components.css's @import chain:
  *   @import url('./track-actions.css');
  */
-
-/* ── Right-click context menu ──────────────────────────────────── */
-/* Container (position, z-index, blur, noise) is owned by shell.css. z-index
-   used to be redeclared here as 1000, which — depending on load order —
-   dropped the menu under the sidebar (10050) and player bar (9000). */
-.ctx-menu {
-  min-width: 200px;
-  max-width: 260px;
-  padding: 6px;
-  border: 1px solid var(--color-border-strong);
-  box-shadow: 0 16px 40px -8px rgba(0, 0, 0, 0.55);
-  font-size: 13px;
-}
-
-.ctx-menu-label {
-  padding: 8px 10px 4px;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--color-text-dim);
-}
-
-.ctx-menu-label,
-.ctx-menu-item,
-.ctx-menu-divider,
-.ctx-menu-empty {
-  position: relative; /* sit above shell.css's ::before noise layer */
-  z-index: 1;
-}
-
-.ctx-menu-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  min-height: 32px;
-  padding: 7px 10px;
-  border: none;
-  background: transparent;
-  color: var(--color-text);
-  font: inherit;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  text-align: left;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  transition: background 0.12s var(--ease-out), color 0.12s var(--ease-out);
-}
-
-.ctx-menu-item:hover,
-.ctx-menu-item:focus-visible {
-  outline: none;
-  background: color-mix(in srgb, var(--color-text) 8%, transparent);
-}
-
-.ctx-menu-item:active { background: var(--color-accent-subtle); }
-
-.ctx-menu-item--new { color: var(--color-accent); }
-
-.ctx-menu-item--new:hover,
-.ctx-menu-item--new:focus-visible { background: var(--color-accent-dim); }
-
-/* Destructive rows: "Remove from Library", "Delete Playlist". */
-.ctx-menu-item--danger { color: var(--color-danger, #ff6b6b); }
-
-.ctx-menu-item--danger:hover,
-.ctx-menu-item--danger:focus-visible {
-  background: color-mix(in srgb, var(--color-danger, #ff6b6b) 14%, transparent);
-}
-
-.ctx-menu-item--danger:active {
-  background: color-mix(in srgb, var(--color-danger, #ff6b6b) 24%, transparent);
-}
-
-.ctx-menu-item:disabled {
-  opacity: 0.4;
-  cursor: default;
-  background: transparent;
-}
-
-.ctx-menu-divider {
-  height: 1px;
-  margin: 5px 6px;
-  background: var(--color-border-strong);
-}
-
-.ctx-menu-empty {
-  padding: 8px 10px;
-  color: var(--color-text-dim);
-  font-size: 12px;
-}
 
 /* ── Add-tracks picker (playlist detail) ───────────────────────── */
 .add-tracks-overlay {
