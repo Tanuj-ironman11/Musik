@@ -1,30 +1,22 @@
 // src/ui/context-menu.js
-//
-// Shared right-click menus for track rows and playlist cards. Same
-// shared-utility-via-window-global pattern as MusikDialog/MusikCards.
-// Any view wires them with one call:
+// Shared right-click menus for track rows and playlist cards. Views wire them with:
 //   window.MusikContextMenu.attachTrack(rowEl, track, opts)
 //   window.MusikContextMenu.attachPlaylist(cardEl, playlist, opts)
-//   window.MusikContextMenu.actions — the same actions without a menu (search panel)
-// opts (optional, both):
-//   onChange   — called after a menu action changed library data (removed a
-//                track, deleted/renamed a playlist), so the owning view can
-//                re-render itself.
-//   playlistId — attachTrack only: the playlist the row is being shown in.
-//                Adds "Remove from Playlist" to that row's menu.
-//   queueIndex — attachTrack only: the row's queue index (queue panel).
-//                Swaps Add to Queue for "Remove from Queue", Play Next moves
-//                the existing slot, and Play jumps within the queue.
-//   compact    — attachTrack only: small-window menu (miniplayer). Short
-//                item set, "Add to Playlist" opens in place with a Back row
-//                instead of a long list. Pair with queueIndex.
-//   onPlay     — attachTrack + compact only: replaces the Play action (the
-//                miniplayer has no player of its own, it sends a command).
-//
-// Simplification: single-level menu (playlist names listed directly)
-// rather than a nested "Add to Playlist ▸" submenu — avoids viewport-edge
-// submenu positioning complexity for a first pass. Revisit if playlist
-// counts get large enough to want a search/filter instead.
+//   window.MusikContextMenu.actions: the same actions without a menu (search panel)
+// opts (all optional):
+//   onChange   called after an action changed library data (track removed,
+//              playlist deleted or renamed) so the owning view can re-render.
+//   playlistId attachTrack only: the playlist the row is shown in. Adds
+//              "Remove from Playlist".
+//   queueIndex attachTrack only: the row's queue index (queue panel). Add to
+//              Queue becomes "Remove from Queue", Play Next moves the existing
+//              slot, Play jumps within the queue.
+//   compact    attachTrack only: small-window menu (miniplayer) with a short item
+//              set; "Add to Playlist" opens in place with a Back row. Pair with
+//              queueIndex.
+//   onPlay     attachTrack + compact only: replaces Play (the miniplayer sends a
+//              command instead).
+// Add to Playlist lists playlist names in one flat menu, no nested submenu.
 
 (function () {
   let openMenuEl = null;
@@ -168,18 +160,18 @@
     return window.Musik?.library?.addTrack?.(playlistId, track.filePath);
   }
 
-  async function newPlaylistWith(track) {
+  async function newPlaylistWith(tracks) {
+    const list = Array.isArray(tracks) ? tracks : [tracks];
     const name = await window.MusikDialog?.prompt?.('New playlist name:');
     if (name === null || name === undefined) return;
     const created = await window.Musik?.library?.createPlaylist?.(name);
-    if (created) await window.Musik?.library?.addTrack?.(created.id, track.filePath);
+    if (!created) return;
+    for (const t of list) await window.Musik?.library?.addTrack?.(created.id, t.filePath);
   }
 
-  // NOTE: this refreshes art for the CURRENT SESSION only — broadcasts an
-  // artupdate so accent-extractor/player-bar/etc pick it up live, but does
-  // NOT persist to musik-library.json. There's no library:update-art IPC
-  // channel yet. Restarting the app reverts to whatever was embedded/cached
-  // originally. Flagging rather than pretending this is a permanent fix.
+  // Session-only: broadcasts artupdate so the accent extractor and player bar
+  // update live, but nothing is written to musik-library.json (there is no
+  // library:update-art IPC channel yet).
   async function refreshArt(track) {
     let artData = await window.Musik?.art?.extract?.(track.filePath);
     if (!artData && track.artist && track.album) {
@@ -192,20 +184,41 @@
     }
   }
 
-  async function playPlaylist(playlist) {
-    // Re-read at call time — the playlist object passed in was captured
-    // when the view rendered and may be stale by now.
+  // Reads the live library: the playlist object a view holds can be stale.
+  async function playlistTracks(playlist) {
     const [allPlaylists, allTracks] = await Promise.all([
       window.Musik?.library?.getPlaylists?.(),
       window.Musik?.library?.getTracks?.(),
     ]);
     const fresh = (allPlaylists ?? []).find((p) => p.id === playlist.id) ?? playlist;
-    const list = (fresh.trackIds || [])
+    return (fresh.trackIds || [])
       .map((id) => (allTracks ?? []).find((t) => t.filePath === id))
       .filter(Boolean);
+  }
+
+  async function playPlaylist(playlist) {
+    const list = await playlistTracks(playlist);
     if (list.length && window.MusikPlayerUI) {
       window.MusikPlayerUI.playQueue?.(list) ?? window.MusikPlayerUI.loadTrack(list[0]);
     }
+  }
+
+  async function renamePlaylist(playlist, onChange) {
+    const newName = await window.MusikDialog?.prompt?.('Rename playlist:', playlist.name);
+    if (newName === null || newName === undefined) return;
+    await window.Musik?.library?.renamePlaylist?.(playlist.id, newName);
+    onChange?.();
+  }
+
+  // Deletes the playlist only; its tracks stay in the library.
+  async function deletePlaylist(playlist, onChange) {
+    const ok = await window.MusikDialog?.confirm?.(`Delete "${playlist.name}"?`, {
+      detail: 'Its tracks stay in your library.',
+      confirmLabel: 'Delete',
+    });
+    if (!ok) return;
+    await window.Musik?.library?.deletePlaylist?.(playlist.id);
+    onChange?.();
   }
 
   // Miniplayer-sized track menu. Separate from showTrackMenu on purpose: a
@@ -374,10 +387,10 @@
     });
 
     // Removes the track from the whole library (every playlist), never from
-    // disk — the confirm text says so because "delete" reads scarier than it is.
+    // disk. The confirm text says so because "delete" reads scarier than it is.
     menu.querySelector('[data-remove-from-library]')?.addEventListener('click', async () => {
       closeMenu();
-      // Fail loudly if the bridge method is missing — optional chaining alone
+      // Fail loudly if the bridge method is missing: optional chaining alone
       // would let the user confirm, remove nothing, and still fire onChange.
       if (typeof window.Musik?.library?.removeTracks !== 'function') {
         window.MusikDialog?.alert?.('Remove from Library isn\'t available in this build.');
@@ -415,22 +428,12 @@
 
     menu.querySelector('[data-rename-playlist]')?.addEventListener('click', async () => {
       closeMenu();
-      const newName = await window.MusikDialog?.prompt?.('Rename playlist:', playlist.name);
-      if (newName === null || newName === undefined) return;
-      await window.Musik?.library?.renamePlaylist?.(playlist.id, newName);
-      opts.onChange?.();
+      await renamePlaylist(playlist, opts.onChange);
     });
 
-    // Deletes the playlist only — its tracks stay in the library.
     menu.querySelector('[data-delete-playlist]')?.addEventListener('click', async () => {
       closeMenu();
-      const ok = await window.MusikDialog?.confirm?.(`Delete "${playlist.name}"?`, {
-        detail: 'Its tracks stay in your library.',
-        confirmLabel: 'Delete',
-      });
-      if (!ok) return;
-      await window.Musik?.library?.deletePlaylist?.(playlist.id);
-      opts.onChange?.();
+      await deletePlaylist(playlist, opts.onChange);
     });
   }
 
@@ -453,16 +456,15 @@
   window.MusikContextMenu = {
     attachTrack,
     attachPlaylist,
-    actions: { playTrack, enqueue, addToPlaylist, newPlaylistWith, refreshArt, playPlaylist },
+    actions: {
+      playTrack, enqueue, addToPlaylist, newPlaylistWith, refreshArt,
+      playPlaylist, playlistTracks, renamePlaylist, deletePlaylist,
+    },
   };
 })();
 
-// ---------------------------------------------------------------------------
-// window.MusikPlaylistModals — shared "new playlist" flow (Custom Playlist /
-// Import Folder), called from both Home and Library so they stop drifting
-// into separate implementations. Lives here rather than its own file — this
-// module was already the home for shared overlay/menu utilities.
-// ---------------------------------------------------------------------------
+// window.MusikPlaylistModals: shared "new playlist" flow (Custom Playlist /
+// Import Folder), used by both Home and Library.
 (function () {
   function openCreateModal() {
     const overlay = document.createElement('div');
@@ -500,18 +502,14 @@
 
     overlay.querySelector('#pcm-custom').addEventListener('click', async () => {
       const name = await window.MusikDialog.prompt('Playlist name:');
-      if (name === null) return; // cancelled — leave the modal open
+      if (name === null) return; // cancelled: leave the modal open
       const created = await window.Musik?.library?.createPlaylist?.(name);
       close();
       if (created) location.hash = `#/library/${encodeURIComponent(created.id)}`;
     });
 
     overlay.querySelector('#pcm-folder').addEventListener('click', async () => {
-      // open-file-dialog is file-only now (main.js split it from a combined
-      // openFile+openDirectory dialog, which Windows can't actually present
-      // as one picker — it silently collapsed to folder-only there, which
-      // is what broke single-file adds elsewhere). Folder picking now goes
-      // through its own dedicated channel.
+      // open-file-dialog picks files only; folders go through their own channel.
       const paths = await window.Musik?.dialog?.openFolder?.();
       if (!paths || !paths.length) return;
       const folderPath = paths[0];

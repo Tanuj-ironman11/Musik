@@ -17,6 +17,9 @@
   const queuePanel = document.getElementById('mp-queue-panel');
   const queueList = document.getElementById('mp-queue-list');
 
+  // main.js adds ?frame=native on Win11/macOS, where the OS draws corners and shadow.
+  if (new URLSearchParams(location.search).get('frame') === 'native') document.body.dataset.frame = 'native';
+
   let queueOpen = false;
   let knownDuration = 0;
   let currentFilePath = null;
@@ -63,12 +66,15 @@
   // HEIGHT threshold (it's the thing competing with controls for vertical
   // space); title/artist hide below a WIDTH threshold (they're the thing
   // competing for horizontal space when the window's thin). -------------
+  const MIN_WIDTH_HORIZONTAL = 520; // art + text + controls side by side need about this much
+  const MIN_HEIGHT_ART = 220; // vertical card: fixed rows take ~156px, art needs 60 more
+
   function updateLayout(width, height) {
-    // Wide banner (ratio >= 1.75) OR slim window (height <= 170) -> Horizontal
-    // Square or tall window -> Vertical Card
-    const isHorizontal = !queueOpen && ((width / height >= 1.75) || height <= 170);
+    // Wide banner (ratio >= 1.75) OR slim window (height <= 170) -> Horizontal,
+    // but only once there's room for it. Anything narrower -> Vertical Card.
+    const isHorizontal = !queueOpen && width >= MIN_WIDTH_HORIZONTAL && ((width / height >= 1.75) || height <= 170);
     root.classList.toggle('mp-horizontal', isHorizontal);
-    root.classList.toggle('mp-no-art', !isHorizontal && height < 120);
+    root.classList.toggle('mp-no-art', !isHorizontal && height < MIN_HEIGHT_ART);
     root.classList.toggle('mp-no-text', isHorizontal && width < 240);
   }
 

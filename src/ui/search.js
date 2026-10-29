@@ -189,7 +189,7 @@ window.MusikSearch = (function () {
     textEl.textContent = '';
     textEl.append(value.slice(0, pos), caretEl, value.slice(pos));
     caretEl.classList.toggle('search-caret--hidden', inputEl.selectionStart !== inputEl.selectionEnd);
-    mirrorEl.querySelector('.search-ghost').textContent = value ? ' \u2014 Search Musik' : 'Search your music';
+    mirrorEl.querySelector('.search-ghost').textContent = value ? '' : 'Search your music';
     fieldEl.style.height = `${mirrorEl.offsetHeight}px`;
   }
 
@@ -476,7 +476,7 @@ window.MusikSearch = (function () {
           <span class="search-row-title">${escapeHTML(r.label)}</span>
           ${r.sub ? `<span class="search-row-sub">${escapeHTML(r.sub)}</span>` : ''}
         </span>
-        <span class="search-row-kind">${TYPE_LABEL[r.type]}</span>
+        ${r.type === 'track' ? '' : `<span class="search-row-kind">${TYPE_LABEL[r.type]}</span>`}
       </button>
     `);
 
@@ -565,6 +565,12 @@ window.MusikSearch = (function () {
     plus: '<path d="M12 5v14M5 12h14"/>',
     open: '<path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/>',
     art: '<path d="M21 12a9 9 0 11-3-6.7M21 4v5h-5"/>',
+    shuffle: '<path d="M2 18h1.4c1.3 0 2.5-.6 3.3-1.7l6.1-8.6c.7-1.1 2-1.7 3.3-1.7H22M18 2l4 4-4 4M2 6h1.9c1.5 0 2.9.9 3.6 2.2M22 18h-5.9c-1.3 0-2.6-.7-3.3-1.8l-.5-.8M18 14l4 4-4 4"/>',
+    edit: '<path d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"/>',
+    trash: '<path d="M3 6h18M8 6V4a1 1 0 011-1h6a1 1 0 011 1v2M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6M10 11v6M14 11v6"/>',
+    person: '<path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2M12 11a4 4 0 100-8 4 4 0 000 8z"/>',
+    disc: '<path d="M12 21a9 9 0 100-18 9 9 0 000 18zM12 15a3 3 0 100-6 3 3 0 000 6z"/>',
+    copy: '<path d="M9 9h10a2 2 0 012 2v8a2 2 0 01-2 2H9a2 2 0 01-2-2v-8a2 2 0 012-2zM5 15V5a2 2 0 012-2h10"/>',
   };
   const CHEVRON_ATTRS = 'viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"';
   const CHEVRON_RIGHT = `<svg class="search-action-chevron" ${CHEVRON_ATTRS}><path d="M9 6l6 6-6 6"/></svg>`;
@@ -617,7 +623,34 @@ window.MusikSearch = (function () {
     if (ui) return ui.playQueue?.(tracks) ?? ui.loadTrack(tracks[0]);
   }
 
+  function shuffled(tracks) {
+    const a = [...tracks];
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  }
+
+  // Play Next sits each track right after the current one, so go in reverse to keep the order.
+  async function enqueueAll(tracks, playNext) {
+    const A = window.MusikContextMenu?.actions;
+    if (!A) return;
+    for (const t of playNext ? [...tracks].reverse() : tracks) await A.enqueue(t, playNext);
+  }
+
+  // Re-runs the search for `text` without closing the overlay.
+  function searchFor(text) {
+    inputEl.value = text;
+    lastQuery = text;
+    syncField();
+    inputEl.focus({ preventScroll: true });
+    inputEl.setSelectionRange(text.length, text.length);
+    runSearch();
+  }
+
   // `enter` marks the Shift/Alt+Enter quick actions, usable without opening the panel.
+  // `stay` actions keep the overlay open; `danger` actions render red.
   function buildActions(ctx) {
     const A = window.MusikContextMenu?.actions;
     const items = [];
@@ -630,17 +663,36 @@ window.MusikSearch = (function () {
         add('next', 'Play Next', () => A.enqueue(track, true), { icon: 'next', keys: ['shift', 'enter'], enter: 'shift' });
         add('queue', 'Add to Queue', () => A.enqueue(track, false), { icon: 'queue', keys: ['alt', 'enter'], enter: 'alt' });
         add('playlist', 'Add to Playlist\u2026', null, { icon: 'playlist', drill: true });
-        add('art', 'Refresh Cover Art', () => A.refreshArt(track), { icon: 'art' });
       }
+      const artists = splitArtists(track.artist).slice(0, 3);
+      artists.forEach((name, i) => add(`artist-${i}`, artists.length > 1 ? `Go to ${name}` : 'Go to Artist', () => searchFor(name), { icon: 'person', stay: true }));
+      if (track.album) add('album', 'Go to Album', () => searchFor(track.album), { icon: 'disc', stay: true });
+      add('copy', 'Copy Title & Artist', () => navigator.clipboard.writeText([track.artist, track.title].filter(Boolean).join(' - ')), { icon: 'copy' });
+      if (A) add('art', 'Refresh Cover Art', () => A.refreshArt(track), { icon: 'art' });
     } else if (type === 'playlist') {
       add('open', 'Open Playlist', () => { location.hash = `#/library/${encodeURIComponent(playlist.id)}`; }, { icon: 'open', keys: ['enter'] });
-      if (A) add('play-playlist', 'Play', () => A.playPlaylist(playlist), { icon: 'play' });
+      if (A) {
+        const withTracks = (fn) => async () => {
+          const list = await A.playlistTracks(playlist);
+          if (list.length) await fn(list);
+        };
+        const refreshView = () => window.dispatchEvent(new Event('hashchange'));
+        add('play-playlist', 'Play', () => A.playPlaylist(playlist), { icon: 'play' });
+        add('shuffle-playlist', 'Shuffle', withTracks((list) => playAll(shuffled(list))), { icon: 'shuffle' });
+        add('next-playlist', 'Play Next', withTracks((list) => enqueueAll(list, true)), { icon: 'next', keys: ['shift', 'enter'], enter: 'shift' });
+        add('queue-playlist', 'Add to Queue', withTracks((list) => enqueueAll(list, false)), { icon: 'queue', keys: ['alt', 'enter'], enter: 'alt' });
+        add('rename-playlist', 'Rename\u2026', () => A.renamePlaylist(playlist, refreshView), { icon: 'edit' });
+        add('delete-playlist', 'Delete Playlist', () => A.deletePlaylist(playlist, refreshView), { icon: 'trash', danger: true });
+      }
     } else if (type === 'artist' || type === 'album') {
       add('open', 'Show in Library', () => { location.hash = '#/library'; }, { icon: 'open', keys: ['enter'] });
       if (tracks.length) {
         add('play-all', 'Play All', () => playAll(tracks), { icon: 'play' });
+        add('shuffle-all', 'Shuffle', () => playAll(shuffled(tracks)), { icon: 'shuffle' });
         if (A) {
-          add('queue-all', 'Add All to Queue', async () => { for (const t of tracks) await A.enqueue(t, false); }, { icon: 'queue', keys: ['alt', 'enter'], enter: 'alt' });
+          add('next-all', 'Play Next', () => enqueueAll(tracks, true), { icon: 'next', keys: ['shift', 'enter'], enter: 'shift' });
+          add('queue-all', 'Add All to Queue', () => enqueueAll(tracks, false), { icon: 'queue', keys: ['alt', 'enter'], enter: 'alt' });
+          add('playlist-all', 'Add to Playlist\u2026', null, { icon: 'playlist', drill: true });
         }
       }
     }
@@ -650,9 +702,11 @@ window.MusikSearch = (function () {
   // Closes the overlay first so dialogs and view changes aren't fighting it.
   async function runAction(item, ctx = actionsCtx) {
     if (!item?.run || !ctx) return;
-    closeActions(false, true);
-    recordPick(ctx.type, rowPickId(ctx.row), inputEl.value.trim());
-    closeInstant();
+    closeActions(!!item.stay, true);
+    if (!item.stay) {
+      recordPick(ctx.type, rowPickId(ctx.row), inputEl.value.trim());
+      closeInstant();
+    }
     try {
       await item.run();
     } catch (err) {
@@ -667,12 +721,29 @@ window.MusikSearch = (function () {
     const iconAttrs = 'viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"';
     actionsListEl.innerHTML = actionsShown.length
       ? actionsShown.map((a, i) => `
-          <button type="button" class="search-action${i === actionsIndex ? ' search-action--active' : ''}" role="option" tabindex="-1" data-i="${i}">
+          <button type="button" class="search-action${i === actionsIndex ? ' search-action--active' : ''}${a.danger ? ' search-action--danger' : ''}" role="option" tabindex="-1" data-i="${i}">
             <svg class="search-action-icon" ${iconAttrs}>${ACTION_ICON[a.icon] || ''}</svg>
             <span class="search-action-label">${escapeHTML(a.label)}</span>
             ${a.drill ? CHEVRON_RIGHT : `<span class="search-action-keys">${keysMarkup(a.keys)}</span>`}
           </button>`).join('')
       : '<div class="search-empty-hint">Nothing matches.</div>';
+  }
+
+  // Keeps the panel under the search bar. A short sheet (1-2 results) grows to
+  // give the panel room; the list only shrinks if the window itself is too short.
+  function fitActionsList() {
+    actionsListEl.style.maxHeight = '';
+    const slab = overlayEl.querySelector('.search-panel');
+    const dockH = overlayEl.querySelector('.search-dock').offsetHeight;
+    const bottom = parseFloat(getComputedStyle(actionsEl).bottom) || 0;
+    const panelH = actionsEl.offsetHeight;
+    const need = panelH + bottom - dockH - 12; // sheet height that fits the panel
+    const cap = window.innerHeight - 16 - overlayEl.getBoundingClientRect().top - slab.offsetHeight - 24 - dockH;
+    const grow = Math.min(need, Math.max(cap, 0));
+    sheetEl.style.minHeight = `${grow}px`;
+    if (need > grow) {
+      actionsListEl.style.maxHeight = `${Math.max(96, actionsListEl.offsetHeight - (need - grow))}px`;
+    }
   }
 
   function setActionsView(view, items, title) {
@@ -684,6 +755,7 @@ window.MusikSearch = (function () {
     actionsHeadEl.innerHTML = (view === 'root' ? '' : `<button type="button" class="search-actions-back" tabindex="-1" aria-label="Back">${CHEVRON_LEFT}</button>`)
       + `<span class="search-actions-title">${escapeHTML(title)}</span>`;
     renderActions();
+    if (actionsOpen) fitActionsList();
   }
 
   function setActionsIndex(i, scroll) {
@@ -696,13 +768,13 @@ window.MusikSearch = (function () {
 
   async function openPlaylistView() {
     const A = window.MusikContextMenu?.actions;
-    const track = actionsCtx?.track;
-    if (!A || !track) return;
+    const list = actionsCtx?.track ? [actionsCtx.track] : (actionsCtx?.tracks ?? []);
+    if (!A || !list.length) return;
     const playlists = (await window.Musik?.library?.getPlaylists?.()) ?? [];
     if (!actionsOpen) return;
     setActionsView('playlists', [
-      ...playlists.map((p) => ({ id: p.id, label: p.name, icon: 'playlist', run: () => A.addToPlaylist(p.id, track) })),
-      { id: 'new', label: 'New Playlist\u2026', icon: 'plus', run: () => A.newPlaylistWith(track) },
+      ...playlists.map((p) => ({ id: p.id, label: p.name, icon: 'playlist', run: async () => { for (const t of list) await A.addToPlaylist(p.id, t); } })),
+      { id: 'new', label: 'New Playlist\u2026', icon: 'plus', run: () => A.newPlaylistWith(list) },
     ], 'Add to Playlist');
   }
 
@@ -728,6 +800,7 @@ window.MusikSearch = (function () {
     setActionsView('root', items, ctx.title);
     actionsEl.hidden = false;
     actionsOpen = true;
+    fitActionsList();
     actionsPillEl.setAttribute('aria-expanded', 'true');
     document.addEventListener('pointerdown', onActionsOutside, true);
     actionsInputEl.focus({ preventScroll: true });
@@ -740,10 +813,12 @@ window.MusikSearch = (function () {
     document.removeEventListener('pointerdown', onActionsOutside, true);
     if (instant) {
       actionsEl.hidden = true;
+      sheetEl.style.minHeight = '';
     } else {
       actionsEl.classList.add('search-actions--closing');
       actionsCloseTimer = setTimeout(() => {
         actionsEl.hidden = true;
+        sheetEl.style.minHeight = '';
         actionsEl.classList.remove('search-actions--closing');
       }, 140);
     }
@@ -757,6 +832,7 @@ window.MusikSearch = (function () {
     actionsOpen = false;
     document.removeEventListener('pointerdown', onActionsOutside, true);
     actionsEl.hidden = true;
+    sheetEl.style.minHeight = '';
     actionsEl.classList.remove('search-actions--closing');
     actionsPillEl.setAttribute('aria-expanded', 'false');
   }

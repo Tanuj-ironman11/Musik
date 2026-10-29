@@ -4,6 +4,7 @@ app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 app.commandLine.appendSwitch('force_high_performance_gpu');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 
 function safeRequire(relPath) {
   try {
@@ -30,6 +31,15 @@ let miniplayerWindow = null;
 let resizingForQueue = false;
 let preQueueBounds = null;
 const QUEUE_PANEL_HEIGHT = 240;
+
+// Win11 (build 22000+) and macOS draw rounded corners, shadow and resize edges
+// natively, so the miniplayer is a plain frameless window there. Win10 keeps the
+// transparent window with the CSS-rounded card.
+function miniplayerUsesNativeFrame() {
+  if (process.platform === 'darwin') return true;
+  if (process.platform !== 'win32') return false;
+  return Number(os.release().split('.')[2]) >= 22000;
+}
 
 function emitToRenderer(name, payload) {
   for (const win of [mainWindow, miniplayerWindow]) {
@@ -106,18 +116,19 @@ function writeMiniplayerSettings(settings) {
 
 function createMiniplayerWindow() {
   const settings = readMiniplayerSettings();
+  const nativeFrame = miniplayerUsesNativeFrame();
   miniplayerWindow = new BrowserWindow({
-    width: settings.width || 320,
-    height: settings.height || 180,
+    width: settings.width || 340,
+    height: settings.height || 260,
     minWidth: 220,
-    minHeight: 150,
+    minHeight: 160,
 
-    transparent: true,
+    ...(nativeFrame
+      ? { backgroundColor: '#141414' }
+      : { transparent: true, thickFrame: false, hasShadow: false }),
     frame: false,
     minimizable: false,
     maximizable: false,
-    thickFrame: false,
-    hasShadow: false,
     alwaysOnTop: !!settings.alwaysOnTop,
     skipTaskbar: false,
     webPreferences: {
@@ -128,7 +139,12 @@ function createMiniplayerWindow() {
     },
   });
 
-  miniplayerWindow.loadFile('miniplayer.html');
+  miniplayerWindow.loadFile('miniplayer.html', nativeFrame ? { query: { frame: 'native' } } : undefined);
+
+  if (process.platform === 'win32') {
+    // Right-clicking a drag region opens the Windows system menu; swallow it.
+    miniplayerWindow.on('system-context-menu', (e) => e.preventDefault());
+  }
 
   miniplayerWindow.webContents.once('did-finish-load', () => {
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -138,7 +154,7 @@ function createMiniplayerWindow() {
 
   miniplayerWindow.on('resized', () => {
     if (!miniplayerWindow || miniplayerWindow.isDestroyed()) return;
-    if (resizingForQueue) return;
+    if (resizingForQueue || preQueueBounds) return; // queue open: the saved size must not include the queue panel
     const [width, height] = miniplayerWindow.getSize();
     writeMiniplayerSettings({ ...readMiniplayerSettings(), width, height });
   });

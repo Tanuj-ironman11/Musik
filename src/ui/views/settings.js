@@ -556,9 +556,17 @@ window.MusikViews['settings'] = async function renderSettings(main) {
       if (presetDesc) presetDesc.textContent = DUCK_PRESET_DESCS[name] || '';
     };
     paintDuckPreset(duckSettings.preset || 'gaming');
-    presetBtns.forEach((b) => b.addEventListener('click', () => {
+    // A preset only fixes Max duck (sensitivity/ceiling adapt on their own), so the
+    // Max slider shows the active preset's value; Custom shows the saved slider value.
+    const syncDuckMax = (s) => {
+      const v = s?.preset === 'custom' ? s?.maxDuck : s?.presetMaxDuck;
+      if (typeof v !== 'number') return;
+      maxSlider.value = Math.round(v * 100);
+      paintMax();
+    };
+    presetBtns.forEach((b) => b.addEventListener('click', async () => {
       paintDuckPreset(b.dataset.duckPreset);
-      window.Musik?.gameDuck?.setPreset?.(b.dataset.duckPreset);
+      syncDuckMax(await window.Musik?.gameDuck?.setPreset?.(b.dataset.duckPreset));
     }));
 
     const advToggle = document.getElementById('settings-duck-advanced-toggle');
@@ -586,10 +594,11 @@ window.MusikViews['settings'] = async function renderSettings(main) {
 
     const maxSlider = document.getElementById('settings-duck-max');
     const maxValue = document.getElementById('settings-duck-max-value');
-    bindRangeValueDisplay(maxSlider, maxValue, (value) => {
+    const paintMax = bindRangeValueDisplay(maxSlider, maxValue, (value) => {
       paintDuckPreset('custom');
       window.Musik?.gameDuck?.setMaxDuck?.(Number(value) / 100);
     });
+    syncDuckMax(duckSettings);
 
     // 'duckdebug' - main.js/game-duck.js don't emit this yet; row stays at "-" until they do.
     // window.Musik.events is a custom bus, not a native EventTarget, so it

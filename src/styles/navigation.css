@@ -36,9 +36,8 @@
     opacity 0.26s var(--ease-out);
 }
 
-/* Fullscreen Now Playing is up — sidebar recedes left and shrinks
-   slightly rather than floating above the overlay. Delayed a hair
-   behind the titlebar so the two don't leave in perfect lockstep. */
+/* Fullscreen Now Playing: sidebar slides left and shrinks, a beat behind the
+   titlebar. */
 body.npf-open #sidebar {
   transform: translateX(calc(-100% - 32px)) scale(0.94);
   opacity: 0;
@@ -79,8 +78,8 @@ body.sidebar-pinned #app-name::after {
   transform: scaleX(1);
 }
 
-/* Compact mark — a small waveform glyph, visible collapsed. Fades out as
-   the full wordmark takes over on expand so the two never show at once. */
+/* Compact waveform mark, visible collapsed; fades out as the wordmark takes
+   over. */
 #sidebar-logo {
   flex-shrink: 0;
   display: flex;
@@ -95,8 +94,7 @@ body.sidebar-pinned #app-name::after {
     filter var(--anim-fast) var(--anim-ease);
 }
 
-/* Bigger collapsed footprint — was a small static glyph, now reads as
-   a real mark at rest instead of an icon-sized afterthought. */
+/* Larger collapsed footprint so the mark reads at rest. */
 #sidebar-logo svg {
   display: block;
   width: 34px;
@@ -113,15 +111,13 @@ body.sidebar-pinned #app-name::after {
   transform: scale(var(--anim-press));
 }
 
-/* Playback-reactive: JS toggles .is-playing on #sidebar-logo while a
-   track is playing. Slow pulse tied to accent color. Bumped brighter/wider
-   than the original — was reading as barely-there at rest. */
+/* .is-playing (set by JS): slow accent-colored pulse. */
 #sidebar-logo.is-playing {
   animation: sidebar-logo-pulse 1.8s var(--anim-ease) infinite;
 }
 
-/* Beat pulse: JS sets --beat-scale on #sidebar-logo per frame from live
-   analyser amplitude (0 idle, up to ~0.22 on peaks), driving glow. */
+/* JS sets --beat-scale per frame from analyser amplitude (0 idle, ~0.22 peak);
+   drives the glow. */
 #sidebar-logo {
   --beat-scale: 0;
   --logo-hue: 0deg; /* set by JS every 5th click (secret shuffle) */
@@ -131,15 +127,14 @@ body.sidebar-pinned #app-name::after {
   filter: drop-shadow(0 0 calc(6px + var(--beat-scale) * 40px) var(--color-accent-glow));
 }
 
-/* Each bar scales independently from its own frequency band. No CSS
-   transition — JS applies its own attack/decay smoothing per rAF frame. */
+/* Each bar scales from its own band; no CSS transition, JS smooths attack/decay
+   per frame. */
 #sidebar-logo svg .viz-bar {
   transform-box: fill-box;
   transform-origin: bottom;
 }
 
-/* JS spawns confetti particles at the logo's center on click and
-   animates them outward via WAAPI; this just supplies their shape. */
+/* JS spawns confetti at the logo center (WAAPI); this only supplies the shape. */
 .logo-confetti-particle {
   position: fixed;
   width: 5px;
@@ -181,9 +176,7 @@ body.sidebar-pinned #sidebar-logo {
 #sidebar:hover .logo-text-wrap,
 body.sidebar-pinned .logo-text-wrap { opacity: 1; max-width: 130px; }
 
-/* Pushes the pin button to the far end of the header row instead of
-   crowding the wordmark, and only takes up space once the sidebar is
-   actually wide enough to show it. */
+/* Pin button goes to the far end of the header, taking space only when expanded. */
 .sidebar-pin-btn { margin-left: auto; }
 
 /* Pin toggle: hidden until sidebar is expanded, stays visible if pinned. */
@@ -227,13 +220,9 @@ body.sidebar-pinned .sidebar-pin-btn {
 
 .sidebar-pin-btn svg { width: 14px; height: 14px; }
 
-/* BUG FIX: at rest (collapsed, not hovered/pinned) these buttons fade to
-   opacity:0 but were still full-width (26px) flex items inside #app-name,
-   pulling the logo off-center relative to the nav icons below it (which
-   center as a block via #sidebar's align-items:center). Collapsing their
-   width to 0 at rest removes that phantom space so the logo lines up with
-   the icon column beneath it. Restored to full width on hover/pinned,
-   where the buttons are actually visible and usable. */
+/* Pin and collapse buttons collapse to zero width at rest so their invisible
+   slots do not offset the logo from the icon column; full width on
+   hover/pinned. */
 #sidebar:not(:hover) .sidebar-pin-btn {
   width: 0;
   margin-left: 0;
@@ -246,8 +235,8 @@ body.sidebar-pinned .sidebar-pin-btn {
 
 body.sidebar-pinned .sidebar-pin-btn { margin-left: auto; }
 
-/* Filled panel = pinned. Unfilled/outline = unpinned. Toggle which panel
-   rect carries fill via this class on the button itself. */
+/* Pinned = filled panel rect, unpinned = outline; the class on the button
+   toggles the fill. */
 .sidebar-pin-btn .pin-panel-active { fill: transparent; transition: fill 0.15s var(--ease-out); }
 
 .sidebar-pin-btn.is-pinned { color: var(--color-accent); }
@@ -279,7 +268,7 @@ body.sidebar-pinned .nav-text { opacity: 1; width: auto; }
 .sidebar-resize-handle {
   position: absolute;
   top: 0;
-  right: 0; /* was -3px: #sidebar has overflow:hidden, so half the handle was clipped */
+  right: 0; /* inside the edge: #sidebar's overflow:hidden would clip it outside */
   width: 8px;
   height: 100%;
   cursor: ew-resize;
@@ -333,15 +322,8 @@ body.sidebar-resizing #now-playing-bar {
   flex: 1;
 }
 
-/* ── Drag-to-reorder ─────────────────────────────────────────────
-   Vertical rail: links stack top-to-bottom, so the insertion point is a
-   horizontal line — top edge if dropping before the hovered link,
-   bottom edge if after.
-   Topbar mode: links run left-to-right, so the insertion point is
-   instead a vertical line — left edge for before, right edge for
-   after — a distinct visual that actually matches that layout's
-   reorder axis, rather than reusing the vertical rail's line sideways
-   where it wouldn't read correctly. */
+/* Drag-to-reorder insertion line: top/bottom edge in the vertical rail,
+   left/right edge in topbar mode. */
 .nav-link--dragging {
   opacity: 0.4;
 }
@@ -362,8 +344,8 @@ body.layout-topbar .nav-link--drop-after {
   box-shadow: inset -2px 0 0 var(--color-accent);
 }
 
-/* ── Hidden-sections pill ────────────────────────────────────────
-   Appears at the end of the nav list only when >=1 section is hidden. */
+/* Hidden-sections pill: shown at the end of the nav list only when a section is
+   hidden. */
 .nav-hidden-toggle {
   display: flex;
   align-items: center;
@@ -394,12 +376,9 @@ body.layout-topbar .nav-hidden-toggle {
   padding: 4px 8px;
 }
 
-/* ── Icon-only collapse toggle ───────────────────────────────────
-   Lives in #sidebar-footer at the bottom of the rail (moved out of the
-   header row). Same shape logic as .nav-link: 44px square at rest,
-   full-width row with a label when the rail is expanded. Always visible —
-   it used to fade in on hover only, which made it easy to miss.
-   Hidden in topbar mode, which is already icon-only by design. */
+/* Icon-only collapse toggle: lives in #sidebar-footer; 44px square at rest,
+   full-width row with label when expanded. Always visible; hidden in topbar
+   mode (already icon-only). */
 #sidebar-footer {
   flex-shrink: 0;
   width: 100%;
@@ -478,22 +457,8 @@ body.layout-topbar #sidebar-footer {
   display: none;
 }
 
-/* ── Forced icon-only mode ───────────────────────────────────────
-   Locks the rail collapsed regardless of hover/pin state. Doesn't apply
-   in topbar mode (already icon-only, and the toggle itself is hidden
-   there — see above).
-   BUG FIX: this used to lock width at exactly --sidebar-width-collapsed
-   even on hover/pinned, which is sized for a single nav icon column.
-   The header row still has logo + collapse-btn side by side though —
-   at that width they overflowed and got clipped by #sidebar's
-   overflow:hidden, so the collapse button became invisible and
-   unclickable the moment you turned icon-only mode on. Widening by a
-   fixed 40px here (room for the button + gap, nav icons stay 44px/
-   centered same as before) keeps the toggle reachable without
-   reintroducing the full expanded-width nav labels.
-   UPDATE: the collapse button now lives in the bottom footer instead of
-   the header row, so nothing needs the extra 40px anymore. Icon-only means
-   icon-only: hover no longer widens the rail at all. */
+/* Forced icon-only: rail stays collapsed regardless of hover/pin and never
+   widens. Not applied in topbar mode, where the toggle is hidden. */
 body.sidebar-icon-only #sidebar:hover,
 body.sidebar-icon-only.sidebar-pinned #sidebar {
   width: var(--sidebar-width-collapsed);
@@ -541,9 +506,8 @@ body.sidebar-icon-only #sidebar:hover #sidebar-logo:hover {
   transform: scale(var(--anim-lift));
 }
 
-/* Pinned + icon-only: the rail is narrow, so content and the player bar
-   reflow to the collapsed width instead of the full expanded width. Sits
-   before the topbar guard rules below, which still win for stale state. */
+/* Pinned + icon-only: content and player bar reflow to the collapsed width.
+   Stays before the topbar guards, which win for stale state. */
 body.sidebar-icon-only.sidebar-pinned #main {
   padding-left: calc(var(--sidebar-width-collapsed) + clamp(24px, 2.8vw, 36px));
 }
@@ -553,10 +517,8 @@ body.sidebar-icon-only.sidebar-pinned #now-playing-bar {
   width: calc(100% - var(--sidebar-width-collapsed) - 48px);
 }
 
-/* SIDE EFFECT NOTE: app.js now wraps the three .nav-link anchors in
-   #nav-links (it didn't before — this rule existed but had nothing to
-   grab onto). Vertical-rail layout above is unaffected since it already
-   assumed this wrapper; topbar mode below depends on it for centering. */
+/* app.js wraps the nav-link anchors in #nav-links; topbar mode relies on it for
+   centering. */
 .nav-link {
   display: flex;
   align-items: center;
@@ -572,9 +534,8 @@ body.sidebar-icon-only.sidebar-pinned #now-playing-bar {
   overflow: hidden;
   background: color-mix(in srgb, var(--color-text) 4%, transparent);
   border: 1px solid transparent;
-  /* Static top-edge highlight — the liquid-glass silhouette cue the
-     brief calls for (single static highlight, not a moving shimmer).
-     Brightens on hover via the box-shadow list in .nav-link:hover. */
+  /* Static top-edge highlight (liquid-glass silhouette cue); brightens on hover
+     via .nav-link:hover's box-shadow list. */
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
   transition:
     width 0.28s var(--ease-spring),
@@ -588,12 +549,8 @@ body.sidebar-icon-only.sidebar-pinned #now-playing-bar {
     transform 0.18s var(--ease-spring);
 }
 
-/* One-shot outward ripple on hover-in instead of a glow that chases the
-   cursor — a ring blooms from the icon's edge and fades, then settles.
-   Pure box-shadow transition (no keyframes needed): spread-radius grows
-   0 -> 5px while its own color fades out, giving a "pop" rather than a
-   loop or a moving highlight — stays within frosted-glass territory
-   rather than reading as liquid glass's stronger shimmer. */
+/* One-shot ripple on hover-in: a box-shadow ring grows 0 -> 5px while fading. No
+   keyframes, no cursor-chasing glow. */
 .nav-link::after {
   content: "";
   position: absolute;
@@ -623,12 +580,8 @@ body.sidebar-icon-only.sidebar-pinned #now-playing-bar {
 
 #nav-links .nav-link:nth-child(3) .nav-text { transition-delay: 0.13s; }
 
-/* Active state: a small glow dot under the icon, works collapsed or expanded.
-   BUG FIX: `left` was being used as the dot's own left EDGE at the icon's
-   center x-coordinate, so the 4px-wide dot sat 2px right of true center —
-   visible as "dot doesn't line up with icon" on every nav item.
-   translateX(-50%) makes `left` describe the dot's center instead, matching
-   how the topbar variant further down already does it correctly. */
+/* Active dot under the icon; translateX(-50%) centers it (matches the topbar
+   variant). */
 .nav-link.active::before {
   content: "";
   position: absolute;
@@ -658,8 +611,7 @@ body.sidebar-icon-only.sidebar-pinned #now-playing-bar {
   transform: translateY(-1.5px);
 }
 
-/* Press feedback — nav-links had a hover state but nothing acknowledged
-   an actual click, so every nav press felt unresponsive. */
+/* Press feedback on click. */
 .nav-link:active {
   transform: scale(var(--anim-press));
   background: var(--color-accent-subtle);
@@ -682,9 +634,7 @@ body.sidebar-icon-only.sidebar-pinned #now-playing-bar {
   transition: transform var(--anim-fast) var(--anim-spring), filter var(--anim-fast) var(--anim-ease);
 }
 
-/* Icon-only hover feedback — scoped to the icon itself so nothing else
-   in the row shifts or resizes. Clean scale + glow, no rotation — the
-   previous -4deg wobble read as janky rather than intentional. */
+/* Icon-only hover: scale + glow on the icon only, no rotation. */
 .nav-link:hover .sidebar-icon {
   transform: scale(1.14);
   filter: drop-shadow(0 0 7px var(--color-accent-glow));
@@ -720,19 +670,15 @@ body.layout-topbar #sidebar {
   height: var(--topbar-height);
   padding: 0 18px;
   gap: 0;
-  /* Grounded, not floating — a fraction of the vertical rail's
-     --sidebar-shadow so it reads as sitting in the surface rather
-     than hovering a plane's-height above it. */
+  /* A fraction of --sidebar-shadow so the bar sits in the surface instead of
+     hovering. */
   box-shadow:
     0 2px 8px rgba(0, 0, 0, 0.28),
     inset 0 1px 1px rgba(255, 255, 255, 0.04);
 }
 
-/* Vertical mode's hover-expand (width -> full rail) must never fire
-   here — the topbar is a fixed strip, it doesn't grow on hover. This
-   is what was causing the "moves around like crazy" feeling: the
-   sidebar-wide hover rule was resizing every icon at once underneath
-   the topbar too. */
+/* The vertical hover-expand must not fire here: the topbar is a fixed strip, not
+   a resizing rail. */
 body.layout-topbar #sidebar:hover {
   width: auto;
   align-items: center;
@@ -740,8 +686,7 @@ body.layout-topbar #sidebar:hover {
     linear-gradient(180deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0) 18%),
     rgba(14, 14, 14, 0.5);
   border-color: rgba(255, 255, 255, 0.08);
-  /* Same grounded shadow as the base state — hovering the bar itself
-     (not a nav-link) shouldn't lift it either. */
+  /* Same grounded shadow on bar hover. */
   box-shadow:
     0 2px 8px rgba(0, 0, 0, 0.28),
     inset 0 1px 1px rgba(255, 255, 255, 0.04);
@@ -751,17 +696,15 @@ body.layout-topbar #sidebar-logo { transform: none; }
 
 body.layout-topbar #sidebar:hover #sidebar-logo { transform: none; }
 
-/* Icons-only bar: wordmark text, pin button, and resize handle never
-   show here — those are vertical-rail-only affordances. */
+/* Wordmark text, pin button and resize handle are rail-only; hidden here. */
 body.layout-topbar .logo-text-wrap,
 body.layout-topbar .sidebar-pin-btn,
 body.layout-topbar .sidebar-resize-handle {
   display: none;
 }
 
-/* Nav group: centered as its own unit in the middle grid column, which
-   is itself centered because the two flanking columns are equal `fr`
-   tracks — Library (the middle child) ends up exactly bar-center. */
+/* Nav group centered in the middle grid column; the flanking equal fr tracks put
+   Library at bar center. */
 body.layout-topbar #nav-links {
   grid-column: 2;
   flex-direction: row;
@@ -780,10 +723,8 @@ body.layout-topbar .nav-link {
   margin-top: 0 !important; /* cancels the vertical rail's Settings margin-top:auto */
 }
 
-/* Shape is fixed for every state (base, hover, active, hover+active) —
-   nothing below touches width, height, border-radius, padding, or gap.
-   Hover/active get color + glow only, no transform of any kind — the
-   bar itself should feel completely still when the cursor moves over it. */
+/* Shape is fixed in every state: hover/active change color and glow only, no
+   transform, so the bar stays still under the cursor. */
 body.layout-topbar .nav-link:hover,
 body.layout-topbar #sidebar:hover .nav-link:hover {
   background: var(--color-accent-dim);
@@ -798,9 +739,7 @@ body.layout-topbar #sidebar:hover .nav-link:active {
   background: var(--color-accent-subtle);
 }
 
-/* Icon-only hover feedback from the base .nav-link rule (scale + rotate)
-   is a size/shape change — explicitly killed here so nothing in the
-   topbar strip resizes on hover, only recolors. */
+/* Kills the base icon-only hover scale/rotate so nothing resizes in the topbar. */
 body.layout-topbar .nav-link:hover .sidebar-icon {
   transform: none;
   filter: drop-shadow(0 0 6px var(--color-accent-glow));
@@ -808,8 +747,8 @@ body.layout-topbar .nav-link:hover .sidebar-icon {
 
 body.layout-topbar .nav-text { display: none; }
 
-/* Active-state dot re-centers under the icon instead of using the
-   vertical rail's fixed left offset. */
+/* Active dot re-centers under the icon rather than using the rail's fixed left
+   offset. */
 body.layout-topbar .nav-link.active::before,
 body.layout-topbar #sidebar:hover .nav-link.active::before {
   left: 50%;
@@ -819,8 +758,8 @@ body.layout-topbar #sidebar:hover .nav-link.active::before {
 
 body.sidebar-pinned.layout-topbar #main,
 body.sidebar-pinned.layout-topbar #now-playing-bar {
-  /* Pinned + topbar shouldn't both apply (pin is rail-only per app.js
-     comment), but guard against stale state so nothing double-indents. */
+  /* Pin is rail-only (see app.js); guard against stale pinned state
+     double-indenting. */
   padding-left: clamp(20px, 2.4vw, 32px);
 }
 
@@ -883,11 +822,8 @@ body.sidebar-icon-only #sidebar #app-name {
 body.sidebar-icon-only .logo-text-wrap {
   margin-left: 0;
 }
-/* ─── Sidebar/topbar nav icons: click-kick ───
-   Moved in from animations.css — trigger/selector rules belong here per
-   the CSS role-separation rule. JS adds .icon-kick to the clicked
-   .nav-link, removes it on animationend. Keyframes still live in
-   animations.css. */
+/* Nav icon click-kick: selectors live here (CSS role separation), keyframes in
+   animations.css. JS adds .icon-kick and removes it on animationend. */
 
 .nav-link[data-view="home"].icon-kick .sidebar-icon {
   transform-box: fill-box;
@@ -901,8 +837,7 @@ body.sidebar-icon-only .logo-text-wrap {
   animation: icon-gear-tick 0.45s var(--ease-bounce);
 }
 
-/* Library icon = 2x2 tile grid. Each tile pops, staggered diagonally
-   so it reads as a cascade instead of moving all at once. */
+/* Library icon = 2x2 tile grid; tiles pop in a diagonal stagger. */
 .nav-link[data-view="library"].icon-kick .lib-bar {
   transform-box: fill-box;
   transform-origin: center;
@@ -919,7 +854,7 @@ body.sidebar-icon-only .logo-text-wrap {
   animation: icon-profile-nod 0.4s var(--ease-bounce);
 }
 
-/* ─── Wordmark click easter egg ─── */
+/* Wordmark click easter egg */
 .logo-text-wrap.egg-pop {
   animation: wordmark-egg-pop 0.55s var(--ease-bounce);
 }

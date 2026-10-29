@@ -614,6 +614,11 @@ body[data-window="miniplayer"] {
   overflow: hidden;
 }
 
+/* Size container for the cq units below (horizontal art size reads the window size) */
+body[data-window="miniplayer"] {
+  container-type: size;
+}
+
 /* Removes the opaque square gradient and noise from tokens.css outside the rounded corners */
 body[data-window="miniplayer"]::before,
 body[data-window="miniplayer"]::after {
@@ -646,10 +651,28 @@ body[data-window="miniplayer"]::after {
   -webkit-app-region: no-drag;
 }
 
+/* Win11/macOS: the OS draws the corners, shadow and resize edges (data-frame is set
+   from ?frame=native). The 3px body-colored inset keeps the window edge out of the
+   drag region so the resize handles still work. */
+html:has(body[data-window="miniplayer"][data-frame="native"]),
+body[data-window="miniplayer"][data-frame="native"] {
+  background: var(--color-bg-elevated, #141414) !important;
+}
+
+body[data-frame="native"] #mp-root {
+  width: calc(100% - 6px);
+  height: calc(100% - 6px);
+  margin: 3px;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+}
+
 /* Vertical card mode: album art expands up to 60% of the available height */
 .mp-art-frame {
   flex: 1 1 auto;
   min-height: 60px;
+  container-type: size;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -657,11 +680,8 @@ body[data-window="miniplayer"]::after {
 }
 
 #mp-root .pb-art-wrap {
-  width: auto;
-  height: 100%;
-  max-height: 100%;
-  aspect-ratio: 1 / 1;
-  max-width: min(100%, 340px);
+  width: min(100cqw, 100cqh, 340px);
+  height: min(100cqw, 100cqh, 340px);
   border-radius: var(--radius-md, 10px);
   overflow: hidden;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
@@ -700,28 +720,27 @@ body[data-window="miniplayer"]::after {
   grid-template-areas:
     "art text controls"
     "progress progress progress";
-  grid-template-columns: auto minmax(180px, 1fr) auto;
+  grid-template-columns: var(--mp-art) minmax(0, 1fr) auto;
   grid-template-rows: 1fr auto;
   align-items: center;
-  gap: clamp(8px, 1.5vw, 14px) clamp(12px, 2vw, 24px);
-  padding: clamp(10px, 1.8vw, 18px) clamp(14px, 2.2vw, 24px);
+  gap: 10px 20px;
+  padding: 14px 20px;
+  /* Square sized by free height, capped so text + controls always keep their room */
+  --mp-art: max(48px, min(100cqh - 66px, 100cqw - 440px, 160px));
 }
 
 /* Album art fills the available bar height */
 #mp-root.mp-horizontal .mp-art-frame {
   grid-area: art;
-  width: auto;
-  height: 100%;
-  max-height: 100%;
-  justify-content: flex-start;
+  flex: none;
+  width: var(--mp-art);
+  height: var(--mp-art);
+  min-height: 0;
 }
 
 #mp-root.mp-horizontal .pb-art-wrap {
+  width: 100%;
   height: 100%;
-  max-height: 100%;
-  width: auto;
-  aspect-ratio: 1 / 1;
-  max-width: 140px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
 }
 
@@ -786,7 +805,7 @@ body[data-window="miniplayer"]::after {
 /* Sizing when the queue is active */
 #mp-root.mp-has-queue .mp-art-frame {
   flex: 0 0 auto;
-  max-height: 80px;
+  height: 80px;
 }
 
 #mp-root.mp-has-queue .pb-art-wrap {
@@ -952,4 +971,21 @@ body[data-window="miniplayer"]::after {
 
 #mp-root.mp-no-text .pb-text {
   display: none;
+}
+
+/* No cover: flat placeholder, no ring/shadow/outline around it */
+#mp-art[hidden],
+#mp-art-placeholder[hidden] {
+  display: none !important;
+}
+
+#mp-root .pb-art-wrap:has(#mp-art[hidden]) {
+  box-shadow: none;
+  background: transparent;
+}
+
+#mp-root .pb-art--placeholder {
+  border: 0;
+  outline: 0;
+  background: rgba(255, 255, 255, 0.04);
 }

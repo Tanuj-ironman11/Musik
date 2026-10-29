@@ -1,15 +1,8 @@
 // src/ui/app.js
-//
-// Hash-based view router and sidebar controller. #main renders whichever
-// view matches location.hash, defaulting to #/home.
-//
-// Views must expose window.MusikViews.<name>(mainEl) — see home.js and
-// system-check.js for examples. Mods that add a new page should register
-// under this same object and can link to it with a normal #/<name> href
-// in the nav or elsewhere in the UI.
-//
-// #/system-check is a valid route but isn't in the default sidebar nav —
-// it's reachable from a button in Settings.
+// Hash router + sidebar controller. Views register as
+// window.MusikViews.<name>(mainEl, param); mods add pages the same way and link
+// with #/<name>.
+// #/system-check is routable but not in the nav; Settings links to it.
 
 (function () {
   const DEFAULT_VIEW = 'home';
@@ -28,9 +21,7 @@
     });
   }
 
-  // View swaps fade the outgoing content out, swap innerHTML, then fade
-  // the new content in. Kept short (120ms) so it reads as a transition,
-  // not a loading delay.
+  // View swap: fade out, swap, fade in. 120ms reads as a transition, not a delay.
   const VIEW_FADE_MS = 120;
 
   function render() {
@@ -55,8 +46,7 @@
 
       main.classList.remove('view-leaving');
       main.classList.add('view-entering');
-      // Force reflow so the entering transition actually plays instead of
-      // being coalesced with the class add.
+      // Reflow so the entering transition isn't coalesced with the class add.
       void main.offsetWidth;
       main.classList.remove('view-entering');
     };
@@ -114,12 +104,9 @@
     initWordmarkEgg();
   }
 
-  // ── Nav items: data-driven, reorderable, hideable ─────────────────────
-  // Config array for the sidebar nav. Order and visibility are user-
-  // controlled and persisted (see getNavOrder/getNavHidden below). Each
-  // item's svg is a complete <svg> element rather than just inner paths,
-  // since different icons need different attrs on the outer tag (fill vs
-  // stroke).
+  // Nav config: order/visibility are user-controlled and persisted
+  // (getNavOrder/getNavHidden). Each svg is a full <svg> since icons differ in
+  // outer attrs (fill vs stroke).
   const NAV_ITEMS = [
     {
       id: 'home',
@@ -151,9 +138,8 @@
     },
   ];
 
-  // Nav items are fully user-reorderable, including Settings — no item
-  // is pinned to a fixed position. Default order/visibility comes from
-  // NAV_ITEMS above until the user drags something or hides a section.
+  // Every item is reorderable, Settings included. Defaults come from NAV_ITEMS
+  // until the user drags or hides something.
   const NAV_ORDER_KEY = 'musikNavOrder';
   const NAV_HIDDEN_KEY = 'musikNavHidden';
 
@@ -172,7 +158,7 @@
   function getNavHidden() {
     let saved = null;
     try { saved = JSON.parse(localStorage.getItem(NAV_HIDDEN_KEY) || 'null'); } catch (_) {}
-    // Skip ids that no longer exist (removed items), or "+N hidden" counts something it can't restore.
+    // Drop ids with no matching nav item so "+N hidden" only counts restorable ones.
     return Array.isArray(saved) ? saved.filter((id) => NAV_ITEMS.some((i) => i.id === id)) : [];
   }
   function setNavHidden(hidden) {
@@ -214,11 +200,9 @@
     setActiveNav(currentRoute().view);
   }
 
-  // ── Drag-to-reorder ── native HTML5 drag-and-drop, no library.
-  // Same before/after midpoint pattern as miniplayer-ui.js's queue
-  // reorder — a single "highlight the target" class doesn't tell you
-  // which side of it you'll land on, which is why this felt like it had
-  // no UI at all.
+  // Drag-to-reorder (native HTML5 DnD). A before/after midpoint split shows which
+  // side of the target the drop lands on (same pattern as the miniplayer-ui.js
+  // queue reorder).
   function wireNavLinkDrag(container) {
     let dragFromId = null;
 
@@ -247,9 +231,7 @@
         if (!dragFromId || dragFromId === link.dataset.view) return;
         e.dataTransfer.dropEffect = 'move';
 
-        // Topbar mode lays nav items out horizontally — split on X
-        // instead of Y so the line lands on the correct side. (Sidebar
-        // mode is the default/vertical case.)
+        // Topbar lays items out horizontally, so split on X instead of Y.
         const rect = link.getBoundingClientRect();
         const isTopbar = document.body.classList.contains('layout-topbar');
         const before = isTopbar
@@ -279,9 +261,8 @@
 
         if (!before) toIndex += 1;
         order.splice(fromIndex, 1);
-        // Removing the dragged item first shifts everything after it
-        // down by one, so a target past the source needs adjusting —
-        // same fix miniplayer-ui.js's queue reorder needed.
+        // Removing the dragged item shifts later indexes down by one;
+        // adjust for targets past the source.
         if (fromIndex < toIndex) toIndex -= 1;
         order.splice(toIndex, 0, dragFromId);
 
@@ -291,8 +272,8 @@
     });
   }
 
-  // ── Hide / restore sections ── right-click to hide (can't hide the
-  // last visible item). Hidden ones surface via a "+N hidden" pill.
+  // Hide/restore: right-click hides (never the last visible item); hidden ones
+  // live behind a "+N hidden" pill.
   let openNavMenuEl = null;
 
   function closeNavMenu() {
@@ -321,9 +302,7 @@
     const maxX = window.innerWidth - rect.width - 8;
     const maxY = window.innerHeight - rect.height - 8;
     menu.style.position = 'fixed';
-    // #sidebar is z-index:10050 (navigation.css) — a plain position:fixed
-    // menu with z-index:auto loses to that regardless of DOM order,
-    // which is why this was opening behind the sidebar.
+    // #sidebar is z-index:10050; a z-index:auto menu would open behind it.
     menu.style.zIndex = '10100';
     menu.style.left = `${Math.max(8, Math.min(x, maxX))}px`;
     menu.style.top = `${Math.max(8, Math.min(y, maxY))}px`;
@@ -400,7 +379,7 @@
     });
   }
 
-  // ── Icon-only collapse ── forces icon-only regardless of hover/pin
+  // Icon-only collapse: forces icon-only regardless of hover/pin.
   const ICON_ONLY_KEY = 'musikSidebarIconOnly';
 
   function getIconOnly() {
@@ -424,8 +403,7 @@
     });
   }
 
-  // Nav icon click-kick — same .icon-kick pattern as every other icon
-  // bounce in the app (animations.css).
+  // Nav icon click-kick (.icon-kick, keyframes in animations.css).
   function initNavIconKicks() {
     document.querySelectorAll('.nav-link').forEach((link) => {
       link.addEventListener('click', () => {
@@ -437,8 +415,8 @@
     });
   }
 
-  // Wordmark click easter egg — shares confetti/colorway helpers below,
-  // own click counter.
+  // Wordmark easter egg: own click counter, shares the confetti/colorway helpers
+  // below.
   function initWordmarkEgg() {
     const word = document.querySelector('.logo-text-wrap');
     const logo = document.getElementById('sidebar-logo');
@@ -462,20 +440,20 @@
     word.addEventListener('animationend', () => word.classList.remove('egg-pop'));
   }
 
-  // Sidebar logo: playback-reactive glow + beat pulse + click easter egg.
-  // Beat pulse reads player-ui.js's live AnalyserNode via getAnalyser().
+  // Sidebar logo: playback glow, beat pulse (live AnalyserNode via
+  // getAnalyser()), click easter egg.
   function initSidebarLogo() {
     const logo = document.getElementById('sidebar-logo');
     if (!logo || !window.Musik) return;
 
-    // --- Idle glow: reflect current playback state -------------------
+    // Idle glow: follows playback state
     window.Musik.events.on('play', () => logo.classList.add('is-playing'));
     window.Musik.events.on('pause', () => logo.classList.remove('is-playing'));
     window.Musik.player.getState().then((state) => {
       if (state && state.isPlaying) logo.classList.add('is-playing');
     }).catch(() => {});
 
-    // --- Beat pulse: 5 bars, each its own frequency band -------------
+    // Beat pulse: 5 bars, one frequency band each
     const VIZ_BARS = logo.querySelectorAll('.viz-bar');
     let beatDataArray = null;
     let beatRafId = null;
@@ -512,8 +490,8 @@
           bar.style.transform = `scaleY(${scale.toFixed(3)})`;
         });
 
-        // Overall level still drives the glow intensity so the whole mark
-        // brightens on peaks, on top of the per-bar EQ motion.
+        // Overall level drives glow intensity so the mark brightens on
+        // peaks.
         logo.style.setProperty('--beat-scale', (maxLevel * 0.22).toFixed(3));
       } else {
         barLevels = barLevels.map(() => 0);
@@ -525,7 +503,7 @@
     }
     beatRafId = requestAnimationFrame(beatTick);
 
-    // --- Click easter egg: confetti + secret shuffle every 5th click -
+    // Click easter egg: confetti, secret shuffle every 5th click
     const CLICK_KEY = 'sidebarLogoClicks';
     let clickCount = parseInt(localStorage.getItem(CLICK_KEY) || '0', 10);
 
@@ -542,8 +520,8 @@
     });
   }
 
-  // Colored squares flung outward from the logo's center, Web Animations
-  // API (particle shape lives in layouts.css). Self-cleans up.
+  // Confetti: squares flung from the logo center via WAAPI (shape in
+  // layouts.css); self-cleaning.
   function spawnLogoConfetti(logo) {
     const rect = logo.getBoundingClientRect();
     const cx = rect.left + rect.width / 2;
@@ -587,10 +565,9 @@
     logo.style.setProperty('--logo-hue', `${hue}deg`);
   }
 
-  // Nav layout: dynamic (hover-overlay), pinned (locked expanded), or
-  // topbar (sidebar flips to a horizontal bar). Source of truth:
-  // 'musikLayoutMode' in localStorage, shared with settings.js.
-  // Full topbar restyle lives in navigation.css (body.layout-topbar rules).
+  // Nav layout: dynamic (hover overlay), pinned, or topbar. Stored in
+  // 'musikLayoutMode' (shared with settings.js); topbar styles are
+  // body.layout-topbar in navigation.css.
   const LAYOUT_KEY = 'musikLayoutMode';
 
   function migrateLegacyPinKey() {
@@ -615,9 +592,8 @@
     migrateLegacyPinKey();
     applyLayoutMode(getLayoutMode());
 
-    // Quick toggle in the sidebar itself: flips between dynamic and
-    // pinned only. Top-bar mode is deliberately settings-only since it's
-    // a bigger structural change, not a one-click affordance.
+    // Quick toggle flips dynamic <-> pinned only; topbar is settings-only
+    // (bigger structural change).
     const pinBtn = document.getElementById('sidebar-pin-btn');
     if (pinBtn) {
       pinBtn.addEventListener('click', (e) => {
@@ -628,16 +604,14 @@
       });
     }
 
-    // Live-update if settings.js changes the mode while app.js is
-    // already running (same window, no reload needed).
+    // Live-update when settings.js changes the mode in this window.
     window.addEventListener('musik:layout-change', (e) => {
       applyLayoutMode(e.detail?.mode || getLayoutMode());
     });
   }
 
-  // Drag-resize for the sidebar's expanded width. Works whether the
-  // expanded state came from hover or from being pinned, since both read
-  // --sidebar-width-expanded. Width persists via localStorage.
+  // Drag-resize for the expanded width (--sidebar-width-expanded), for hover and
+  // pinned alike; persisted in localStorage.
   function initSidebarResize() {
     const handle = document.getElementById('sidebar-resize-handle');
     const sidebar = document.getElementById('sidebar');
@@ -649,9 +623,8 @@
     const savedWidth = localStorage.getItem('sidebarWidth');
     if (savedWidth) document.documentElement.style.setProperty('--sidebar-width-expanded', savedWidth);
 
-    // Pointer capture keeps :hover pinned to the handle (and so #sidebar)
-    // for the whole drag, so overshooting the rail's edge can't drop the
-    // hover-expanded state mid-resize in dynamic mode.
+    // Pointer capture holds :hover on the handle so overshooting the rail can't
+    // collapse it mid-resize.
     handle.addEventListener('pointerdown', (e) => {
       e.preventDefault();
       handle.setPointerCapture(e.pointerId);

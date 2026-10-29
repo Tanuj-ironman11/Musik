@@ -424,6 +424,7 @@ function getSettings() {
     sensitivity: settings.sensitivity,
     duckCeiling: settings.duckCeiling,
     maxDuck: settings.maxDuck,
+    presetMaxDuck: PRESETS[settings.preset]?.maxDuck ?? settings.maxDuck,
     preset: settings.preset,
     excludedProcessNames: settings.excludedProcessNames,
     manualOverride,
