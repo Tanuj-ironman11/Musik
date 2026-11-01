@@ -21,14 +21,14 @@
     "dompurify": "3.4.17",
     "kuroshiro": "^1.2.1",
     "kuroshiro-analyzer-kuromoji": "^1.1.0",
-    "music-metadata": "12.3.2",
+    "music-metadata": "12.3.3",
     "node-id3": "^0.2.9",
     "node-taglib-sharp": "^6.0.3",
     "pinyin-pro": "^3.29.5",
-    "three": "0.186.1"
+    "three": "0.187.0"
   },
   "devDependencies": {
-    "electron": "45.1.0",
+    "electron": "45.2.1",
     "electron-builder": "^26.18.0",
     "electron-winstaller": "5.4.4"
   },
@@ -48,6 +48,7 @@
       "main.js",
       "preload.js",
       "index.html",
+      "miniplayer.html",
       "src/**/*",
       "!mods/**",
       "node_modules/**/*"
@@ -88,7 +89,7 @@
     }
   },
   "allowScripts": {
-    "electron@45.1.0": true,
+    "electron@45.2.1": true,
     "electron-winstaller@5.4.4": true
   }
 }

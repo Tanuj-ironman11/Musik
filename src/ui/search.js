@@ -9,7 +9,10 @@ window.MusikSearch = (function () {
   let sheetEl = null;
   let fieldEl = null;
   let mirrorEl = null;
+  let tintEl = null; // blurred cover behind the sheet
   let chipEl = null;
+  let barArtEl = null;
+  let hintText = ''; // dim action text after the typed query, e.g. "\u2014 Play"
   let caretEl = null;
   let thumbEl = null;
   let thumbTimer = null;
@@ -99,13 +102,14 @@ window.MusikSearch = (function () {
           <div class="search-mirror" aria-hidden="true"><span class="search-mirror-text"></span><span class="search-ghost"></span></div>
           <textarea id="search-input" class="search-input" rows="1" aria-label="Search your music" autocomplete="off" spellcheck="false"></textarea>
         </div>
+        <span class="search-bar-art" hidden></span>
       </div>
       <div class="search-sheet glass-surface glass-surface--elevated" hidden>
+        <div class="search-tint" aria-hidden="true"></div>
         <div id="search-results" class="search-results"></div>
       </div>
       <div class="search-dock">
         <button type="button" class="search-chip" hidden>
-          <span class="search-chip-art"></span>
           <span class="search-chip-label"></span>
           <kbd class="search-kbd">\u21B5</kbd>
         </button>
@@ -127,6 +131,7 @@ window.MusikSearch = (function () {
 
     inputEl = overlayEl.querySelector('#search-input');
     resultsEl = overlayEl.querySelector('#search-results');
+    tintEl = overlayEl.querySelector('.search-tint');
     sheetEl = overlayEl.querySelector('.search-sheet');
     fieldEl = overlayEl.querySelector('.search-field');
     thumbEl = document.createElement('span');
@@ -135,6 +140,7 @@ window.MusikSearch = (function () {
     resultsEl.addEventListener('scroll', flashThumb, { passive: true });
     mirrorEl = overlayEl.querySelector('.search-mirror');
     chipEl = overlayEl.querySelector('.search-chip');
+    barArtEl = overlayEl.querySelector('.search-bar-art');
     caretEl = document.createElement('span');
     caretEl.className = 'search-caret';
     hiliteEl = document.createElement('span');
@@ -189,7 +195,9 @@ window.MusikSearch = (function () {
     textEl.textContent = '';
     textEl.append(value.slice(0, pos), caretEl, value.slice(pos));
     caretEl.classList.toggle('search-caret--hidden', inputEl.selectionStart !== inputEl.selectionEnd);
-    mirrorEl.querySelector('.search-ghost').textContent = value ? '' : 'Search your music';
+    const ghostEl = mirrorEl.querySelector('.search-ghost');
+    ghostEl.textContent = value ? hintText : 'Search your music';
+    ghostEl.classList.toggle('search-ghost--hint', !!(value && hintText));
     fieldEl.style.height = `${mirrorEl.offsetHeight}px`;
   }
 
@@ -306,30 +314,45 @@ window.MusikSearch = (function () {
         score: r.score + historyBoost('track', r.item.filePath, q),
         item: r.item,
         label: r.item.title,
-        sub: splitArtists(r.item.artist).join(', ') || r.item.artist || '',
+        sub: [
+          splitArtists(r.item.artist).join(', ') || r.item.artist,
+          (() => {
+            const a = (r.item.album || '').toLowerCase().trim();
+            const t = (r.item.title || '').toLowerCase().trim();
+            if (!a || a === t || a.startsWith(t) || t.startsWith(a)) return '';
+            return r.item.album;
+          })(),
+        ].filter(Boolean).join(' · '),
       }));
 
     // Build a deduped set of individual artist names (split on , / ; etc.)
     const artistSet = new Map(); // lowercase -> display name
+    const artistCounts = new Map(); // lowercase -> track count
     for (const t of uniqueTracks) {
       for (const name of splitArtists(t.artist)) {
         const key = name.toLowerCase();
         if (!artistSet.has(key)) artistSet.set(key, name);
+        artistCounts.set(key, (artistCounts.get(key) || 0) + 1);
       }
     }
+    const count = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
     const artistResults = fuzzyFilter([...artistSet.values()], q, (name) => name).map((r) => ({
       type: 'artist',
       score: r.score + historyBoost('artist', r.item, q),
       item: r.item,
       label: r.item,
-      sub: '',
+      sub: count(artistCounts.get(r.item.toLowerCase()) || 0, 'track'),
     }));
 
     // Album needs 2+ tracks sharing it; a lone stray tag isn't one.
     const albumCounts = new Map();
+    const albumArtists = new Map(); // album -> set of lead artists
     for (const t of uniqueTracks) {
       if (!t.album) continue;
       albumCounts.set(t.album, (albumCounts.get(t.album) || 0) + 1);
+      if (!albumArtists.has(t.album)) albumArtists.set(t.album, new Set());
+      const lead = splitArtists(t.artist)[0];
+      if (lead) albumArtists.get(t.album).add(lead);
     }
     const albumNames = [...albumCounts.entries()].filter(([, count]) => count >= 2).map(([name]) => name);
     const albumResults = fuzzyFilter(albumNames, q, (name) => name).map((r) => ({
@@ -337,15 +360,27 @@ window.MusikSearch = (function () {
       score: r.score + historyBoost('album', r.item, q),
       item: r.item,
       label: r.item,
-      sub: '',
+      sub: [
+        albumArtists.get(r.item).size > 1 ? 'Various artists' : [...albumArtists.get(r.item)][0],
+        count(albumCounts.get(r.item), 'track'),
+      ].filter(Boolean).join(' · '),
     }));
+
+    const trackByPath = new Map(uniqueTracks.map((t) => [t.filePath, t]));
+    const playlistSub = (p) => {
+      const ids = p.trackIds || [];
+      const secs = ids.reduce((sum, id) => sum + (trackByPath.get(id)?.duration || 0), 0);
+      const mins = Math.round(secs / 60);
+      const len = !mins ? '' : mins >= 60 ? `${Math.floor(mins / 60)} hr ${mins % 60} min` : `${mins} min`;
+      return [count(ids.length, 'track'), len].filter(Boolean).join(' · ');
+    };
 
     const playlistResults = fuzzyFilter(playlists, q, (p) => p.name).map((r) => ({
       type: 'playlist',
       score: r.score + historyBoost('playlist', r.item.id, q),
       item: r.item,
       label: r.item.name,
-      sub: '',
+      sub: playlistSub(r.item),
     }));
 
     // One ranked list across types, tagged by type.
@@ -370,10 +405,17 @@ window.MusikSearch = (function () {
   const TYPE_LABEL = { track: 'Track', artist: 'Artist', album: 'Album', playlist: 'Playlist' };
 
   // The results sheet only exists while there's something to show.
+  function hideChip() {
+    chipEl.hidden = true;
+    barArtEl.hidden = true;
+    hintText = '';
+    syncField();
+  }
+
   function clearResults() {
     resultsEl.innerHTML = '';
     sheetEl.hidden = true;
-    chipEl.hidden = true;
+    hideChip();
     hiliteEl?.classList.remove('search-hilite--on');
     thumbEl?.classList.remove('search-scroll-thumb--on');
     activeIndex = -1;
@@ -437,7 +479,7 @@ window.MusikSearch = (function () {
     if (actionsOpen) closeActions(false, true);
     sheetEl.hidden = false;
     if (!results.length) {
-      chipEl.hidden = true;
+      hideChip();
       hiliteEl.classList.remove('search-hilite--on');
       resultsEl.innerHTML = suggestion
         ? `<div class="search-empty-hint">
@@ -523,19 +565,86 @@ window.MusikSearch = (function () {
 
   const CHIP_LABEL = { track: 'Play', artist: 'Show in Library', album: 'Show in Library', playlist: 'Open Playlist' };
 
+  // Average color of a cover, biased toward its more saturated pixels. Cached per cover.
+  const tintCache = new Map();
+  function coverRgb(src) {
+    if (tintCache.has(src)) return Promise.resolve(tintCache.get(src));
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const c = document.createElement('canvas');
+          c.width = c.height = 24;
+          const cx = c.getContext('2d', { willReadFrequently: true });
+          cx.drawImage(img, 0, 0, 24, 24);
+          const d = cx.getImageData(0, 0, 24, 24).data;
+          let r = 0, g = 0, b = 0, w = 0;
+          for (let i = 0; i < d.length; i += 4) {
+            if (d[i + 3] < 128) continue;
+            const mx = Math.max(d[i], d[i + 1], d[i + 2]);
+            const mn = Math.min(d[i], d[i + 1], d[i + 2]);
+            const sat = mx === 0 ? 0 : (mx - mn) / mx;
+            const k = 0.15 + sat * 2;
+            r += d[i] * k; g += d[i + 1] * k; b += d[i + 2] * k; w += k;
+          }
+          const rgb = w ? `${Math.round(r / w)}, ${Math.round(g / w)}, ${Math.round(b / w)}` : null;
+          tintCache.set(src, rgb);
+          resolve(rgb);
+        } catch (err) {
+          tintCache.set(src, null);
+          resolve(null);
+        }
+      };
+      img.onerror = () => resolve(null);
+      img.src = src;
+    });
+  }
+
+  // Blurred cover of the highlighted result behind the sheet, and its color for the glow.
+  let tintToken = 0;
+  let lastTintAt = 0;
+  let fastTimer = null;
+  function updateTint(row) {
+    if (!tintEl) return;
+    const src = row?.querySelector('.search-row-art img')?.getAttribute('src');
+    tintEl.style.backgroundImage = src ? `url("${src}")` : '';
+    tintEl.classList.toggle('search-tint--on', !!src);
+    const sheet = tintEl.closest('.search-sheet') || overlayEl?.querySelector('.search-sheet');
+    const token = ++tintToken;
+
+    // Quick successive highlights mean fast scrolling: dim the glow until the list settles.
+    const now = performance.now();
+    sheet?.classList.toggle('search-sheet--fast', now - lastTintAt < 130);
+    lastTintAt = now;
+    clearTimeout(fastTimer);
+    fastTimer = setTimeout(() => sheet?.classList.remove('search-sheet--fast'), 220);
+    if (!src) {
+      sheet?.style.removeProperty('--search-tint'); // falls back to the playing track's accent
+      return;
+    }
+    coverRgb(src).then((rgb) => {
+      if (token !== tintToken || !sheet) return; // a newer highlight already took over
+      if (rgb) sheet.style.setProperty('--search-tint', `rgb(${rgb})`);
+      else sheet.style.removeProperty('--search-tint');
+    });
+  }
+
   // Mirror the active row into the chip.
   function updateChip(rows) {
     const row = rows[activeIndex];
+    updateTint(row);
     if (!row) {
-      chipEl.hidden = true;
+      hideChip();
       return;
     }
     const type = row.dataset.type;
-    const art = chipEl.querySelector('.search-chip-art');
-    art.className = `search-chip-art search-chip-art--${type}`;
-    art.innerHTML = row.querySelector('.search-row-art').innerHTML;
+    barArtEl.className = `search-bar-art search-bar-art--${type}`;
+    barArtEl.innerHTML = row.querySelector('.search-row-art').innerHTML;
+    barArtEl.hidden = false;
     chipEl.querySelector('.search-chip-label').textContent = CHIP_LABEL[type];
     chipEl.hidden = false;
+    hintText = `\u2014 ${type === 'track' ? 'Play' : 'Open'}`;
+    syncField();
   }
 
   function activateRow(row, tracks) {

@@ -7,10 +7,10 @@
   position: fixed;
   top: 11vh;
   left: 50%;
-  width: min(680px, 90vw);
+  width: min(620px, 90vw);
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
   transform: translate(-50%, 0) scale(0.98);
   transform-origin: 50% 0;
   opacity: 0;
@@ -45,18 +45,18 @@
 .search-panel {
   position: relative;
   --search-text-lift: 1px; /* optical vertical nudge: 0 = geometric center, higher = text moves up */
-  padding: calc(26px - var(--search-text-lift)) 38px calc(26px + var(--search-text-lift));
+  padding: calc(32px - var(--search-text-lift)) 90px calc(32px + var(--search-text-lift)) 40px;
   border-radius: 64px;
   background:
     linear-gradient(180deg, transparent 40%, rgba(255, 255, 255, 0.06) 100%),
     linear-gradient(
-      180deg,
-      rgb(0 0 0 / var(--slab-dark)) 0%,
-      rgb(0 0 0 / var(--slab-dark)) 22%,
-      rgb(0 0 0 / calc(var(--slab-dark) * 0.55)) 42%,
-      rgb(0 0 0 / calc(var(--slab-dark) * 0.18)) 62%,
-      rgb(0 0 0 / 0) 82%
-    );
+    180deg,
+    rgb(0 0 0 / var(--slab-dark)) 0%,
+    rgb(0 0 0 / var(--slab-dark)) 22%,
+    rgb(0 0 0 / calc(var(--slab-dark) * 0.55)) 42%,
+    rgb(0 0 0 / calc(var(--slab-dark) * 0.18)) 62%,
+    rgb(0 0 0 / 0) 82%
+  );
   backdrop-filter: blur(8px) saturate(1.6);
   -webkit-backdrop-filter: blur(8px) saturate(1.6);
   box-shadow:
@@ -92,7 +92,7 @@
 /* Textarea over a hidden mirror. The mirror sets the height (search.js copies it) and holds the ghost suffix. */
 .search-field {
   position: relative;
-  height: 28px;
+  height: 32px;
   transition: height 0.3s var(--ease-out);
 }
 
@@ -101,7 +101,7 @@
   margin: 0;
   padding: 0;
   border: none;
-  font: 400 22px/28px -apple-system, BlinkMacSystemFont, "Segoe UI Variable", "Segoe UI", Inter, Roboto, sans-serif;
+  font: 400 26px/32px -apple-system, BlinkMacSystemFont, "Segoe UI Variable", "Segoe UI", Inter, Roboto, sans-serif;
   letter-spacing: -0.012em;
   white-space: pre-wrap;
   overflow-wrap: break-word;
@@ -119,6 +119,16 @@
 
 .search-ghost {
   color: rgba(255, 255, 255, 0.55);
+}
+
+/* The Enter action after the typed text, on a faint plate. */
+.search-ghost--hint {
+  margin-left: 6px;
+  padding: 0 8px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.09);
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
 }
 
 .search-input {
@@ -143,7 +153,7 @@
 .search-caret {
   display: inline-block;
   width: 2px;
-  height: 24px;
+  height: 28px;
   margin: 2px -1px 0;
   vertical-align: top;
   border-radius: 1px;
@@ -153,7 +163,14 @@
 }
 
 .search-field:focus-within .search-caret {
-  animation: search-caret-blink 1.06s steps(1, end) infinite;
+  animation: search-caret-fade 1.06s ease-in-out infinite;
+}
+
+/* Holds visible, fades out over about 230ms, holds hidden, fades back in over about 230ms. */
+@keyframes search-caret-fade {
+  0%, 30% { opacity: 1; }
+  52%, 78% { opacity: 0; }
+  100% { opacity: 1; }
 }
 
 .search-caret--hidden { display: none; }
@@ -161,7 +178,7 @@
 /* Results sheet: glass frame around the .search-results scroller. Only shown with results. */
 .search-sheet {
   position: relative;
-  border-radius: 32px;
+  border-radius: 36px;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI Variable", "Segoe UI", Inter, Roboto, sans-serif;
   transform-origin: 50% 0;
   min-height: 0; /* search.js raises it while the actions panel is open */
@@ -183,7 +200,7 @@
   z-index: 1;
   max-height: min(46vh, 420px);
   overflow-y: auto;
-  padding: 10px;
+  padding: 12px;
   scrollbar-width: none;
 }
 
@@ -219,14 +236,18 @@
 .search-hilite {
   position: absolute;
   top: 0;
-  left: 10px;
-  right: 10px;
+  left: 12px;
+  right: 12px;
   height: 0;
-  border-radius: 22px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.15), rgba(255, 255, 255, 0.07));
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.14);
+  backdrop-filter: blur(8px) saturate(1.5) brightness(1.3);
+  -webkit-backdrop-filter: blur(8px) saturate(1.5) brightness(1.3);
+  /* Option 2 (glow): the blue halo behind the active row. Delete its line to turn it off. */
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.16),
-    inset 0 -1px 0 rgba(255, 255, 255, 0.04);
+    inset 0 0 0 1px rgba(255, 255, 255, 0.1),
+    0 8px 18px -8px rgba(0, 0, 0, 0.5),
+    0 0 22px 6px rgba(90, 160, 220, 0.22);
   opacity: 0;
   pointer-events: none;
   transform: translateY(var(--hl-y, 0px));
@@ -241,7 +262,7 @@
 .search-hilite--instant { transition: none; }
 
 .search-results:has(.search-row:active) .search-hilite {
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0.12));
+  background: rgba(255, 255, 255, 0.18);
 }
 
 .search-empty-hint {
@@ -269,11 +290,11 @@
   z-index: 1;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
   width: 100%;
-  padding: 7px 12px 7px 8px;
+  padding: 10px 14px 10px 10px;
   border: none;
-  border-radius: 22px;
+  border-radius: 24px;
   background: transparent;
   color: var(--color-text);
   font-family: inherit;
@@ -288,14 +309,15 @@
 .search-row--active .search-row-title { color: #fff; }
 
 .search-row-art {
-  width: 40px;
-  height: 40px;
+  width: 48px;
+  height: 48px;
   flex-shrink: 0;
   border-radius: 12px;
   overflow: hidden;
   display: grid;
   place-items: center;
   background: rgba(255, 255, 255, 0.07);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
   color: rgba(255, 255, 255, 0.5);
 }
 
@@ -311,22 +333,22 @@
 .search-row-text {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
   min-width: 0;
   flex: 1;
 }
 
 .search-row-title {
-  font-size: 15px;
-  font-weight: 600;
+  font-size: 18px;
+  font-weight: 400;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .search-row-sub {
-  font-size: 12.5px;
-  color: rgba(255, 255, 255, 0.5);
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.58);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -334,13 +356,13 @@
 
 .search-row-kind {
   flex-shrink: 0;
-  font-size: 12.5px;
+  font-size: 13px;
   color: rgba(255, 255, 255, 0.55);
 }
 
 .search-row--active .search-row-kind { color: rgba(255, 255, 255, 0.75); }
 
-/* Chip: active result's cover plus its Enter action. */
+/* Chip: the active result's Enter action. The cover sits in the bar. */
 .search-chip,
 .search-actions-pill {
   align-self: center;
@@ -352,13 +374,10 @@
   padding: 0 22px 0 9px;
   border: none;
   border-radius: 23px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.15), rgba(255, 255, 255, 0.06));
+  background: rgba(255, 255, 255, 0.1);
   backdrop-filter: blur(28px) saturate(1.6);
   -webkit-backdrop-filter: blur(28px) saturate(1.6);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.3),
-    inset 0 -1px 0 rgba(255, 255, 255, 0.1),
-    0 14px 30px -10px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 14px 30px -10px rgba(0, 0, 0, 0.6);
   color: #fff;
   font: 500 16px/1 -apple-system, BlinkMacSystemFont, "Segoe UI Variable", "Segoe UI", Inter, Roboto, sans-serif;
   cursor: pointer;
@@ -367,36 +386,44 @@
 
 .search-chip[hidden] { display: none; }
 
+.search-chip { padding-left: 20px; }
+
 .search-chip:not([hidden]) {
   animation: search-chip-in 0.5s var(--search-spring) both;
   animation-delay: 90ms;
 }
 
 .search-chip:hover,
-.search-actions-pill:hover { background: linear-gradient(180deg, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0.09)); }
+.search-actions-pill:hover { background: rgba(0, 0, 0, 0.18); }
 .search-chip:active,
 .search-actions-pill:active { transform: scale(0.97); }
 
-.search-chip-art {
-  width: 28px;
-  height: 28px;
-  flex-shrink: 0;
-  border-radius: 9px;
+.search-bar-art {
+  position: absolute;
+  top: 50%;
+  right: 32px;
+  transform: translateY(-50%);
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
   overflow: hidden;
   display: grid;
   place-items: center;
   background: rgba(255, 255, 255, 0.12);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
   color: rgba(255, 255, 255, 0.7);
 }
 
-.search-chip-art img {
+.search-bar-art[hidden] { display: none; }
+
+.search-bar-art img {
   width: 100%;
   height: 100%;
   object-fit: cover;
   display: block;
 }
 
-.search-chip-art--artist { border-radius: 50%; }
+.search-bar-art--artist { border-radius: 50%; }
 
 .search-chip-label {
   overflow: hidden;
@@ -537,8 +564,7 @@
 }
 
 .search-action--active {
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.15), rgba(255, 255, 255, 0.07));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.12);
 }
 
 /* Destructive action: plain red, never the accent. Hairline above it unless it's alone. */
@@ -615,17 +641,17 @@
 }
 
 /* Squircle corners where supported (not the bar: plain circular corners read rounder).
-   Rows nest in the sheet: row radius = sheet radius - the 10px results padding. */
+   Rows nest in the sheet: row radius = sheet radius - the 12px results padding. */
 @supports (corner-shape: squircle) {
-  .search-sheet  { corner-shape: squircle; border-radius: 40px; }
+  .search-sheet  { corner-shape: squircle; border-radius: 44px; }
   .search-row,
-  .search-hilite { corner-shape: squircle; border-radius: 27px; }
+  .search-hilite { corner-shape: squircle; border-radius: 32px; }
   .search-chip,
   .search-actions-pill { corner-shape: squircle; border-radius: 28px; }
   .search-actions { corner-shape: squircle; border-radius: 30px; }
   .search-action  { corner-shape: squircle; border-radius: 20px; }
   .search-row-art:not(.search-row-art--artist),
-  .search-chip-art:not(.search-chip-art--artist) { corner-shape: squircle; border-radius: 24px; }
+  .search-bar-art:not(.search-bar-art--artist) { corner-shape: squircle; border-radius: 24px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -647,4 +673,107 @@
 /* Small settle on the page when the overlay closes. */
 body.search-closing-settle #main {
   animation: search-page-settle 0.26s var(--ease-out);
+}
+
+/* Quieter secondary UI and one-line subtitles. */
+.search-chip,
+.search-actions-pill {
+  background: rgba(0, 0, 0, 0.3);
+  color: rgba(255, 255, 255, 0.78);
+  font-weight: 400;
+  font-size: 14px;
+  height: 40px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12), 0 10px 22px -12px rgba(0, 0, 0, 0.6);
+}
+.search-kbd {
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.5);
+  box-shadow: none;
+  font-weight: 500;
+}
+.search-row-sub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Cover tint: the highlighted result's cover, blurred, behind the sheet.
+   search.js sets the background image on .search-tint. It is oversized so the blur's faded
+   edges land outside the sheet, which clips it to its own rounded corners. */
+.search-sheet {
+  overflow: hidden;
+}
+.search-tint {
+  position: absolute;
+  inset: -90px;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0;
+  background-size: cover;
+  background-position: center;
+  filter: blur(48px) saturate(1.5) brightness(0.7);
+  transition: opacity 0.35s var(--ease-out);
+}
+/* Cover blur removed: results sit on the plain sheet for readability. */
+.search-tint--on {
+  opacity: 0;
+}
+
+/* Cover blur removed: results read on the plain sheet. */
+.search-tint {
+  display: none;
+}
+
+/* Sheet material: a strong blur with a dark neutral fill, so the page's colors show through without turning gray. */
+.search-overlay .search-sheet {
+  /* Glow from the top middle, in the highlighted result's cover color (--search-tint-rgb, set by search.js). Falls back to the playing track's accent. Delete the first gradient line to turn it off. */
+  /* Glow eases down from the top middle with a longer tail so it doesn't stop after a row or two.
+     The grain layer is a pixel-fine dither at about a third of its old strength: just enough to break up 8-bit banding on the smooth fade without reading as film grain. */
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.6' numOctaves='1' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 0.016 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"),
+    radial-gradient(75% 60% at 50% 0%,
+      color-mix(in srgb, var(--search-tint, rgb(61, 184, 245)) calc(70% * var(--search-k)), transparent) 0%,
+      color-mix(in srgb, var(--search-tint, rgb(61, 184, 245)) calc(38% * var(--search-k)), transparent) 30%,
+      color-mix(in srgb, var(--search-tint, rgb(61, 184, 245)) calc(14% * var(--search-k)), transparent) 60%,
+      transparent 100%),
+    rgba(8, 8, 12, 0.4);
+  transition: --search-tint 0.18s cubic-bezier(0.2, 0.8, 0.2, 1), --search-k 0.2s var(--ease-out);
+  backdrop-filter: blur(44px) saturate(1.3);
+  -webkit-backdrop-filter: blur(44px) saturate(1.3);
+  box-shadow: 0 30px 70px -24px rgba(0, 0, 0, 0.6);
+}
+
+/* Any layer the shared glass styles draw over the sheet follows the sheet's own corner shape. */
+.search-overlay .search-sheet::before,
+.search-overlay .search-sheet::after {
+  border-radius: inherit;
+  corner-shape: inherit;
+}
+.search-sheet .search-results {
+  position: relative;
+  z-index: 1;
+  background: none;
+}
+
+/* Animatable glow color (search.js sets --search-tint on the sheet). */
+@property --search-tint {
+  syntax: '<color>';
+  inherits: false;
+  initial-value: rgb(61, 184, 245);
+}
+.search-sheet {
+  --search-tint: rgb(var(--color-accent-rgb, 61, 184, 245));
+}
+
+/* Fast scrolling dims the glow about 30% until the list settles (search.js adds the class). */
+@property --search-k {
+  syntax: '<number>';
+  inherits: false;
+  initial-value: 1;
+}
+.search-overlay .search-sheet {
+  --search-k: 1;
+}
+.search-overlay .search-sheet.search-sheet--fast {
+  --search-k: 0.7;
 }

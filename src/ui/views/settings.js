@@ -547,7 +547,11 @@ window.MusikViews['settings'] = async function renderSettings(main) {
     };
     const presetBtns = document.querySelectorAll('#settings-duck-presets [data-duck-preset]');
     const presetDesc = document.getElementById('settings-duck-preset-desc');
+    // Sensitivity/Ceiling only apply in Custom (presets adapt on their own), so dim them otherwise.
+    const autoRows = ['settings-duck-sensitivity', 'settings-duck-ceiling']
+      .map((id) => document.getElementById(id)?.closest('.settings-row'));
     const paintDuckPreset = (name) => {
+      autoRows.forEach((r) => r?.classList.toggle('settings-row--sub-disabled', name !== 'custom'));
       presetBtns.forEach((b) => {
         const on = b.dataset.duckPreset === name;
         b.classList.toggle('segmented-btn--active', on);
