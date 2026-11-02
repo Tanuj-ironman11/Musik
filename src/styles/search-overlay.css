@@ -65,7 +65,7 @@
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI Variable", "Segoe UI", Inter, Roboto, sans-serif;
 }
 
-/* 1px rim: visible all round (it's the bar's edge on dark pages), brightest at the bottom. */
+/* 1px rim around the slab, brightest at the bottom. */
 .search-panel::before {
   content: "";
   position: absolute;
@@ -141,7 +141,7 @@
   background: transparent;
   outline: none;
   color: #fff;
-  caret-color: transparent; /* the glowing caret below is drawn in the mirror */
+  caret-color: transparent; /* the caret is drawn in the mirror instead */
 }
 
 .search-input::selection {
@@ -166,7 +166,7 @@
   animation: search-caret-fade 1.06s ease-in-out infinite;
 }
 
-/* Holds visible, fades out over about 230ms, holds hidden, fades back in over about 230ms. */
+/* Over the 1.06s cycle: visible to 30%, fades out by 52%, hidden to 78%, fades back in by 100%. */
 @keyframes search-caret-fade {
   0%, 30% { opacity: 1; }
   52%, 78% { opacity: 0; }
@@ -243,11 +243,9 @@
   background: rgba(255, 255, 255, 0.14);
   backdrop-filter: blur(8px) saturate(1.5) brightness(1.3);
   -webkit-backdrop-filter: blur(8px) saturate(1.5) brightness(1.3);
-  /* Option 2 (glow): the blue halo behind the active row. Delete its line to turn it off. */
   box-shadow:
     inset 0 0 0 1px rgba(255, 255, 255, 0.1),
-    0 8px 18px -8px rgba(0, 0, 0, 0.5),
-    0 0 22px 6px rgba(90, 160, 220, 0.22);
+    0 8px 18px -8px rgba(0, 0, 0, 0.5);
   opacity: 0;
   pointer-events: none;
   transform: translateY(var(--hl-y, 0px));
@@ -697,9 +695,7 @@ body.search-closing-settle #main {
   white-space: nowrap;
 }
 
-/* Cover tint: the highlighted result's cover, blurred, behind the sheet.
-   search.js sets the background image on .search-tint. It is oversized so the blur's faded
-   edges land outside the sheet, which clips it to its own rounded corners. */
+/* Cover tint element. search.js sets its image, but it is hidden, so results sit on the plain sheet. */
 .search-sheet {
   overflow: hidden;
 }
@@ -714,23 +710,21 @@ body.search-closing-settle #main {
   filter: blur(48px) saturate(1.5) brightness(0.7);
   transition: opacity 0.35s var(--ease-out);
 }
-/* Cover blur removed: results sit on the plain sheet for readability. */
 .search-tint--on {
   opacity: 0;
 }
 
-/* Cover blur removed: results read on the plain sheet. */
 .search-tint {
   display: none;
 }
 
-/* Sheet material: a strong blur with a dark neutral fill, so the page's colors show through without turning gray. */
+/* Sheet material: strong blur over a dark neutral fill. */
 .search-overlay .search-sheet {
-  /* Glow from the top middle, in the highlighted result's cover color (--search-tint-rgb, set by search.js). Falls back to the playing track's accent. Delete the first gradient line to turn it off. */
-  /* Glow eases down from the top middle with a longer tail so it doesn't stop after a row or two.
-     The grain layer is a pixel-fine dither at about a third of its old strength: just enough to break up 8-bit banding on the smooth fade without reading as film grain. */
+  /* Layers, top first: a 64px blue-noise dither, the top-middle glow, then the base fill.
+     The glow takes --search-tint (set by search.js to the highlighted cover's color) and falls back to the playing track's accent.
+     The dither tile holds alpha 0 to 5/255 with no low-frequency clumps, which breaks up 8-bit banding on the fade. */
   background:
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.6' numOctaves='1' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 0.016 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"),
+    url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAKQUlEQVR42n2b0ZbjMAhDATv//8G1zb40czR35XnYs9O0SRwMQgiS3V0RMSJiR0RFxPp+Pt//+3v8RER+/+3v50d+H9/fbpx/5Lv38/leM77/9/fv99pTrtuyBnf99/t3fe9aDs4trOlExMjuTjFAfk/WH6UsuGXRPPb+9l18yQMNWeR7vMXg/T1WMPjBw+rD1/dzy/UHNufIvQ4MPiJi6WKGLOIju/16SOHvxLlDPr/fLTHqu7Pvg20x1JRzjhj1gREKBs3vbxJeoIbdsl7diI6Imt+DH7PDDcurJxx5mIGw4UL0+y2GTDHOgeHSHDti6PfhpnhBwuNCjn9w7F175xcDSm5C90y4p7p8XHaljFF0Fxc8SD2x4UkH66Oh1Kgfuf/+eseWz0mP1Dhd3y9e6y5x69dltyxomBBpcf0SQ6nxtrj8wOIIkBrzWzCm8Fuuq+EpIdjWihHZ3YEHLSDrvOzKERdM7L7u1MAuuN3U71o+6/Xdgy6g/ntswgNTsszS65axqBrikeNLdkWtGfCIJbHaALVECEx4joaBhsOG8YhHG/faF2wKucd8DbDlAprCjlko02TJQzcQext+ocAU35g98k+NVMYL24TlMCGZl9TJNe+SmxVyaeHERoikZA8Skw1Lt6SrDRB7vZCkpmF09Z7XWFM8csm6D9JyiFcqvygFQd54w3U0njQMmFr4QNuA1oALL3hGiAsn/i/xygaOTHicbtxB5loRMQq73YLAQ250AHCF+AtJQRsZY8rfA4Yt0NeN3yTceiL9kVwdZIECHpG8rcLNlVi0pENyhASLK8McE16RAM8hbhsgVwyJhmE3NqFgmBQPONhYpe35psEEoUkYhN8toDH/Jlbow7UJgQRnOIZQJdIxWWoZ6qv1gpKjn1AqAac0efyASJwL8CUIzkT9kHA/l+4KYKeGK7i5ywwtYFuoBgc24Qfj3mqwYP2B3UvsDHeyL/mWJSspdUk2mQJSWmpzDSWbUKYcZumeMMQS3DlTFksEfY8FQGnD+rfdSCBugbuTLQbAayE1s6psk410E6Zkl7pUi0NdWSvCiVifcpMHcTXglpoZmFqX7MgDNnlg1MCOaqrewgNc8VYQQobgReh9Cju3LyoKF6eL0rS4wf+HESEKDxlIvYVssZD+NGV/wFkCntpgqhMb11rbJ0LhGIVmwm1VTtsmLW2g9oH0dRDT58I8eW7AtR+TgskkFcx/Nv3VA8IoL6StWm0V0Fw9IHBz1gfPJV020q0TYxJo30iDC5vmrquZZxboaSEulRHmZfdTXLUuup4TVFks9R8pMiWOC+EaYHkUQAsGK6l0W0XRg9Q3zOdj9L7xh1p7IysJ0tKo5bfxQirJy2gVDUyhbsESOcuotCExpUC1DOKX0fkCyN9GszvwpELYFLwqAWAbD73gdQrmE5lGSVEV0DSRarRUntixcxEwy3jMBKK3LHIjvhdctQzJGeAeD/5mKAT4xE8xVdi9A+FQU8xBHX4MtdX8vLAjeZHaJ+7HZsqBwQ6KtGEaHsdwEBVlflJ3XXI8gWnKYtt0izTHHyNvT7nxhsx2IMamAceJjdINU6kuDdYMGEJxqQoLTFNWJharO51Aeaq7baQt1vVUjphKA+HispFTszayhWv3rTKIvWDlwOKZiibq+DBCxoFw8TEhQS+iB7Icp0FcQbeBA+wgZRnZimDYSCuqxhC4zuVmB1WjIvNCXLchNhQ2H+x4QDihcuVo/n6Lof6j3E0jZbM03aYhscV1CXTHZJlpUmCbFM1qs9HSG8hWqjdquPxUjtnd0/DuaYqLvJSWA3ixDVhuo+wOk1YHPId6IrtFIfdyqfgYVUubLUeZYJh2smuAbsm3bE8lHqhAVwfAslA1bmDGBhaxPR4QQ93a81JXzLccDnGVYcrbglYwTApUZGdp+4bHA3Y3wBXI+Rthsw3xYur7r943f//y2gK6E3TKdGcXBMgHC/wAeTfOc8oOyVRCdHGbQg1Rw+wxAxGJ68bLBMnNOSTRcJ/HxDeZXINxDXjQMdL6Ml1hLZCcLO9a5Me0328jP4Mpb5kWdaC0VFQNyNqNPmNCo9/IImliuIzmz1ZcQlgZf7TFGgb/1TEuTF4MUM+DyqyN/j+NCNomRnkPJ7sdND8abj9NxnB9iTb6YOLe4wXBiRNeS3M6a8KlN7q0CezY0AYJRA3wnWhiugELDky0EWsSxmK7TUM0CSqO1HxwgzCy14PfNzzjY1Jsi9p8zHyC6ymEKYeVMXLKZVw87SezZHcPqLnHzAoowfmYGj+NYuSGleLSRneqU8lwU5l+AgGSxlqGSf43fvMSIYod+6IRUOVp46quEOEiyAof0OO+zCA6Npc4Lwyj3WCIv0ZkKC2FgKATPwKxfhMk6XoT2SRMB2fCmzTEBtSfAY2/oPiQFU4jyYf2BimOBGK5L6Ns4zKWGoaMNHZ94SGWIWXn0ndMI860dK4OQjCMQJplytZCd3ebGw0sNAWY0pyzUEoPoH8iNKgXLKTSuLC8AoYdM2uo56269Og5gFTGLQ9mcrfhBkN+k2aQ4kDtGagrNkJmg3DRu4ZRmQ5K7V/axLwMFIw/pK0wokdeJDH2AT+YQhkonA6yhutdEtw0W30uhdEwOPN5J0QGKigSiLho/JzYnhxCBFfYl3pgm6mRMg+blwaIy1K38VjixSizWHLnAxW3ocROM2DFXgL5+cbxaYafFdAClWWZibZtSt9pJlR/cZ6UFyaWETbK9O8HQKsvKa3Qzd3AgTbgWoaCKxA+f+R/7rgbvC4KOpoG3UhLG4DZHDWD7s+J7MC5ZY67CRL3nkGbLjAZa+JtE9YRv0r5FwPSVE9O/GyMmjpZbJhZQmLHg0xDfrCNMTXu89KgOSBJVLmTY/RvCDTkLOoBXOhGFiBFDRhhmRq9zIBV4AEIdAv30NpkXMbrlA1SjN3uFZgFMOG46eePmb3F/vulGiOB2ub9gZL7USbnGM4w4E1M+BguU5o7WZsfvA9UZu6vL/HZRmRdf/T2S17aSCO2tnn5qc3s4HN59aZMj3DrfACLG/38QZODFZorO29Dkew9hiEobQazBsjXwRh/gOwwnDYKsa2CSICWuv4/hwxv6UUBNS5a3zLja8SFB+x0XYYkXPgNeN4HxZaC47WHNgyZIKcOUzkePADn+iipLzNFruHClPaRrDABxGr8bSbb1MjP69WaBTj4mKbMHRhTDfzOvftzYLAynlYYyGgTv8s0QyfSc5sJszb0/MdztRYgyYnLQ7qXoNooMq6TM0wPcpuagjLarY44pq6Yl9djCun6o2NyByTDMTeqO3HxhHFpYFLPT7xkQRA+pslx0Hlm2mbf4hgBRYWRLggSdXGxgIi5TNOi0VVuCKeFGGdabfMWCV+NTTM0VWB5ZLYOqH8aOHUZSLiNxfIVl2OGF6i9t7l2AeQq/FtmB00Wvp36gZDzQBorzCBNpNBDWbwMHvDFQ9Xa8jKr73IvceAYFkhA4wC20wz5wsS5vEqzzPXOPywXnGTeBV2lAAAAAElFTkSuQmCC"),
     radial-gradient(75% 60% at 50% 0%,
       color-mix(in srgb, var(--search-tint, rgb(61, 184, 245)) calc(70% * var(--search-k)), transparent) 0%,
       color-mix(in srgb, var(--search-tint, rgb(61, 184, 245)) calc(38% * var(--search-k)), transparent) 30%,
@@ -755,7 +749,7 @@ body.search-closing-settle #main {
   background: none;
 }
 
-/* Animatable glow color (search.js sets --search-tint on the sheet). */
+/* Glow color as an animatable property, so it can fade between covers. search.js sets it on the sheet. */
 @property --search-tint {
   syntax: '<color>';
   inherits: false;
@@ -765,7 +759,7 @@ body.search-closing-settle #main {
   --search-tint: rgb(var(--color-accent-rgb, 61, 184, 245));
 }
 
-/* Fast scrolling dims the glow about 30% until the list settles (search.js adds the class). */
+/* While scrolling fast, search.js adds the class and --search-k drops to 0.7, dimming the glow 30% until the list settles. */
 @property --search-k {
   syntax: '<number>';
   inherits: false;
